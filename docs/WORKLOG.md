@@ -20,6 +20,9 @@ code until the plan is approved.
       angles, two judges, a synthesis, a critic against the research, the
       decisions and CLAUDE.md). Then publish as `docs/M2_PLAN.md` for
       approval.
+- [ ] Next-steps roadmap (running in parallel: three advisors on execution,
+      safety and testing, and milestone order; a synthesis and a critic). Then
+      publish as `docs/NEXT_STEPS.md`.
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
