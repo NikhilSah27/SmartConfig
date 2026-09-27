@@ -17,9 +17,9 @@ approval.
 - [x] M2 plan written, judged and critiqued: [M2_PLAN.md](M2_PLAN.md)
       (17 steps in 5 chunks, 14 questions for you). **Waiting for your
       approval.**
-- [ ] R2-1 store: dedicated connection for write transactions; COMMIT
+- [x] R2-1 store: dedicated connection for write transactions; COMMIT
       retried on SQLITE_BUSY; never pool a connection with an open
-      transaction.
+      transaction. `c5b693e`
 - [ ] R2-4 store: snapshot's unchanged check inside the write transaction.
 - [ ] R2-2 fsutil/store: temp file written before the lock; directory opened
       without following links or blocking.
@@ -90,3 +90,7 @@ approval.
 - **M2 plan** drafted three ways, judged by two judges, merged, checked by a
   critic (1 blocker, 6 major fixed) and published as [M2_PLAN.md](M2_PLAN.md)
   for approval.
+- **R2-1:** write transactions now always end: COMMIT retried while readers
+  are busy, explicit ROLLBACK, a connection that cannot be cleaned is
+  discarded. Two new tests; a mutation check reproduced the reviewer's bug
+  (an uncommitted row visible in the same process). `c5b693e`.
