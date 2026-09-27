@@ -1,5 +1,8 @@
 # SmartConfig docs
 
+For the history of the project, its decisions, and a recovery guide, see
+[PROJECT_LOG.md](PROJECT_LOG.md).
+
 Visual explainers for the project. Each page is a single self-contained HTML
 file in `visuals/`: open it in a browser straight from disk. They need an
 internet connection only for the Google Fonts; everything else is inline.

@@ -55,8 +55,12 @@ docs/              visual explainers: system map and narrated films
 
 ## Docs
 
+Start with [docs/PROJECT_LOG.md](docs/PROJECT_LOG.md): what has been done,
+why, the state of the dev VM, and how to recover or resume after a crash.
+
 [docs/README.md](docs/README.md) lists interactive explainers: a system map
 with a working in-browser copy of `sc`, a narrated film of a real
 `/etc/fstab` break-and-restore, and three films covering the milestone plan,
-the finished product, and the same failure without SmartConfig. Download the
-HTML files and open them in a browser.
+the finished product, and the same failure without SmartConfig. They are live
+at https://nikhilsah27.github.io/SmartConfig/, or download the HTML files and
+open them in a browser.
