@@ -389,7 +389,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
   function markTail(uuid, cls) { return esc(uuid.slice(0, -1)) + "<mark>" + uuid.slice(-1) + "</mark>"; }
 
   /* ================= script builder ================= */
-  var B, chapters, CAPS, chapNo, FILM;
+  var B = [], chapters = [], CAPS = [], chapNo = 0, FILM = null;
   function add(d, run) { B.push({ d: d, run: run }); }
   function spell(s) { return s.toUpperCase().split("").join(" "); }
   function sayify(text) {
@@ -1160,16 +1160,36 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
   }
   if (synth) { voice = pickVoice(); synth.onvoiceschanged = function () { voice = pickVoice(); }; }
   function hush() { if (synth) synth.cancel(); speaking = false; utter = null; }
+  var speakAt = 0, speechStarted = false, voiceFails = 0, voiceWorks = false;
   function speak(text) {
     if (!synth) return;
     synth.cancel();
     var u = new SpeechSynthesisUtterance(text);
     if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-US";
     u.rate = Math.max(0.6, Math.min(1.8, 1.02 * speed));
+    // Hold the picture only while speech is really playing. Until the browser
+    // reports that it started, allow at most 1.2 s of waiting.
+    u.onstart = function () {
+      if (utter !== u) return;
+      speechStarted = true; voiceWorks = true; voiceFails = 0;
+      speakUntil = performance.now() + ((text.length / 15) / u.rate + 1) * 1000;
+    };
     u.onend = u.onerror = function () { if (utter === u) speaking = false; };
-    utter = u; speaking = true;
-    speakUntil = performance.now() + ((text.length / 14) / u.rate + 2) * 1000;
-    synth.speak(u);
+    utter = u; speaking = true; speechStarted = false;
+    speakAt = performance.now();
+    speakUntil = speakAt + 1200;
+    try { synth.speak(u); } catch (e) { speaking = false; }
+  }
+  // Called every frame: if speech never starts, stop waiting for it, and after
+  // two failures in a row turn narration off so the film plays at normal speed.
+  function checkVoice() {
+    if (!speaking || speechStarted || performance.now() - speakAt < 1200) return;
+    speaking = false;
+    voiceFails++;
+    if (voiceFails >= 2 && !voiceWorks) {
+      hush(); voiceOn = false;
+      setToggle(voiceBtn, false, "Voice on", "No voice available");
+    }
   }
   function capAt(x) { var k = -1; for (var i = 0; i < CAPS.length; i++) { if (CAPS[i].t <= x) k = i; else break; } return k; }
   function nextCapT(x) { for (var i = 0; i < CAPS.length; i++) if (CAPS[i].t > x) return CAPS[i].t; return null; }
@@ -1234,6 +1254,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
   function seek(x) { time = Math.max(0, Math.min(TOTAL, x)); if (!started) { started = true; poster.hidden = true; } hush(); spokenIdx = null; prevS = null; draw(); }
   function loop(ts) {
     if (!playing) return;
+    checkVoice();
     if (last !== null) {
       var nt = time + Math.min(0.1, (ts - last) / 1000) * speed;
       if (voiceOn && speaking && performance.now() < speakUntil) {
