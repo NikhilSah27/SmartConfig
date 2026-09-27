@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func noTemps(t *testing.T, dir string) {
@@ -105,5 +107,54 @@ func TestWriteAtomicFailureLeavesNoTemp(t *testing.T) {
 		if b, _ := os.ReadFile(p); string(b) != "keep" {
 			t.Fatalf("original changed: %q", b)
 		}
+	}
+}
+
+// The path is checked with lstat and then opened again. Anything swapped in
+// between must be refused, never read.
+func TestReadCheckedRefusesSwap(t *testing.T) {
+	dir := t.TempDir()
+	orig := filepath.Join(dir, "orig")
+	other := filepath.Join(dir, "other")
+	os.WriteFile(orig, []byte("config\n"), 0o644)
+	os.WriteFile(other, []byte("secret\n"), 0o600)
+	want, err := os.Lstat(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Another regular file renamed over the path.
+	if _, _, err := readChecked(other, want); err == nil || !strings.Contains(err.Error(), "replaced") {
+		t.Errorf("different file: got %v", err)
+	}
+
+	// A symlink to a file root should not copy into the store.
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(other, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readChecked(link, want); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("symlink: got %v", err)
+	}
+
+	// A FIFO must not block the read.
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, _, err := readChecked(fifo, want); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("fifo: read succeeded")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("fifo: read blocked")
+	}
+
+	// The unchanged file still reads fine.
+	if data, _, err := readChecked(orig, want); err != nil || string(data) != "config\n" {
+		t.Errorf("unchanged file: %q %v", data, err)
 	}
 }

@@ -43,15 +43,26 @@ func ReadWithMeta(path string) ([]byte, Meta, error) {
 	if err := CheckRegular(path, fi); err != nil {
 		return nil, Meta{}, err
 	}
-	f, err := os.Open(path)
+	return readChecked(path, fi)
+}
+
+// readChecked reads path only if it is still the file that lstat described as
+// want. Between the lstat and the open, the path may have been replaced by a
+// symlink (which would make root read whatever it points to) or by a FIFO
+// (which would block the read forever); both are refused.
+func readChecked(path string, want os.FileInfo) ([]byte, Meta, error) {
+	f, err := openNoFollow(path)
 	if err != nil {
-		return nil, Meta{}, fmt.Errorf("read %s: %w", path, err)
+		return nil, Meta{}, err
 	}
 	defer f.Close()
 	// Stat the open file so the metadata matches the bytes we read.
-	fi, err = f.Stat()
+	fi, err := f.Stat()
 	if err != nil {
 		return nil, Meta{}, fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !os.SameFile(want, fi) {
+		return nil, Meta{}, fmt.Errorf("%s was replaced while being read, try again", path)
 	}
 	if err := CheckRegular(path, fi); err != nil {
 		return nil, Meta{}, err
