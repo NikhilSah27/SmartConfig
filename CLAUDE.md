@@ -1,0 +1,31 @@
+# SmartConfig
+
+A safety net for the config files that take a Linux machine down. Snapshot a
+file before it is edited, warn before a bad edit is applied, explain what broke,
+restore one file from the rescue shell.
+
+Target: Ubuntu 24.04. We build one milestone at a time; MILESTONES.md says which
+one is current. Do not build ahead of the current milestone, not even stubs.
+
+## Rules
+- Go 1.22+. CGO_ENABLED=0 always: the binary must be static so it runs from a
+  broken system. SQLite is modernc.org/sqlite, never mattn/go-sqlite3.
+- One binary, cmd/sc. Library code in internal/. No daemon until the milestone
+  that asks for it.
+- Data lives under $SC_HOME (default /var/lib/smartconfig). Tests always set
+  SC_HOME to t.TempDir(). No test touches /etc or /var/lib.
+- Writing a config file back: temp file in the same directory, set mode and
+  uid/gid, fsync, rename over the original. Never truncate and write in place.
+- Dependencies: cobra, modernc.org/sqlite, go-difflib. Ask before adding another.
+- Errors are wrapped with context. The CLI prints one clear line on stderr and
+  exits 1. No panics or stack traces reach the user.
+- Output is plain text readable on an 80x25 console. No TUI, no color yet.
+- Every feature has a test. go test ./..., go vet ./... and gofmt are clean
+  before a task is called done.
+- Small commits, one logical change each, clear messages.
+
+## Layout
+cmd/sc            the CLI (cobra); thin, calls into internal/
+internal/store    blobs + SQLite records: snapshot, list, get, restore
+internal/fsutil   atomic write, read mode/owner
+scripts/          smoke.sh and helpers a human runs in the VM
