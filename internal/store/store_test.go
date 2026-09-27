@@ -2,6 +2,8 @@ package store
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -346,5 +348,82 @@ func TestBlobCorrupt(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(p); string(b) != "x\n" {
 		t.Fatalf("file changed: %q", b)
+	}
+}
+
+// A watcher that sees the restore's rename and then takes the write lock to
+// record it must wait for the restore row, never record the change as its
+// own. So when the file is in place the lock must still be held and the row
+// not yet visible; after Restore returns the row must be there.
+func TestRestoreHoldsLockAcrossRename(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "hosts")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "broken\n", 0o644)
+
+	other, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	restoreRows := func() int {
+		var n int
+		if err := other.QueryRow(`SELECT count(*) FROM changes WHERE origin = 'restore'`).Scan(&n); err != nil {
+			t.Fatalf("read from second connection: %v", err)
+		}
+		return n
+	}
+
+	hookRan := false
+	testHookAfterRestoreWrite = func() {
+		hookRan = true
+		if b, _ := os.ReadFile(p); string(b) != "good\n" {
+			t.Errorf("file not yet restored inside the lock: %q", b)
+		}
+		if n := restoreRows(); n != 0 {
+			t.Errorf("restore row visible before commit: %d", n)
+		}
+		conn, err := other.Conn(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if _, err := conn.ExecContext(context.Background(), "BEGIN IMMEDIATE"); err == nil {
+			conn.ExecContext(context.Background(), "ROLLBACK")
+			t.Error("a watcher could take the write lock while the restore is uncommitted")
+		}
+	}
+	defer func() { testHookAfterRestoreWrite = nil }()
+
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !hookRan {
+		t.Fatal("hook did not run")
+	}
+	if n := restoreRows(); n != 1 {
+		t.Fatalf("restore rows after Restore: %d, want 1", n)
+	}
+}
+
+// If the file cannot be written, no restore row may be recorded.
+func TestRestoreWriteFailureRecordsNothing(t *testing.T) {
+	s, dir := setup(t)
+	sub := filepath.Join(dir, "gone")
+	os.Mkdir(sub, 0o755)
+	p := filepath.Join(sub, "conf")
+	write(t, p, "x\n", 0o644)
+	c, _ := snap(t, s, p)
+	if err := os.RemoveAll(sub); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.Restore(c.ID)
+	if err == nil || !strings.Contains(err.Error(), "restore "+p) {
+		t.Fatalf("got %v", err)
+	}
+	cs, _ := s.List(p, 0)
+	if len(cs) != 1 || cs[0].Origin != OriginManual {
+		t.Fatalf("history changed by a failed restore: %+v", cs)
 	}
 }

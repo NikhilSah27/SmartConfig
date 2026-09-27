@@ -61,6 +61,10 @@ type Change struct {
 	Intent string
 }
 
+// testHookAfterRestoreWrite, if set by a test, runs in Restore after the file
+// is in place and before the restore row is committed.
+var testHookAfterRestoreWrite func()
+
 // Store is an open SmartConfig data directory.
 type Store struct {
 	dir string
@@ -150,7 +154,7 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 		TS: s.now().Unix(), Path: path, Blob: blob, Size: int64(len(data)),
 		Mode: meta.Mode, UID: meta.UID, GID: meta.GID, Origin: origin, Intent: intent,
 	}
-	if err := s.insert(&c); err != nil {
+	if err := s.insert(&c, nil); err != nil {
 		return Change{}, false, err
 	}
 	return c, false, nil
@@ -176,8 +180,11 @@ func makeID(path string, ts int64, blob string, attempt int) string {
 }
 
 // insert assigns c.ID and inserts the row inside one write transaction, so
-// the uniqueness check and the insert cannot race another writer.
-func (s *Store) insert(c *Change) error {
+// the uniqueness check and the insert cannot race another writer. If during
+// is not nil it runs after the row is inserted and before the commit, while
+// the write lock is held; if it fails, the row is rolled back and its error
+// is returned as is.
+func (s *Store) insert(c *Change, during func() error) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
@@ -200,6 +207,11 @@ func (s *Store) insert(c *Change) error {
 		c.ID, c.TS, c.Path, c.Blob, c.Size, uint32(c.Mode), c.UID, c.GID, c.Origin, c.Intent)
 	if err != nil {
 		return fmt.Errorf("record change: %w", err)
+	}
+	if during != nil {
+		if err := during(); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
@@ -338,16 +350,32 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	default:
 		return Change{}, nil, fmt.Errorf("save current state: %w", err)
 	}
-	if err := fsutil.WriteAtomic(src.Path, data, src.Mode, src.UID, src.GID); err != nil {
-		return Change{}, prev, fmt.Errorf("restore %s: %w", src.Path, err)
-	}
 	restored = Change{
 		TS: s.now().Unix(), Path: src.Path, Blob: src.Blob, Size: src.Size,
 		Mode: src.Mode, UID: src.UID, GID: src.GID,
 		Origin: OriginRestore, Intent: "restored from " + src.ID,
 	}
-	if err := s.insert(&restored); err != nil {
-		return Change{}, prev, fmt.Errorf("file restored but not recorded: %w", err)
+	// The file is renamed into place while the restore row is inserted but
+	// not yet committed, with the database write lock held. Anyone who sees
+	// the rename and then takes the write lock to record it (the M2 watcher)
+	// waits for this commit and finds the restore row, instead of logging an
+	// unexplained change. If the write fails, the row is rolled back.
+	wrote := false
+	err = s.insert(&restored, func() error {
+		if err := fsutil.WriteAtomic(src.Path, data, src.Mode, src.UID, src.GID); err != nil {
+			return fmt.Errorf("restore %s: %w", src.Path, err)
+		}
+		wrote = true
+		if testHookAfterRestoreWrite != nil {
+			testHookAfterRestoreWrite()
+		}
+		return nil
+	})
+	if err != nil {
+		if wrote {
+			return Change{}, prev, fmt.Errorf("file restored but not recorded: %w", err)
+		}
+		return Change{}, prev, err
 	}
 	return restored, prev, nil
 }
