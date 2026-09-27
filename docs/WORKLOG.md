@@ -6,28 +6,31 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** write the M2 plan (the `scd` watcher) for approval. No M2
-code until the plan is approved.
+**Current task:** round 2 of M1 follow-up fixes (R2-1 to R2-5), from the
+independent review of the first two fixes. Then the M2 plan waits for your
+approval.
 
-- [x] M1 follow-up fix 1 (read race). `c720f22`
-- [x] M1 follow-up fix 2 (restore order). `ec15ece`
-- [x] Full check after both fixes: gofmt, vet, tests as user and as root,
-      static build, root smoke PASS.
-- [ ] Independent review of the two fixes (running: three reviewers
-      (concurrency, security, regressions), each finding re-checked by two
-      skeptics).
-- [ ] Draft the M2 plan (running: three independent drafts from different
-      angles, two judges, a synthesis, a critic against the research, the
-      decisions and CLAUDE.md). Then publish as `docs/M2_PLAN.md` for
-      approval.
-- [x] Next-steps roadmap: [NEXT_STEPS.md](NEXT_STEPS.md) (three advisors,
-      a synthesis, a critic; corrections applied). It has 13 open questions
-      for you.
-- [x] Research outputs copied out of `/tmp` (wiped at every boot) to
-      `~/smartconfig-work/` on the VM.
-- [ ] After the fix review closes: tag `m1`, root-only backups in
-      `/var/backups/smartconfig`, then you take the `m1-frozen` VirtualBox
-      snapshot.
+- [x] Review of `c720f22` and `ec15ece`: 14 findings, 13 confirmed, 1 split.
+      None breaks M1 as used today; most matter once the watcher runs next
+      to `sc`. Every finding has a decision:
+      [reviews/2026-09-27-m1-fixes.md](reviews/2026-09-27-m1-fixes.md).
+- [x] M2 plan written, judged and critiqued: [M2_PLAN.md](M2_PLAN.md)
+      (17 steps in 5 chunks, 14 questions for you). **Waiting for your
+      approval.**
+- [ ] R2-1 store: dedicated connection for write transactions; COMMIT
+      retried on SQLITE_BUSY; never pool a connection with an open
+      transaction.
+- [ ] R2-4 store: snapshot's unchanged check inside the write transaction.
+- [ ] R2-2 fsutil/store: temp file written before the lock; directory opened
+      without following links or blocking.
+- [ ] R2-3 store: restore in one transaction with its pre-restore row;
+      clearer errors.
+- [ ] R2-5 fsutil: precise ELOOP message.
+- [ ] Full check, then tag `m1`, backups, and your `m1-frozen` snapshot.
+
+**Open for you:** approve the M2 plan and answer its 14 questions
+([M2_PLAN.md section 16](M2_PLAN.md)); answer the 13 roadmap questions
+([NEXT_STEPS.md](NEXT_STEPS.md)).
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
@@ -81,3 +84,9 @@ code until the plan is approved.
   13 questions. A critic's corrections are applied.
 - **Research outputs saved** from `/tmp` to `~/smartconfig-work/` on the VM,
   because `/tmp` is wiped at every boot.
+- **Review of the M1 fixes:** three reviewers plus two skeptics per finding.
+  13 of 14 findings confirmed, none breaking M1 as used today. Decisions per
+  finding in [reviews/2026-09-27-m1-fixes.md](reviews/2026-09-27-m1-fixes.md).
+- **M2 plan** drafted three ways, judged by two judges, merged, checked by a
+  critic (1 blocker, 6 major fixed) and published as [M2_PLAN.md](M2_PLAN.md)
+  for approval.
