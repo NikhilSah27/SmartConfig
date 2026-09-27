@@ -26,7 +26,15 @@ approval.
 - [x] R2-3 store: restore in one transaction with its pre-restore row;
       clearer errors. `c0d3839`
 - [x] R2-5 fsutil: precise ELOOP message. `a517893`
-- [ ] Full check, then tag `m1`, backups, and your `m1-frozen` snapshot.
+- [x] Full check after round 2: gofmt, vet, tests as user and root, race
+      detector, static build, root smoke PASS, `/etc/hosts` unchanged.
+- [x] Stress, 12 parallel writers x 15 rounds, 2 runs per version:
+      failures before fix 2 3+3/360, after fix 2 2+4/360, now 1+1/360
+      (snapshot+restore). The rest wait more than 5 s for the lock under
+      that load.
+- [ ] Independent review of round 2 (running: three reviewers,
+      two skeptics per finding).
+- [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
 ([M2_PLAN.md section 16](M2_PLAN.md)); answer the 13 roadmap questions
@@ -109,3 +117,10 @@ approval.
 - **R2-5:** "is a symlink, refusing" is now reported only when the path
   itself is a symlink; a loop further up the path keeps its real error.
   `a517893`.
+- **Full check after round 2:** everything clean, including the race
+  detector and the root smoke run.
+- **Stress comparison** (12 parallel writers, 180 snapshots and 180 restores
+  per run, 2 runs per version): now 1 snapshot and 1 restore failure in 360
+  each, fewer than before fix 2 (3 and 3). A script bug in the first run
+  (a missing id after a failed first snapshot) was found and fixed before
+  these numbers.
