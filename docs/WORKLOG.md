@@ -21,8 +21,8 @@ approval.
       retried on SQLITE_BUSY; never pool a connection with an open
       transaction. `c5b693e`
 - [x] R2-4 store: snapshot's unchanged check inside the write transaction. `09a7dbd`
-- [ ] R2-2 fsutil/store: temp file written before the lock; directory opened
-      without following links or blocking.
+- [x] R2-2 fsutil/store: temp file written before the lock; directory opened
+      without blocking. `1e6e91a`
 - [ ] R2-3 store: restore in one transaction with its pre-restore row;
       clearer errors.
 - [ ] R2-5 fsutil: precise ELOOP message.
@@ -97,3 +97,7 @@ approval.
 - **R2-4:** `sc snapshot` now compares with the latest row under the write
   lock, so a snapshot taken during a restore no longer records a spurious
   extra row. The new test fails on the old code. `09a7dbd`.
+- **R2-2:** a restore now writes and syncs its temp file before taking the
+  database lock and holds the lock only for the rename; the directory sync
+  can no longer hang on a FIFO. Three new tests; the FIFO test hangs with the
+  old code. `1e6e91a`.
