@@ -22,6 +22,10 @@ Last updated: 2026-09-27, end of milestone 1.
 
 Status: **M1 done** (store + CLI). **M2 (watcher daemon) is next**, not started.
 
+M2 research: [M2_WATCHLIST.md](M2_WATCHLIST.md) lists what the watcher must watch,
+ignore and beware of, verified on this VM, plus two M1 fixes needed first and
+the decisions to make before M2 code starts.
+
 ---
 
 ## 2. What happened, in order (2026-09-27)
