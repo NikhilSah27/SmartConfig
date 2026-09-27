@@ -529,3 +529,48 @@ func TestFailedCommitLeavesNoOpenTransaction(t *testing.T) {
 		t.Fatalf("another connection cannot write after a failed commit: %v", err)
 	}
 }
+
+// A manual snapshot taken while a restore is committing must wait for it and
+// see the restore row, not record the restored content as a new change.
+func TestSnapshotDuringRestoreIsUnchanged(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	other, err := Open(Home())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	type result struct {
+		unchanged bool
+		err       error
+	}
+	done := make(chan result, 1)
+	testHookAfterRestoreWrite = func() {
+		go func() {
+			_, unchanged, err := other.Snapshot(p, OriginManual, "concurrent")
+			done <- result{unchanged, err}
+		}()
+		// Give the snapshot time to read the restored file and reach the
+		// write lock before the restore commits.
+		time.Sleep(300 * time.Millisecond)
+	}
+	defer func() { testHookAfterRestoreWrite = nil }()
+
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := <-done
+	if r.err != nil || !r.unchanged {
+		t.Fatalf("concurrent snapshot: unchanged=%v err=%v", r.unchanged, r.err)
+	}
+	cs, _ := s.List(p, 0)
+	for _, c := range cs {
+		if c.Intent == "concurrent" {
+			t.Fatalf("extra row recorded during the restore: %+v", c)
+		}
+	}
+}

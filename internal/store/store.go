@@ -149,15 +149,8 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	sum := sha256.Sum256(data)
 	blob := hex.EncodeToString(sum[:])
 
-	if origin == OriginManual {
-		last, err := s.latest(path)
-		if err != nil {
-			return Change{}, false, err
-		}
-		if last != nil && last.Blob == blob {
-			return *last, true, nil
-		}
-	}
+	// The blob is content-addressed, so writing it before the check costs
+	// nothing when the content is unchanged (it is already stored).
 	if err := s.putBlob(blob, data); err != nil {
 		return Change{}, false, err
 	}
@@ -165,14 +158,37 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 		TS: s.now().Unix(), Path: path, Blob: blob, Size: int64(len(data)),
 		Mode: meta.Mode, UID: meta.UID, GID: meta.GID, Origin: origin, Intent: intent,
 	}
-	if err := s.insert(&c, nil); err != nil {
+	// The unchanged check runs under the write lock: a snapshot taken while
+	// a restore is committing waits for it and compares against the restore
+	// row, instead of recording the restored content as a new change.
+	err = s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
+		if origin == OriginManual {
+			last, err := latestTx(ctx, conn, path)
+			if err != nil {
+				return err
+			}
+			if last != nil && last.Blob == blob {
+				c, unchanged = *last, true
+				return nil
+			}
+		}
+		return insertTx(ctx, conn, &c)
+	})
+	if err != nil {
 		return Change{}, false, err
 	}
-	return c, false, nil
+	return c, unchanged, nil
 }
 
-func (s *Store) latest(path string) (*Change, error) {
-	cs, err := s.List(path, 1)
+// latestTx returns the newest change of path within the caller's
+// transaction, or nil if there is none.
+func latestTx(ctx context.Context, conn *sql.Conn, path string) (*Change, error) {
+	rows, err := conn.QueryContext(ctx, `SELECT `+cols+` FROM changes WHERE path = ?
+		ORDER BY ts DESC, rowid DESC LIMIT 1`, path)
+	if err != nil {
+		return nil, fmt.Errorf("read latest change: %w", err)
+	}
+	cs, err := scanChanges(rows)
 	if err != nil || len(cs) == 0 {
 		return nil, err
 	}
