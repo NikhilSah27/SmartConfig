@@ -20,9 +20,14 @@ code until the plan is approved.
       angles, two judges, a synthesis, a critic against the research, the
       decisions and CLAUDE.md). Then publish as `docs/M2_PLAN.md` for
       approval.
-- [ ] Next-steps roadmap (running in parallel: three advisors on execution,
-      safety and testing, and milestone order; a synthesis and a critic). Then
-      publish as `docs/NEXT_STEPS.md`.
+- [x] Next-steps roadmap: [NEXT_STEPS.md](NEXT_STEPS.md) (three advisors,
+      a synthesis, a critic; corrections applied). It has 13 open questions
+      for you.
+- [x] Research outputs copied out of `/tmp` (wiped at every boot) to
+      `~/smartconfig-work/` on the VM.
+- [ ] After the fix review closes: tag `m1`, root-only backups in
+      `/var/backups/smartconfig`, then you take the `m1-frozen` VirtualBox
+      snapshot.
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
@@ -70,3 +75,9 @@ code until the plan is approved.
   it and fail on the old order. `ec15ece`.
 - **Full check after both fixes:** gofmt, vet, all tests as user and as root,
   static build, `sudo ./scripts/smoke.sh` PASS, `/etc/hosts` unchanged.
+- **Next-steps roadmap** published as [NEXT_STEPS.md](NEXT_STEPS.md): what
+  to do now, the path from plan approval to "M2 done" (five reviewed chunks,
+  reboot test, 24-hour soak with a real apt upgrade), what comes after, and
+  13 questions. A critic's corrections are applied.
+- **Research outputs saved** from `/tmp` to `~/smartconfig-work/` on the VM,
+  because `/tmp` is wiped at every boot.

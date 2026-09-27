@@ -1,6 +1,7 @@
 # SmartConfig docs
 
 What we are doing right now and what is done: [WORKLOG.md](WORKLOG.md).
+What comes next and in what order: [NEXT_STEPS.md](NEXT_STEPS.md).
 
 For the history of the project, its decisions, and a recovery guide, see
 [PROJECT_LOG.md](PROJECT_LOG.md).
