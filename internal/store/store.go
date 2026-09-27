@@ -283,22 +283,6 @@ func insertTx(ctx context.Context, conn *sql.Conn, c *Change) error {
 	return nil
 }
 
-// insert records c in its own write transaction. If during is not nil it
-// runs after the row is inserted and before the commit, while the write lock
-// is held; if it fails, the row is rolled back and its error is returned as
-// is.
-func (s *Store) insert(c *Change, during func() error) error {
-	return s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
-		if err := insertTx(ctx, conn, c); err != nil {
-			return err
-		}
-		if during != nil {
-			return during()
-		}
-		return nil
-	})
-}
-
 func (s *Store) blobPath(sha string) string {
 	return filepath.Join(s.dir, "objects", sha[:2], sha)
 }
@@ -411,8 +395,9 @@ func (s *Store) Get(prefix string) (Change, error) {
 }
 
 // Restore writes snapshot id back to its path with its recorded mode and
-// owner. The current file, if any, is first saved as a pre-restore change,
-// returned as prev (nil when the file did not exist).
+// owner. The file on disk, if any, is saved first as a pre-restore change,
+// returned as prev (nil when the file did not exist). Everything happens in
+// one write transaction: if the restore fails, nothing is recorded.
 func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	src, err := s.Get(id)
 	if err != nil {
@@ -422,39 +407,55 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	if err != nil {
 		return Change{}, nil, err
 	}
-	pre, _, err := s.Snapshot(src.Path, OriginPreRestore, "before restoring "+src.ID)
-	switch {
-	case err == nil:
-		prev = &pre
-	case fsutil.IsNotExist(err):
-	default:
-		return Change{}, nil, fmt.Errorf("save current state: %w", err)
-	}
 	// The slow part of the write (temp file, fsync) happens before the
 	// database lock is taken, so a slow disk does not hold up other sc
 	// commands; only the rename runs under the lock.
 	pending, err := fsutil.PrepareAtomic(src.Path, data, src.Mode, src.UID, src.GID)
 	if err != nil {
-		return Change{}, prev, fmt.Errorf("restore %s: %w", src.Path, err)
+		return Change{}, nil, fmt.Errorf("restore %s: %w", src.Path, err)
 	}
 	defer pending.Discard()
-	restored = Change{
-		TS: s.now().Unix(), Path: src.Path, Blob: src.Blob, Size: src.Size,
-		Mode: src.Mode, UID: src.UID, GID: src.GID,
-		Origin: OriginRestore, Intent: "restored from " + src.ID,
-	}
-	// The file is renamed into place while the restore row is inserted but
-	// not yet committed, with the database write lock held. Anyone who sees
-	// the rename and then takes the write lock to record it (the M2 watcher)
-	// waits for this commit and finds the restore row, instead of logging an
-	// unexplained change. If the write fails, the row is rolled back.
 	if testHookBeforeRestoreLock != nil {
 		testHookBeforeRestoreLock()
 	}
+	now := s.now().Unix()
+	restored = Change{
+		TS: now, Path: src.Path, Blob: src.Blob, Size: src.Size,
+		Mode: src.Mode, UID: src.UID, GID: src.GID,
+		Origin: OriginRestore, Intent: "restored from " + src.ID,
+	}
+	// Under the write lock: read and record what is on disk now (so a
+	// concurrent restore cannot make it stale), insert the restore row,
+	// rename the file into place, and only then commit. Anyone who sees the
+	// rename and takes the write lock to record it (the M2 watcher) waits
+	// for this commit and finds the restore row.
 	wrote := false
-	err = s.insert(&restored, func() error {
+	err = s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
+		cur, meta, err := fsutil.ReadWithMeta(src.Path)
+		switch {
+		case err == nil:
+			sum := sha256.Sum256(cur)
+			pre := Change{
+				TS: now, Path: src.Path, Blob: hex.EncodeToString(sum[:]), Size: int64(len(cur)),
+				Mode: meta.Mode, UID: meta.UID, GID: meta.GID,
+				Origin: OriginPreRestore, Intent: "before restoring " + src.ID,
+			}
+			if err := s.putBlob(pre.Blob, cur); err != nil {
+				return fmt.Errorf("save current state: %w", err)
+			}
+			if err := insertTx(ctx, conn, &pre); err != nil {
+				return err
+			}
+			prev = &pre
+		case fsutil.IsNotExist(err):
+		default:
+			return fmt.Errorf("save current state: %w", err)
+		}
+		if err := insertTx(ctx, conn, &restored); err != nil {
+			return err
+		}
 		if err := pending.Commit(); err != nil {
-			return fmt.Errorf("restore %s: %w", src.Path, err)
+			return err
 		}
 		wrote = true
 		if testHookAfterRestoreWrite != nil {
@@ -464,9 +465,9 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	})
 	if err != nil {
 		if wrote {
-			return Change{}, prev, fmt.Errorf("file restored but not recorded: %w", err)
+			return Change{}, nil, fmt.Errorf("file restored but not recorded: %w (run: sc snapshot %s)", err, src.Path)
 		}
-		return Change{}, prev, err
+		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.Path, err)
 	}
 	return restored, prev, nil
 }

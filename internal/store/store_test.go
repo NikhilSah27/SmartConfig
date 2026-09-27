@@ -630,3 +630,109 @@ func TestRestorePreparesBeforeTakingLock(t *testing.T) {
 		t.Fatalf("temp files left: %v", tmps)
 	}
 }
+
+// If the restore fails after the current file was read, the pre-restore row
+// must be rolled back with everything else: a failed restore records nothing.
+func TestFailedRestoreRecordsNoPreRestore(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	// Remove the prepared temp file so the rename fails under the lock.
+	testHookBeforeRestoreLock = func() {
+		tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*"))
+		for _, tmp := range tmps {
+			os.Remove(tmp)
+		}
+	}
+	defer func() { testHookBeforeRestoreLock = nil }()
+
+	_, prev, err := s.Restore(good.ID)
+	if err == nil || !strings.Contains(err.Error(), "file not changed") {
+		t.Fatalf("got %v", err)
+	}
+	if prev != nil {
+		t.Fatalf("failed restore returned a pre-restore row: %+v", prev)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
+		t.Fatalf("file changed by a failed restore: %q", b)
+	}
+	cs, _ := s.List(p, 0)
+	if len(cs) != 1 || cs[0].ID != good.ID {
+		t.Fatalf("history changed by a failed restore: %+v", cs)
+	}
+}
+
+// The pre-restore row must describe the file as it was right before this
+// restore replaced it, even if another restore ran in between.
+func TestPreRestoreSeesConcurrentRestore(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "a\n", 0o644)
+	a, _ := snap(t, s, p)
+	write(t, p, "b\n", 0o644)
+	b, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	other, err := Open(Home())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	// While restore A is prepared but has not taken the lock, restore B
+	// runs to completion.
+	testHookBeforeRestoreLock = func() {
+		testHookBeforeRestoreLock = nil
+		if _, _, err := other.Restore(b.ID); err != nil {
+			t.Errorf("concurrent restore: %v", err)
+		}
+	}
+	defer func() { testHookBeforeRestoreLock = nil }()
+
+	_, prev, err := s.Restore(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev == nil || prev.Blob != b.Blob {
+		t.Fatalf("pre-restore row does not show restore B's result: %+v", prev)
+	}
+}
+
+// When the database stays locked, the error says it was the restore that
+// failed and that the file was not changed.
+func TestRestoreLockedErrorSaysFileUnchanged(t *testing.T) {
+	shortBusyTimeout(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.Restore(good.ID)
+	conn.ExecContext(ctx, "ROLLBACK")
+	if err == nil || !strings.Contains(err.Error(), "restore "+p) || !strings.Contains(err.Error(), "file not changed") {
+		t.Fatalf("got %v", err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
+		t.Fatalf("file changed: %q", b)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*")); len(tmps) != 0 {
+		t.Fatalf("temp files left: %v", tmps)
+	}
+}
