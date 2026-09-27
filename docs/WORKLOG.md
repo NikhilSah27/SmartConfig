@@ -6,18 +6,16 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** M1 follow-up. Fix the two issues the M2 research found in
-the M1 code, before any M2 work starts.
+**Current task:** write the M2 plan (the `scd` watcher) for approval. No M2
+code until the plan is approved.
 
-- [x] Fix 1: `fsutil.ReadWithMeta` must refuse a file swapped between lstat
-      and open (symlink or FIFO race). Done in `c720f22`.
-- [ ] Fix 2: `store.Restore` renames the file before it records its row, so a
-      watcher sees an unexplained change for 10-60 ms. Make the restore row and
-      the rename one locked step.
-- [ ] Re-run the full check (tests, vet, gofmt, static build, root smoke).
-
-**Next:** write the M2 plan (the `scd` watcher) for approval. No M2 code
-until the plan is approved.
+- [x] M1 follow-up fix 1 (read race). `c720f22`
+- [x] M1 follow-up fix 2 (restore order). `ec15ece`
+- [x] Full check after both fixes: gofmt, vet, tests as user and as root,
+      static build, root smoke PASS.
+- [ ] Independent review of the two fixes.
+- [ ] Draft the M2 plan from the research and the decisions below; review it;
+      publish as `docs/M2_PLAN.md` for approval.
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
@@ -58,3 +56,10 @@ until the plan is approved.
   requires the opened file to be the one lstat saw. New test reproduces a
   swapped file, a symlink and a FIFO; it fails on the old code (read the
   wrong file, followed the symlink, blocked on the FIFO). `c720f22`.
+- **M1 fix 2:** `store.Restore` now inserts its row, renames the file while
+  holding the write lock, then commits (rolled back if the write fails). A
+  watcher that sees the rename and takes the lock finds the restore row
+  instead of an unexplained change. Tests pause inside the restore to prove
+  it and fail on the old order. `ec15ece`.
+- **Full check after both fixes:** gofmt, vet, all tests as user and as root,
+  static build, `sudo ./scripts/smoke.sh` PASS, `/etc/hosts` unchanged.
