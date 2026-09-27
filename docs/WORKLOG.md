@@ -20,7 +20,7 @@ approval.
 - [x] R2-1 store: dedicated connection for write transactions; COMMIT
       retried on SQLITE_BUSY; never pool a connection with an open
       transaction. `c5b693e`
-- [ ] R2-4 store: snapshot's unchanged check inside the write transaction.
+- [x] R2-4 store: snapshot's unchanged check inside the write transaction. `09a7dbd`
 - [ ] R2-2 fsutil/store: temp file written before the lock; directory opened
       without following links or blocking.
 - [ ] R2-3 store: restore in one transaction with its pre-restore row;
@@ -94,3 +94,6 @@ approval.
   are busy, explicit ROLLBACK, a connection that cannot be cleaned is
   discarded. Two new tests; a mutation check reproduced the reviewer's bug
   (an uncommitted row visible in the same process). `c5b693e`.
+- **R2-4:** `sc snapshot` now compares with the latest row under the write
+  lock, so a snapshot taken during a restore no longer records a spurious
+  extra row. The new test fails on the old code. `09a7dbd`.
