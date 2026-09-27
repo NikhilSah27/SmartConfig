@@ -72,6 +72,10 @@ var busyTimeoutMS = 5000
 // connections are busy. Each attempt waits up to busyTimeoutMS.
 const commitAttempts = 6
 
+// testHookBeforeRestoreLock, if set by a test, runs in Restore after the new
+// content is prepared in a temp file and before the write lock is taken.
+var testHookBeforeRestoreLock func()
+
 // testHookAfterRestoreWrite, if set by a test, runs in Restore after the file
 // is in place and before the restore row is committed.
 var testHookAfterRestoreWrite func()
@@ -426,6 +430,14 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	default:
 		return Change{}, nil, fmt.Errorf("save current state: %w", err)
 	}
+	// The slow part of the write (temp file, fsync) happens before the
+	// database lock is taken, so a slow disk does not hold up other sc
+	// commands; only the rename runs under the lock.
+	pending, err := fsutil.PrepareAtomic(src.Path, data, src.Mode, src.UID, src.GID)
+	if err != nil {
+		return Change{}, prev, fmt.Errorf("restore %s: %w", src.Path, err)
+	}
+	defer pending.Discard()
 	restored = Change{
 		TS: s.now().Unix(), Path: src.Path, Blob: src.Blob, Size: src.Size,
 		Mode: src.Mode, UID: src.UID, GID: src.GID,
@@ -436,9 +448,12 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	// the rename and then takes the write lock to record it (the M2 watcher)
 	// waits for this commit and finds the restore row, instead of logging an
 	// unexplained change. If the write fails, the row is rolled back.
+	if testHookBeforeRestoreLock != nil {
+		testHookBeforeRestoreLock()
+	}
 	wrote := false
 	err = s.insert(&restored, func() error {
-		if err := fsutil.WriteAtomic(src.Path, data, src.Mode, src.UID, src.GID); err != nil {
+		if err := pending.Commit(); err != nil {
 			return fmt.Errorf("restore %s: %w", src.Path, err)
 		}
 		wrote = true

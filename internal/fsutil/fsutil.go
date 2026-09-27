@@ -81,11 +81,35 @@ func readChecked(path string, want os.FileInfo) ([]byte, Meta, error) {
 // WriteAtomic replaces path with data: it writes a temp file in the same
 // directory, sets mode and owner, fsyncs, and renames it over the original.
 // On failure the temp file is removed and the original is left untouched.
-func WriteAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (err error) {
+func WriteAtomic(path string, data []byte, mode os.FileMode, uid, gid int) error {
+	p, err := PrepareAtomic(path, data, mode, uid, gid)
+	if err != nil {
+		return err
+	}
+	if err := p.Commit(); err != nil {
+		p.Discard()
+		return err
+	}
+	return nil
+}
+
+// Pending is a temp file next to its target that already holds the complete
+// new content, with mode and owner set and synced to disk. Nothing visible
+// has changed until Commit renames it over the target.
+type Pending struct {
+	path, tmp string
+	done      bool
+}
+
+// PrepareAtomic does the slow part of WriteAtomic (write, chown, chmod,
+// fsync) and returns the temp file for Commit or Discard. Callers that must
+// hold a lock across the replacement can prepare first and lock only around
+// Commit.
+func PrepareAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (p *Pending, err error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".sc-tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temp file in %s: %w", dir, err)
+		return nil, fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
 	defer func() {
@@ -96,31 +120,43 @@ func WriteAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (err 
 	}()
 
 	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("write %s: %w", tmpName, err)
+		return nil, fmt.Errorf("write %s: %w", tmpName, err)
 	}
 	// Chown before chmod: chown clears setuid/setgid bits on Linux.
 	if err = tmp.Chown(uid, gid); err != nil {
-		return fmt.Errorf("chown %s to %d:%d: %w", tmpName, uid, gid, err)
+		return nil, fmt.Errorf("chown %s to %d:%d: %w", tmpName, uid, gid, err)
 	}
 	if err = tmp.Chmod(mode); err != nil {
-		return fmt.Errorf("chmod %s to %04o: %w", tmpName, mode.Perm(), err)
+		return nil, fmt.Errorf("chmod %s to %04o: %w", tmpName, mode.Perm(), err)
 	}
 	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("fsync %s: %w", tmpName, err)
+		return nil, fmt.Errorf("fsync %s: %w", tmpName, err)
 	}
 	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmpName, err)
+		return nil, fmt.Errorf("close %s: %w", tmpName, err)
 	}
-	if err = os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename over %s: %w", path, err)
+	return &Pending{path: path, tmp: tmpName}, nil
+}
+
+// Commit renames the temp file over the target, then syncs the directory so
+// the rename itself is durable. The file is already in place once the rename
+// succeeds, so a failed directory sync is not reported as a failed write.
+func (p *Pending) Commit() error {
+	if err := os.Rename(p.tmp, p.path); err != nil {
+		return fmt.Errorf("rename over %s: %w", p.path, err)
 	}
-	// Make the rename itself durable. The file is already in place, so a
-	// failure here is not reported as a failed write.
-	if d, derr := os.Open(dir); derr == nil {
-		d.Sync()
-		d.Close()
-	}
+	p.done = true
+	syncDir(filepath.Dir(p.path))
 	return nil
+}
+
+// Discard removes the temp file unless it has been committed. It is safe to
+// call more than once, and after Commit.
+func (p *Pending) Discard() {
+	if !p.done {
+		os.Remove(p.tmp)
+		p.done = true
+	}
 }
 
 // IsNotExist reports whether err means the file does not exist.

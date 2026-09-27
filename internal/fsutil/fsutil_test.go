@@ -158,3 +158,55 @@ func TestReadCheckedRefusesSwap(t *testing.T) {
 		t.Errorf("unchanged file: %q %v", data, err)
 	}
 }
+
+func TestPrepareCommitDiscard(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "conf")
+	os.WriteFile(p, []byte("old\n"), 0o644)
+
+	// Prepared but discarded: target untouched, no temp file left.
+	pend, err := PrepareAtomic(p, []byte("new\n"), 0o600, os.Getuid(), os.Getgid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "old\n" {
+		t.Fatalf("prepare changed the target: %q", b)
+	}
+	pend.Discard()
+	pend.Discard()
+	noTemps(t, dir)
+
+	// Prepared and committed: target replaced with content and mode.
+	pend, err = PrepareAtomic(p, []byte("new\n"), 0o600, os.Getuid(), os.Getgid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pend.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	pend.Discard() // must not remove anything after a commit
+	data, m, err := ReadWithMeta(p)
+	if err != nil || string(data) != "new\n" || m.Mode.Perm() != 0o600 {
+		t.Fatalf("after commit: %q %v %v", data, m.Mode, err)
+	}
+	noTemps(t, dir)
+}
+
+// The directory sync after a rename must not block if a FIFO has been put
+// where the directory was.
+func TestSyncDirDoesNotBlockOnFIFO(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- syncDir(fifo) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("syncDir accepted a FIFO")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("syncDir blocked on a FIFO")
+	}
+}

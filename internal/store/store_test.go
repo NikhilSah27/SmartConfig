@@ -574,3 +574,59 @@ func TestSnapshotDuringRestoreIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// The slow part of a restore (writing and syncing the temp file) must happen
+// before the write lock is taken, so a slow disk does not hold up other sc
+// commands.
+func TestRestorePreparesBeforeTakingLock(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	hookRan := false
+	testHookBeforeRestoreLock = func() {
+		hookRan = true
+		tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*"))
+		if len(tmps) != 1 {
+			t.Fatalf("temp files before the lock: %v", tmps)
+		}
+		if b, _ := os.ReadFile(tmps[0]); string(b) != "good\n" {
+			t.Errorf("temp file not complete before the lock: %q", b)
+		}
+		if b, _ := os.ReadFile(p); string(b) != "bad\n" {
+			t.Errorf("target changed before the lock: %q", b)
+		}
+		other, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer other.Close()
+		ctx := context.Background()
+		conn, err := other.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+			t.Errorf("write lock already held while the temp file is prepared: %v", err)
+			return
+		}
+		conn.ExecContext(ctx, "ROLLBACK")
+	}
+	defer func() { testHookBeforeRestoreLock = nil }()
+
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !hookRan {
+		t.Fatal("hook did not run")
+	}
+	if b, _ := os.ReadFile(p); string(b) != "good\n" {
+		t.Fatalf("restored content: %q", b)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*")); len(tmps) != 0 {
+		t.Fatalf("temp files left: %v", tmps)
+	}
+}
