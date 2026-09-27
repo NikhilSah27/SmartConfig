@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<title>One Typo, Undone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&family=Ubuntu:wght@400;500;700&display=swap">
+<style>
+/* A single dark "screening room" look, chosen on purpose for a film. */
+:root {
+  color-scheme: dark;
+  --room: #0A0D12;
+  --panel: #121820;
+  --ink: #E6EAF0;
+  --muted: #98A3B1;
+  --line: #273140;
+  --aub: #300A24;          /* Ubuntu terminal background */
+  --tgreen: #8AE234;       /* Tango green: user@host */
+  --tblue: #729FCF;        /* Tango blue: path */
+  --tred: #EF2929;
+  --tfg: #EEEEEC;
+  --cyan: #6FE3D6;
+  --amber: #FFB547;
+  --violet: #C3A6FF;
+  --bad: #FF6B6B;
+  --good: #7BE0A8;
+  --ui: "Ubuntu", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Ubuntu Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--room); color: var(--ink); font-family: var(--ui);
+  font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 28px 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-size: clamp(26px, 4.4vw, 40px); font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
+.kicker { font-family: var(--mono); font-size: 14px; color: var(--cyan); letter-spacing: .06em; text-transform: uppercase; }
+.lede { color: var(--muted); margin: 0; max-width: 70ch; }
+code { font-family: var(--mono); font-size: 1.05em; color: var(--ink); }
+
+/* ---------- stage ---------- */
+.frame { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; border-radius: 12px; overflow: hidden; background: #05070A; box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px var(--line); }
+.stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; overflow: hidden; font-family: var(--ui); }
+.room { position: absolute; inset: 0; background:
+  radial-gradient(900px 500px at 50% 40%, #1B2330 0%, #0B0F15 60%, #06080B 100%); }
+.desk { position: absolute; left: 0; right: 0; top: 520px; bottom: 0; background: linear-gradient(#1A1511, #0E0B09); }
+.world { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; }
+.lidwrap { position: absolute; left: 320px; top: 60px; width: 640px; height: 400px; perspective: 1500px; perspective-origin: 50% 100%; }
+.lid { position: absolute; inset: 0; transform-origin: 50% 100%; border-radius: 14px 14px 4px 4px; background: linear-gradient(#2A2F36, #1B1F25); padding: 14px; box-shadow: 0 0 0 1px #3A414B inset; }
+.screen { position: relative; width: 612px; height: 372px; overflow: hidden; border-radius: 4px; background: #000; }
+.wall { position: absolute; inset: 0; background:
+  radial-gradient(420px 260px at 18% 20%, #6A2C55 0%, transparent 70%),
+  radial-gradient(380px 300px at 85% 85%, #C4572A 0%, transparent 70%),
+  linear-gradient(135deg, #2B0A26 0%, #3E1236 45%, #5A1E33 100%); }
+.topbar { position: absolute; left: 0; right: 0; top: 0; height: 18px; background: rgba(0,0,0,.55); color: #ddd; font-size: 10px; display: flex; justify-content: center; align-items: center; letter-spacing: .04em; }
+.dock { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 8px 10px; background: rgba(20,12,20,.55); border-radius: 12px; border: 1px solid rgba(255,255,255,.12); }
+.ico { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: #fff; }
+.ico svg { width: 18px; height: 18px; }
+.ico.a { background: #5B6B7D; } .ico.b { background: #2F6FB3; } .ico.c { background: #7A5C2E; } .ico.t { background: #1D1F21; box-shadow: 0 0 0 1px #555 inset; } .ico.e { background: #4B4F56; }
+.miniwin { position: absolute; left: 60px; top: 40px; width: 492px; height: 290px; border-radius: 8px; overflow: hidden; background: var(--aub); box-shadow: 0 16px 40px rgba(0,0,0,.6); transform-origin: 284px 302px; }
+.chrome { height: 30px; background: #2B2B2B; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #cfcfcf; font-size: 12px; }
+.chrome i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; background: #555; }
+.chrome i:first-child { background: #E95420; }
+.chrome span { flex: 1; text-align: center; margin-right: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.miniwin .chrome { height: 16px; font-size: 7px; padding: 0 6px; gap: 4px; }
+.miniwin .chrome i { width: 6px; height: 6px; }
+.mbody { padding: 6px 8px; font-family: var(--mono); font-size: 9px; color: var(--tfg); }
+.cursor { position: absolute; left: 0; top: 0; width: 18px; height: 24px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.6)); }
+.ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid #fff; opacity: 0; pointer-events: none; }
+.screendark { position: absolute; inset: 0; background: #000; pointer-events: none; }
+.base { position: absolute; left: 230px; top: 460px; width: 820px; height: 24px; background: linear-gradient(#C9CED6, #7E8691); clip-path: polygon(3% 0, 97% 0, 100% 100%, 0 100%); border-radius: 0 0 10px 10px; }
+.base::after { content: ""; position: absolute; left: 44%; width: 12%; top: 0; height: 7px; background: #9AA2AD; border-radius: 0 0 8px 8px; }
+.shadow { position: absolute; left: 250px; top: 478px; width: 780px; height: 40px; background: radial-gradient(closest-side, rgba(0,0,0,.6), transparent); }
+
+/* full-stage terminal + x-ray */
+.full { position: absolute; inset: 0; opacity: 0; background: radial-gradient(900px 600px at 30% 30%, #151B24, #080A0E); }
+.twin { position: absolute; left: 20px; top: 56px; height: 560px; width: 1240px; border-radius: 10px; overflow: hidden; background: var(--aub); box-shadow: 0 20px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+.twin .chrome { height: 34px; font-size: 14px; flex: none; }
+.twin .chrome i { width: 13px; height: 13px; }
+.tbody { flex: 1; padding: 12px 16px 16px; font-family: var(--mono); font-size: 18px; line-height: 1.38; color: var(--tfg); display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.tbody div { white-space: pre-wrap; word-break: break-all; min-height: 1.38em; }
+.pu { color: var(--tgreen); font-weight: 700; }
+.pp { color: var(--tblue); font-weight: 700; }
+.caret { display: inline-block; width: .55em; height: 1.05em; vertical-align: -0.18em; background: var(--tfg); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.o-dim { color: #B9B4B8; }
+.o-add { color: var(--tgreen); }
+.o-del { color: var(--tred); }
+.o-hunk { color: #34E2E2; }
+.o-ok { color: var(--tgreen); font-weight: 700; }
+mark { background: #FCE94F; color: #300A24; border-radius: 2px; padding: 0 1px; }
+
+.nano { position: absolute; left: 0; right: 0; top: 34px; bottom: 0; background: var(--aub); font-family: var(--mono); font-size: 18px; line-height: 1.38; color: var(--tfg); display: flex; flex-direction: column; }
+.nano .nh { background: #D3D7CF; color: #300A24; display: flex; justify-content: space-between; padding: 0 12px; white-space: pre; }
+.nano .nb { flex: 1; padding: 6px 12px; white-space: pre; overflow: hidden; }
+.nano .ns { text-align: center; min-height: 1.38em; }
+.nano .ns span { background: #D3D7CF; color: #300A24; padding: 0 6px; }
+.nano .nk { padding: 0 12px 6px; white-space: pre; color: var(--tfg); }
+.nano .nk b { background: #D3D7CF; color: #300A24; font-weight: 400; }
+.cur { background: var(--tfg); color: var(--aub); }
+.typo { background: var(--tred); color: #fff; }
+
+.xray { position: absolute; top: 56px; left: 740px; width: 520px; height: 560px; border-radius: 10px; overflow: hidden;
+  background: linear-gradient(rgba(111,227,214,.05) 1px, transparent 1px) 0 0 / 100% 24px,
+              linear-gradient(90deg, rgba(111,227,214,.05) 1px, transparent 1px) 0 0 / 24px 100%, #0B1620;
+  border: 1px solid #1E3B44; box-shadow: 0 20px 60px rgba(0,0,0,.6); padding: 12px 16px; display: flex; flex-direction: column; gap: 9px; opacity: 0; }
+.xh { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 500; }
+.xh .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.xh .sub { color: var(--muted); font-size: 13px; font-weight: 400; margin-left: auto; font-family: var(--mono); }
+.xl { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; display: flex; justify-content: space-between; }
+.xl span { color: var(--muted); letter-spacing: 0; text-transform: none; }
+.sys { display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; height: 196px; overflow: hidden; }
+.sc { border-left: 2px solid #24414A; padding: 2px 8px; opacity: .55; }
+.sc .c { font-family: var(--mono); font-size: 14px; color: #D8E6EA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc .n { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc.sql .c { color: var(--violet); }
+.sc.live { opacity: 1; border-left-color: var(--cyan); background: rgba(111,227,214,.08); }
+.sc.live .n { color: var(--ink); }
+.sc.hot { border-left-color: var(--amber); }
+.sc.hot .c { color: var(--amber); }
+.sc.hot.live { background: rgba(255,181,71,.12); }
+.hash { font-family: var(--mono); font-size: 15px; min-height: 44px; }
+.hash .lbl { font-size: 12px; color: var(--muted); font-family: var(--ui); }
+.hash .hx { color: var(--cyan); letter-spacing: .02em; word-break: break-all; }
+.hash .hx i { color: #2F4C55; font-style: normal; }
+.hash .ok { color: var(--good); font-family: var(--ui); font-size: 12px; margin-left: 8px; }
+.xgrid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 12px; }
+.tree { font-family: var(--mono); font-size: 13.5px; line-height: 1.5; white-space: pre; min-height: 96px; }
+.tree .m { color: var(--muted); }
+.tree .g { color: var(--good); }
+.tree .b { color: var(--bad); }
+.tree .t { color: var(--amber); }
+.fresh { animation: flash 1.1s ease; }
+@keyframes flash { 0% { background: rgba(111,227,214,.35); } 100% { background: transparent; } }
+.dbt { font-family: var(--mono); font-size: 13.5px; display: grid; gap: 2px; }
+.dbt div { display: grid; grid-template-columns: 70px 110px 1fr; gap: 10px; padding: 1px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+.dbt .h { color: var(--muted); font-size: 11.5px; letter-spacing: .06em; }
+.o-manual { color: var(--ink); } .o-pre { color: var(--amber); } .o-restore { color: var(--good); }
+
+.chap { position: absolute; left: 20px; top: 12px; font-family: var(--mono); font-size: 14px; color: #fff; background: rgba(0,0,0,.55); padding: 5px 12px; border-radius: 99px; border: 1px solid rgba(255,255,255,.15); letter-spacing: .04em; z-index: 5; }
+/* captions live in their own band below the windows (y 626-714), so they never cover content */
+.cap { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); max-width: 1220px; width: max-content; text-align: center; font-size: 23px; line-height: 1.32; color: #fff; background: rgba(5,7,10,.78); padding: 8px 18px; border-radius: 10px; z-index: 5; text-wrap: balance; }
+.cap.speaking::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #E95420; margin-right: 10px; vertical-align: 2px; animation: blink 1s steps(1) infinite; }
+.cap:empty { display: none; }
+.cap code { color: var(--cyan); font-size: 1em; }
+.endcard { position: absolute; inset: 0; z-index: 8; background: radial-gradient(800px 500px at 50% 45%, rgba(18,40,44,.97), rgba(5,7,10,.98)); display: grid; place-content: center; text-align: center; gap: 18px; opacity: 0; pointer-events: none; }
+.endcard h2 { margin: 0; font-size: 56px; font-weight: 700; letter-spacing: -0.01em; }
+.endcard p { margin: 0 auto; color: var(--muted); font-size: 22px; max-width: 900px; }
+.endstats { display: flex; gap: 40px; justify-content: center; margin-top: 10px; }
+.endstats div { display: grid; }
+.endstats b { font-size: 52px; color: var(--cyan); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.endstats span { color: var(--muted); font-size: 17px; margin-top: 6px; }
+.poster { position: absolute; inset: 0; z-index: 9; border: 0; cursor: pointer; background: linear-gradient(rgba(5,7,10,.25), rgba(5,7,10,.78)); color: #fff; display: grid; place-content: center; justify-items: center; gap: 18px; font-family: var(--ui); }
+.poster .big { width: 120px; height: 120px; border-radius: 50%; background: rgba(233,84,32,.95); display: grid; place-items: center; box-shadow: 0 0 0 10px rgba(233,84,32,.25); transition: transform .2s; }
+.poster:hover .big { transform: scale(1.06); }
+.poster .big svg { width: 52px; height: 52px; margin-left: 8px; }
+.poster .pt { font-size: 48px; font-weight: 700; }
+.poster .ps { font-size: 22px; color: #D0D6DE; }
+
+/* ---------- controls ---------- */
+.controls { display: grid; gap: 10px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pbtn { font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.pbtn:hover { border-color: var(--cyan); }
+.pbtn:focus-visible, input[type=range]:focus-visible, .chapbtn:focus-visible, .poster:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.pbtn svg { width: 15px; height: 15px; }
+.pbtn.main { background: #E95420; border-color: #E95420; color: #fff; }
+.pbtn[aria-pressed="true"] { background: var(--ink); color: var(--room); border-color: var(--ink); }
+.time { font-family: var(--mono); font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 96px; }
+input[type=range] { flex: 1; min-width: 160px; accent-color: #E95420; }
+.spacer { flex: 1; }
+.chapters { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 760px) { .chapters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.chapbtn { width: 100%; text-align: left; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: grid; gap: 1px; position: relative; overflow: hidden; }
+.chapbtn .no { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.chapbtn .tt { font-size: 14px; font-weight: 500; line-height: 1.25; }
+.chapbtn.cur { border-color: #E95420; }
+.chapbtn.cur .no { color: #E95420; }
+.chapbtn i { position: absolute; left: 0; bottom: 0; height: 3px; background: #E95420; width: 0; }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+@media (max-width: 760px) { .notes { grid-template-columns: 1fr; } }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 14px; color: var(--muted); }
+.note b { color: var(--ink); display: block; margin-bottom: 4px; font-weight: 500; }
+
+/* fullscreen: the whole player (video + controls) goes fullscreen; the stage is letterboxed */
+.player { display: grid; gap: 14px; }
+.player:fullscreen { background: #000; display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 14px; }
+.player:fullscreen .frame { flex: 1; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.player:fullscreen .chapters, .player:fullscreen .hint { display: none; }
+.player:-webkit-full-screen { background: #000; display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 14px; width: 100%; height: 100%; }
+.player:-webkit-full-screen .frame { flex: 1; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.player:-webkit-full-screen .chapters, .player:-webkit-full-screen .hint { display: none; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></g></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M11 6l-6 6 6 6M19 6l-6 6 6 6"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M13 6l6 6-6 6M5 6l6 6-6 6"/></symbol>
+  <symbol id="i-voice" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5M17.5 5.5a4.5 4.5 0 0 1 0 5M20 3a8 8 0 0 1 0 10"/></g></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></g></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></g></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M9 12h6M9 16h6"/></g></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M5 8l4 4-4 4M12 17h7"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></g></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <span class="kicker">SmartConfig · a short film</span>
+  <h1>One typo in /etc/fstab, undone with <code>sc</code></h1>
+  <p class="lede">From opening the laptop to a byte-for-byte restore. The left side is what you type and see; the right side is an X-ray of what happens inside the machine: system calls, files on disk, rows in the database.</p>
+
+  <div class="player" id="player">
+  <div class="frame" id="frame">
+    <div class="stage" id="stage" aria-hidden="true">
+      <div class="room"></div>
+      <div class="desk"></div>
+      <div class="world" id="world">
+        <div class="shadow"></div>
+        <div class="lidwrap">
+          <div class="lid" id="lid">
+            <div class="screen">
+              <div class="wall"></div>
+              <div class="topbar">Sun 27 Sep  08:26</div>
+              <div class="dock">
+                <div class="ico a"><svg><use href="#i-folder"/></svg></div>
+                <div class="ico b"><svg><use href="#i-globe"/></svg></div>
+                <div class="ico c"><svg><use href="#i-doc"/></svg></div>
+                <div class="ico t"><svg><use href="#i-term"/></svg></div>
+                <div class="ico e"><svg><use href="#i-cog"/></svg></div>
+              </div>
+              <div class="miniwin" id="miniwin">
+                <div class="chrome"><i></i><i></i><i></i><span>vboxuser@Ubuntu: ~/code/smartconfig</span></div>
+                <div class="mbody"><span class="pu">vboxuser@Ubuntu</span>:<span class="pp">~/code/smartconfig</span>$ <span class="caret"></span></div>
+              </div>
+              <div class="ripple" id="ripple"></div>
+              <svg class="cursor" id="cursor" viewBox="0 0 18 24"><path d="M1 1v19l5-5 3.5 7.5 3-1.4L9 13.8h7z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <div class="screendark" id="screendark"></div>
+            </div>
+          </div>
+        </div>
+        <div class="base"></div>
+      </div>
+
+      <div class="full" id="full">
+        <div class="twin" id="twin">
+          <div class="chrome"><i></i><i></i><i></i><span>vboxuser@Ubuntu: ~/code/smartconfig</span></div>
+          <div class="tbody" id="tbody"></div>
+          <div class="nano" id="nano" hidden></div>
+        </div>
+        <div class="xray" id="xray">
+          <div class="xh"><span class="dot"></span>Inside the machine<span class="sub" id="xsub"></span></div>
+          <div><div class="xl">System calls and SQL <span id="xcount"></span></div><div class="sys" id="sys"></div></div>
+          <div class="hash" id="hash"></div>
+          <div class="xgrid">
+            <div><div class="xl">/etc</div><div class="tree" id="etc"></div></div>
+            <div><div class="xl">$SC_HOME</div><div class="tree" id="home"></div></div>
+          </div>
+          <div><div class="xl">changes.db</div><div class="dbt" id="db"></div></div>
+        </div>
+      </div>
+
+      <div class="chap" id="chap"></div>
+      <div class="cap" id="cap"></div>
+      <div class="endcard" id="endcard">
+        <h2>fstab is back, byte for byte</h2>
+        <p>Same 446 bytes, same mode 0644, same owner root:root. The mistake and the fix are both in the history.</p>
+        <div class="endstats">
+          <div><b>4</b><span>sc commands</span></div>
+          <div><b>942</b><span>system calls in the restore</span></div>
+          <div><b>1</b><span>rename that changed fstab</span></div>
+        </div>
+      </div>
+    </div>
+    <button class="poster" id="poster" type="button" aria-label="Play the film">
+      <span class="big"><svg aria-hidden="true"><use href="#i-play"/></svg></span>
+      <span class="pt">One typo, undone</span>
+      <span class="ps">about 3 minutes · narrated · recorded on this VM</span>
+    </button>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <button class="pbtn main" id="play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+      <button class="pbtn" id="back" type="button" aria-label="Back 5 seconds"><svg aria-hidden="true"><use href="#i-back"/></svg></button>
+      <button class="pbtn" id="fwd" type="button" aria-label="Forward 5 seconds"><svg aria-hidden="true"><use href="#i-fwd"/></svg></button>
+      <input type="range" id="scrub" min="0" max="100" step="0.05" value="0" aria-label="Seek">
+      <span class="time" id="time">0:00 / 0:00</span>
+      <button class="pbtn" id="voice" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-voice"/></svg><span>Voice on</span></button>
+      <button class="pbtn" id="sfx" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-sound"/></svg><span>Sounds on</span></button>
+      <button class="pbtn" id="fs" type="button"><svg aria-hidden="true"><use href="#i-full"/></svg><span>Fullscreen</span></button>
+    </div>
+    <div class="row">
+      <span class="kicker" style="font-size:12px">Speed</span>
+      <button class="pbtn" type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+      <button class="pbtn" type="button" data-speed="1" aria-pressed="true">1×</button>
+      <button class="pbtn" type="button" data-speed="1.5" aria-pressed="false">1.5×</button>
+      <button class="pbtn" type="button" data-speed="2" aria-pressed="false">2×</button>
+      <span class="spacer"></span>
+      <span class="kicker hint" style="font-size:12px;color:var(--muted)">Space: play/pause · ← →: 5 s · F: fullscreen · double-click the video</span>
+    </div>
+    <ol class="chapters" id="chapters"></ol>
+  </div>
+  </div>
+
+  <div class="notes">
+    <div class="note"><b>This really happened</b>Every command, id and output line comes from a run on this VM at 08:26 on 27 Sep 2026. <code>/etc/fstab</code> was really broken and really restored; <code>cmp</code> confirmed it identical.</div>
+    <div class="note"><b>Where the system calls come from</b>They were captured with <code>strace</code> on the real <code>sc snapshot</code> and <code>sc restore</code>. Paths are shortened and a few calls are grouped so they fit; the SQL lines (in violet) are what SQLite does between them.</div>
+    <div class="note"><b>What M1 can't do yet</b>Here you snapshot by hand and restore before rebooting. The watcher (M2) will snapshot edits automatically, and the rescue boot (M4) will let you restore after the machine fails to start.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  function $(s) { return document.querySelector(s); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function ease(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+
+  /* ---------------- real data ---------------- */
+  var SHA_GOOD = "9d71ab603c19f301975d432bc129a0beb9a2c9522a03948da39a18cea53317dd";
+  var SHA_BAD = "80c6aea6da8c98445ff0e51fa695ccc1eb49514e315f46235a20940df37f7187";
+  var FSTAB = [
+    "# /etc/fstab: static file system information.",
+    "#",
+    "# Use 'blkid' to print the universally unique identifier for a",
+    "# device; this may be used with UUID= as a more robust way to name devices",
+    "# that works even if disks are added and removed. See fstab(5).",
+    "#",
+    "# <file system> <mount point>   <type>  <options>       <dump>  <pass>",
+    "# / was on /dev/sda2 during curtin installation",
+    "/dev/disk/by-uuid/e41c582c-c4d8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1"
+  ];
+  var TYPO_ROW = 8, TYPO_COL = 29;
+
+  function prompt(cmd) { return '<span class="pu">vboxuser@Ubuntu</span>:<span class="pp">~/code/smartconfig</span>$ ' + esc(cmd); }
+  function out(t, cls) { return '<span class="' + (cls || "") + '">' + esc(t) + "</span>"; }
+
+  /* ---------------- the script ---------------- */
+  var B = [], chapters = [], chapNo = 0;
+  function add(d, run) { B.push({ d: d, run: run }); }
+  function CH(title) { chapNo++; var no = chapNo; chapters.push({ no: no, title: title, beat: B.length }); add(0, function (S) { S.chapter = title; S.chapNo = no; S.caption = ""; }); }
+  /* narration: every caption is also spoken; sayify turns ids and paths into words a voice can read */
+  var CAPS = [];
+  function spell(s) { return s.toUpperCase().split("").join(" "); }
+  function sayify(text) {
+    return text.replace(/<[^>]+>/g, "")
+      .replace(/…/g, ", ")
+      .replace(/\/etc\/fstab/g, "etc F-stab")
+      .replace(/\bfstab\b/g, "F-stab")
+      .replace(/\bsha256\b/gi, "SHA 256")
+      .replace(/\bCGO\b/g, "C-go")
+      .replace(/\bUUID\b/g, "U U I D")
+      .replace(/\bM(\d)\b/g, "milestone $1")
+      .replace(/\bsc\b/g, "S C")
+      .replace(/\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{3,6}\b/g, spell)
+      .replace(/\b([db]) became ([db])\b/, "D became B")
+      .replace(/[()]/g, "");
+  }
+  function C(text, say) { CAPS.push({ beat: B.length, say: say || sayify(text) }); add(0, function (S) { S.caption = text; }); }
+  function SAY(say) { CAPS.push({ beat: B.length, say: say }); add(0, function () {}); }
+  function W(d) { add(d, function () {}); }
+  function T(cmd) {
+    var d = 0.45 + cmd.length / 24;
+    add(d, function (S, p) {
+      if (p < 1) S.typing = cmd.slice(0, Math.floor(cmd.length * Math.min(1, p / 0.88)));
+      else { S.typing = null; S.term.push(prompt(cmd)); }
+    });
+  }
+  function O(lines, d) {
+    add(d || 0.35 + lines.length * 0.12, function (S, p) {
+      var n = Math.max(1, Math.ceil(p * lines.length));
+      for (var i = 0; i < n; i++) S.term.push(lines[i]);
+    });
+  }
+  function X(on, sub) { add(0.7, function (S, p) { S.xray = on ? ease(p) : 1 - ease(p); if (sub) S.xsub = sub; }); }
+  function SYSCLR(sub) { add(0, function (S) { S.sys = []; S.hash = null; S.xsub = sub; }); }
+  function SYS(c, n, o) {
+    o = o || {};
+    add(o.d || 1.35, function (S, p) {
+      S.sys.push({ c: c, n: n, cls: o.cls || "", at: S.cur });
+      S.nsys++;
+      if (o.fx && p >= 0.3) o.fx(S);
+    });
+  }
+  function H(label, sha, d, okText) {
+    add(d, function (S, p) { S.hash = { label: label, sha: sha, n: Math.floor(64 * Math.min(1, p / 0.8)), ok: p >= 0.85 ? okText : "" }; });
+  }
+
+  /* 1 */
+  CH("Open the laptop");
+  C("This is <code>sc</code>, a safety net for Linux config files. It starts with a closed laptop.");
+  W(1.2);
+  add(2.0, function (S, p) { S.lid = ease(p); });
+  add(1.0, function (S, p) { S.screen = p; });
+  C("You want to change <code>/etc/fstab</code>, the file that tells Linux which disks to mount at boot.");
+  add(1.6, function (S, p) { var e = ease(p); S.curOn = 1; S.curPos = [lerp(430, 344, e), lerp(230, 342, e)]; });
+  add(0.45, function (S, p) { S.curOn = 1; S.curPos = [344, 342]; S.click = p < 1 ? p : 0; });
+  add(0.7, function (S, p) { S.curOn = 1; S.curPos = [344, 342]; S.win = ease(p); });
+  C("Open a terminal.");
+  add(0.6, function (S, p) { S.win = 1; S.curOn = 0; });
+  add(1.8, function (S, p) { S.win = 1; S.zoom = ease(p); S.full = p < 0.8 ? 0 : (p - 0.8) / 0.2; });
+  W(0.3);
+
+  /* 2 */
+  CH("Build the binary");
+  C("First, build <code>sc</code>. CGO is off, so Go links everything into one file.");
+  T("make build");
+  O([out('go build -trimpath -ldflags="-s -w" -o bin/sc ./cmd/sc', "o-dim")], 1.4);
+  W(0.4);
+  T("file bin/sc");
+  O([out("bin/sc: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=Ubg289tR…, stripped")]);
+  C("Statically linked: it needs no shared libraries, so it still runs when the rest of the system is half broken.");
+  W(3.2);
+
+  /* 3 */
+  CH("sc init");
+  T("sudo ./bin/sc init");
+  X(true, "sc init");
+  SYSCLR("sc init");
+  SYS('execve("./bin/sc", ["./bin/sc", "init"])', "starts: no dynamic loader, no .so files opened");
+  SYS('mkdirat("/var/lib/smartconfig/objects", 0700)', "private data directory, only root can look inside",
+    { fx: function (S) { S.home.exists = true; S.home.objects = true; S.home.at = S.cur; } });
+  SYS('open("/var/lib/smartconfig/changes.db", O_CREAT)', "a small SQLite database file",
+    { fx: function (S) { S.home.db = true; S.home.dbAt = S.cur; } });
+  SYS("CREATE TABLE changes (id, ts, path, blob, size, mode, uid, gid, origin, intent)", "one row per change, with owner and mode", { cls: "sql" });
+  O([out("initialised /var/lib/smartconfig")]);
+  C("<code>init</code> creates the store: a folder for file contents, and a database for the history.");
+  W(2.6);
+
+  /* 4 */
+  CH("Take a snapshot");
+  C("Before touching fstab, save a copy of it.");
+  T('sudo ./bin/sc snapshot /etc/fstab -m "before editing"');
+  SYSCLR("sc snapshot");
+  SYS('execve("./bin/sc", ["snapshot", "/etc/fstab", "-m", …])', "sc starts");
+  SYS('newfstatat("/etc/fstab", AT_SYMLINK_NOFOLLOW) = 0', "lstat: a regular file, 446 bytes, not a symlink");
+  SYS('openat("/etc/fstab", O_RDONLY) = 7', "open the real file, read-only");
+  SYS('read(7, "# /etc/fstab: static file s"…, 512) = 446', "all 446 bytes are in memory");
+  C("The bytes are fingerprinted with sha256. The same bytes always give the same fingerprint.");
+  H("sha256 of the 446 bytes", SHA_GOOD, 2.0, "");
+  SYS('newfstatat("objects/9d/9d71ab60…") = ENOENT', "this content was never stored before");
+  SYS('mkdirat("objects/9d", 0700)', "folder named after the first two hex digits",
+    { fx: function (S) { S.home.blobs.push({ pfx: "9d", sha: SHA_GOOD, tmp: true, at: S.cur }); } });
+  SYS('openat("objects/9d/.9d71…sc-tmp-3715733652", O_CREAT|O_EXCL)', "written under a temporary name first");
+  SYS('write(7, "# /etc/fstab…", 446) = 446 · fsync(7)', "bytes forced onto the disk");
+  SYS('renameat(".9d71…sc-tmp-…", "objects/9d/9d71ab60…")', "now the copy exists, whole or not at all", { cls: "hot",
+    fx: function (S) { var b = S.home.blobs[0]; b.tmp = false; b.at = S.cur; } });
+  C("The id is the first six hex digits of sha256(path, time, fingerprint).");
+  SYS("INSERT INTO changes VALUES ('2c6901', …, 'manual', 'before editing')", "one row of history", { cls: "sql",
+    fx: function (S) { S.db.unshift({ id: "2c6901", o: "manual", w: "before editing", at: S.cur }); } });
+  SYS("fsync(changes.db) · unlink(changes.db-journal)", "SQLite commits the transaction");
+  SYS('write(1, "snapshot 2c6901  /etc/fstab  (446 bytes)\\n")', "the line you see in the terminal");
+  O([out("snapshot 2c6901  /etc/fstab  (446 bytes)")]);
+  C("Snapshot <code>2c6901</code> is saved: the bytes in objects/, the details in changes.db.");
+  W(2.6);
+
+  /* 5 */
+  CH("The one-character mistake");
+  X(false);
+  C("Now you edit fstab.");
+  T("sudo nano /etc/fstab");
+  add(0.5, function (S) { S.nano = { row: 0, col: 0, edited: false, status: "", mod: false }; });
+  C("You move down to the last line, the one that mounts the root filesystem…");
+  add(2.4, function (S, p) { var e = ease(p); S.nano.row = Math.round(TYPO_ROW * Math.min(1, e * 1.6)); S.nano.col = Math.round(TYPO_COL * Math.max(0, (e - 0.55) / 0.45)); });
+  W(0.5);
+  add(0.9, function (S, p) { if (p > 0.4) { S.nano.edited = true; S.nano.mod = true; } });
+  C("…and a stray keystroke turns <code>c4d8</code> into <code>c4b8</code>. The root disk's UUID is now wrong.");
+  W(2.4);
+  add(1.0, function (S) { S.nano.status = "File Name to Write: /etc/fstab"; });
+  add(1.2, function (S) { S.nano.status = "[ Wrote 9 lines ]"; S.nano.mod = false; S.etcBad = true; });
+  add(0.5, function (S, p) { if (p >= 0.5) S.nano = null; });
+  C("Nothing checks it. On this root line Ubuntu would probably still boot, but the same slip on another disk's line stops the next boot. The third film in the series shows that.");
+  W(3.2);
+
+  /* 6 */
+  CH("Snapshot the damage");
+  C("Take another snapshot. (In M2 the watcher will do this for you, on every save.)");
+  T('sudo ./bin/sc snapshot /etc/fstab -m "typo in root uuid"');
+  X(true, "sc snapshot");
+  SYSCLR("sc snapshot");
+  SYS('newfstatat("/etc/fstab") · openat · read = 446', "same size as before…");
+  H("sha256 of the 446 bytes", SHA_BAD, 1.6, "");
+  C("Same size, different fingerprint: one changed character changes the whole hash.");
+  SYS('newfstatat("objects/80/80c6aea6…") = ENOENT', "…but content never seen before");
+  SYS('mkdirat · openat(tmp) · write · fsync · renameat', "stored as objects/80/80c6aea6…", { cls: "hot",
+    fx: function (S) { S.home.blobs.push({ pfx: "80", sha: SHA_BAD, tmp: false, at: S.cur }); } });
+  SYS("INSERT INTO changes VALUES ('8b8728', …, 'manual', 'typo in root uuid')", "the broken version is in history too", { cls: "sql",
+    fx: function (S) { S.db.unshift({ id: "8b8728", o: "manual", w: "typo in root uuid", at: S.cur }); } });
+  O([out("snapshot 8b8728  /etc/fstab  (446 bytes)")]);
+  W(2.2);
+
+  /* 7 */
+  CH("See the diff");
+  X(false);
+  T("sudo ./bin/sc diff 2c6");
+  O([
+    out("--- a/etc/fstab (snapshot 2c6901)"),
+    out("+++ b/etc/fstab (on disk)"),
+    out("@@ -6,4 +6,4 @@", "o-hunk"),
+    out(" #"),
+    out(" # <file system> <mount point>   <type>  <options>       <dump>  <pass>"),
+    out(" # / was on /dev/sda2 during curtin installation"),
+    '<span class="o-del">-/dev/disk/by-uuid/e41c582c-c4<mark>d</mark>8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1</span>',
+    '<span class="o-add">+/dev/disk/by-uuid/e41c582c-c4<mark>b</mark>8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1</span>'
+  ], 1.4);
+  C("<code>2c6</code> is enough: it matches only 2c6901. The diff compares that snapshot with the file on disk now.");
+  W(3.4);
+  C("One line changed, one character: <code>d</code> became <code>b</code>.");
+  W(2.6);
+
+  /* 8 */
+  CH("Restore");
+  C("Put the good version back.");
+  T("sudo ./bin/sc restore 2c6");
+  X(true, "sc restore");
+  SYSCLR("sc restore");
+  SYS("SELECT … FROM changes WHERE id LIKE '2c6%'", "prefix 2c6 → 2c6901, exactly one match", { cls: "sql" });
+  SYS('openat("objects/9d/9d71ab60…") · read = 446', "load the good copy");
+  H("check the saved copy's sha256", SHA_GOOD, 1.3, "✓ matches, not corrupted");
+  C("The saved copy is re-hashed first. If it had been damaged on disk, sc would stop here.");
+  W(1.4);
+  SYS('newfstatat("/etc/fstab", AT_SYMLINK_NOFOLLOW) = 0', "the current file: still a regular file");
+  SYS('openat("/etc/fstab") · read = 446', "read the broken version");
+  SYS('newfstatat("objects/80/80c6aea6…") = 0', "already stored: reused, nothing written");
+  SYS("INSERT INTO changes VALUES ('a8d6f5', …, 'pre-restore', …)", "the undo point, saved before anything changes", { cls: "sql",
+    fx: function (S) { S.db.unshift({ id: "a8d6f5", o: "pre-restore", w: "before restoring 2c6901", at: S.cur }); } });
+  C("Before touching fstab, sc records its current state as <code>a8d6f5</code>. So the restore itself can be undone.");
+  W(1.8);
+  SYS('openat("/etc/.fstab.sc-tmp-2118165098", O_CREAT|O_EXCL, 0600)', "a temp file right next to fstab",
+    { fx: function (S) { S.etcTmp = 1; S.etcTmpAt = S.cur; } });
+  SYS('write(7, "# /etc/fstab: static…", 446) = 446', "the good bytes go into the temp file");
+  SYS("fchown(7, 0, 0)", "owner root:root, as recorded", { fx: function (S) { S.etcTmp = 2; } });
+  SYS("fchmod(7, 0644)", "mode 0644, as recorded", { fx: function (S) { S.etcTmp = 3; } });
+  SYS("fsync(7)", "really on the disk, not just in memory");
+  C("fstab itself hasn't changed yet. If the power went out now, the old file would still be there, whole.");
+  W(2.2);
+  SYS('renameat("/etc/.fstab.sc-tmp-2118165098", "/etc/fstab")', "THE moment: one atomic swap", { cls: "hot", d: 2.0,
+    fx: function (S) { S.etcTmp = 0; S.etcBad = false; S.etcAt = S.cur; } });
+  C("One rename swaps the file in. Anything reading fstab sees the old version or the new one, never a mix of both.");
+  W(1.6);
+  SYS("fsync(/etc)", "make the rename itself durable");
+  SYS("INSERT INTO changes VALUES ('fb5cf4', …, 'restore', 'restored from 2c6901')", "the restore goes into history", { cls: "sql",
+    fx: function (S) { S.db.unshift({ id: "fb5cf4", o: "restore", w: "restored from 2c6901", at: S.cur }); } });
+  SYS('write(1, "restored /etc/fstab from 2c6901 …")', "the line you see");
+  O([out("restored /etc/fstab from 2c6901 (mode 0644 root:root), previous state saved as a8d6f5")]);
+  W(2.6);
+
+  /* 9 */
+  CH("Check the result");
+  X(false);
+  T("sudo ./bin/sc log /etc/fstab");
+  O([
+    out("ID      WHEN              ORIGIN       FILE        SIZE  WHAT"),
+    out("fb5cf4  2026-09-27 08:26  restore      /etc/fstab  446   restored from 2c6901"),
+    out("a8d6f5  2026-09-27 08:26  pre-restore  /etc/fstab  446   before restoring 2c6901"),
+    out("8b8728  2026-09-27 08:26  manual       /etc/fstab  446   typo in root uuid"),
+    out("2c6901  2026-09-27 08:26  manual       /etc/fstab  446   before editing")
+  ], 1.2);
+  C("Newest first: the restore, the undo point, the broken edit, the original.");
+  W(3.0);
+  C("Compare with a plain copy taken before the test:");
+  T("sudo cmp /etc/fstab fstab.backup && echo IDENTICAL");
+  O([out("IDENTICAL", "o-ok")]);
+  T("stat -c '%a %U:%G' /etc/fstab");
+  O([out("644 root:root", "o-ok")]);
+  C("Byte for byte the original, with its original mode and owner. Safe to reboot.");
+  W(3.0);
+
+  /* 10 */
+  CH("The end");
+  add(1.2, function (S, p) { S.end = ease(p); });
+  SAY("F-stab is back, byte for byte. Same bytes, same mode, same owner. And both the mistake and the fix are kept in the history.");
+  W(5);
+
+  var t = 0;
+  B.forEach(function (b) { b.t = t; t += b.d; });
+  var TOTAL = t;
+  chapters.forEach(function (c) { c.t = B[c.beat].t; });
+  CAPS.forEach(function (c) { c.t = B[c.beat].t; });
+
+  /* ---------------- state at time t ---------------- */
+  function init() {
+    return { lid: 0, screen: 0, curOn: 0, curPos: [430, 230], click: 0, win: 0, zoom: 0, full: 0,
+      term: [], typing: null, xray: 0, xsub: "", sys: [], nsys: 0, hash: null,
+      home: { exists: false, objects: false, db: false, blobs: [] }, db: [],
+      etcBad: false, etcTmp: 0, nano: null, caption: "", chapter: "", chapNo: 0, end: 0, cur: -1 };
+  }
+  function stateAt(time) {
+    var S = init();
+    for (var i = 0; i < B.length; i++) {
+      var b = B[i];
+      if (time < b.t) break;
+      S.cur = i;
+      if (time >= b.t + b.d) b.run(S, 1);
+      else { b.run(S, b.d ? (time - b.t) / b.d : 1); break; }
+    }
+    return S;
+  }
+
+  /* ---------------- rendering ---------------- */
+  var el = {
+    stage: $("#stage"), frame: $("#frame"), world: $("#world"), lid: $("#lid"), dark: $("#screendark"),
+    cursor: $("#cursor"), ripple: $("#ripple"), mini: $("#miniwin"), full: $("#full"), twin: $("#twin"),
+    tbody: $("#tbody"), nano: $("#nano"), xray: $("#xray"), xsub: $("#xsub"), xcount: $("#xcount"),
+    sys: $("#sys"), hash: $("#hash"), etc: $("#etc"), home: $("#home"), db: $("#db"),
+    chap: $("#chap"), cap: $("#cap"), end: $("#endcard")
+  };
+  var cache = new Map();
+  function html(node, s) { if (cache.get(node) !== s) { cache.set(node, s); node.innerHTML = s; } }
+
+  var Z = 2.48, ZX = 640 - 640 * Z, ZY = 360 - 259 * Z;
+  function render(S) {
+    el.lid.style.transform = "rotateX(" + (-94 * (1 - S.lid)) + "deg)";
+    el.dark.style.opacity = String(1 - S.screen);
+    el.cursor.style.display = S.curOn ? "block" : "none";
+    el.cursor.style.transform = "translate(" + S.curPos[0] + "px," + S.curPos[1] + "px)";
+    el.ripple.style.left = S.curPos[0] + "px"; el.ripple.style.top = S.curPos[1] + "px";
+    el.ripple.style.opacity = S.click ? String(1 - S.click) : "0";
+    el.ripple.style.transform = "scale(" + (0.4 + S.click * 1.4) + ")";
+    el.mini.style.opacity = String(S.win);
+    el.mini.style.transform = "scale(" + (0.06 + 0.94 * S.win) + ")";
+    var s = lerp(1, Z, S.zoom);
+    el.world.style.transform = "translate(" + (ZX * S.zoom) + "px," + (ZY * S.zoom) + "px) scale(" + s + ")";
+    el.world.style.visibility = S.full >= 1 ? "hidden" : "visible";
+    el.full.style.opacity = String(S.full);
+
+    el.twin.style.width = lerp(1240, 700, S.xray) + "px";
+    el.xray.style.opacity = String(S.xray);
+    el.xray.style.transform = "translateX(" + ((1 - S.xray) * 560) + "px)";
+
+    /* terminal */
+    var lines = S.term.slice(-40).map(function (l) { return "<div>" + l + "</div>"; });
+    if (!S.nano) lines.push("<div>" + prompt(S.typing || "") + '<span class="caret"></span></div>');
+    html(el.tbody, lines.join(""));
+
+    /* nano */
+    if (S.nano) {
+      el.nano.hidden = false;
+      var n = S.nano;
+      var body = FSTAB.map(function (line, r) {
+        if (r === TYPO_ROW && n.edited) line = line.slice(0, TYPO_COL) + "b" + line.slice(TYPO_COL + 1);
+        var parts = [];
+        for (var c = 0; c < line.length; c++) {
+          var ch = esc(line.charAt(c));
+          if (r === n.row && c === n.col && !n.edited) parts.push('<span class="cur">' + ch + "</span>");
+          else if (r === TYPO_ROW && c === TYPO_COL && n.edited) parts.push('<span class="typo">' + ch + "</span>");
+          else if (r === n.row && c === n.col + 1 && n.edited) parts.push('<span class="cur">' + ch + "</span>");
+          else parts.push(ch);
+        }
+        return parts.join("");
+      }).join("\n");
+      html(el.nano,
+        '<div class="nh"><span>  GNU nano</span><span>/etc/fstab</span><span>' + (n.mod ? "Modified  " : "          ") + "</span></div>" +
+        '<div class="nb">' + body + "</div>" +
+        '<div class="ns">' + (n.status ? "<span>" + esc(n.status) + "</span>" : "") + "</div>" +
+        '<div class="nk"><b>^G</b> Help      <b>^O</b> Write Out  <b>^W</b> Where Is   <b>^K</b> Cut        <b>^T</b> Execute\n<b>^X</b> Exit      <b>^R</b> Read File  <b>^\\</b> Replace    <b>^U</b> Paste      <b>^J</b> Justify</div>');
+    } else {
+      el.nano.hidden = true;
+    }
+
+    /* x-ray */
+    html(el.xsub, esc(S.xsub));
+    html(el.xcount, S.sys.length ? esc(S.sys.length + " so far") : "");
+    html(el.sys, S.sys.slice(-5).map(function (r) {
+      return '<div class="sc ' + r.cls + (r.at === S.cur ? " live" : "") + '"><div class="c">' + esc(r.c) + '</div><div class="n">' + esc(r.n) + "</div></div>";
+    }).join(""));
+    if (S.hash) {
+      var h = S.hash, shown = h.sha.slice(0, h.n), rest = h.sha.slice(h.n).replace(/./g, "·");
+      html(el.hash, '<div class="lbl">' + esc(h.label) + (h.ok ? '<span class="ok">' + esc(h.ok) + "</span>" : "") + '</div><div class="hx">' + shown + "<i>" + rest + "</i></div>");
+    } else html(el.hash, "");
+    var etc = [];
+    if (S.etcTmp) etc.push('<span class="t">.fstab.sc-tmp-…</span>\n<span class="m">  446 B  ' + (S.etcTmp >= 3 ? "0644" : "0600") + " " + (S.etcTmp >= 2 ? "root:root" : "root:root") + "</span>");
+    etc.push('<span class="' + (S.etcBad ? "b" : "g") + '">fstab</span>  ' + (S.etcBad ? '<span class="b">c4b8 typo</span>' : '<span class="g">good</span>') + '\n<span class="m">  446 B  0644 root:root</span>');
+    html(el.etc, (S.etcAt === S.cur ? '<div class="fresh">' : "<div>") + etc.join("\n") + "</div>");
+    var H2 = S.home, t2 = [];
+    if (H2.exists) {
+      t2.push('smartconfig/ <span class="m">0700</span>');
+      t2.push("├ objects/");
+      H2.blobs.forEach(function (b, k) {
+        var last = k === H2.blobs.length - 1;
+        var nm = b.tmp ? '<span class="t">.' + b.sha.slice(0, 8) + "…sc-tmp</span>" : b.pfx + "/" + b.sha.slice(0, 8) + "…";
+        t2.push('<span class="' + (b.at === S.cur ? "fresh" : "") + '">│ ' + (last ? "└ " : "├ ") + nm + ' <span class="m">0600</span></span>');
+      });
+      if (H2.db) t2.push('<span class="' + (H2.dbAt === S.cur ? "fresh" : "") + '">└ changes.db</span>');
+    } else t2.push('<span class="m">(does not exist yet)</span>');
+    html(el.home, t2.join("\n"));
+    var oc = { manual: "o-manual", "pre-restore": "o-pre", restore: "o-restore" };
+    html(el.db, '<div class="h"><span>ID</span><span>ORIGIN</span><span>WHAT</span></div>' + (S.db.length ? S.db.map(function (r) {
+      return '<div class="' + (r.at === S.cur ? "fresh" : "") + '"><span>' + r.id + '</span><span class="' + oc[r.o] + '">' + r.o + "</span><span>" + esc(r.w) + "</span></div>";
+    }).join("") : '<div><span class="m" style="grid-column:1/-1;color:var(--muted)">(no rows yet)</span></div>'));
+
+    html(el.chap, S.chapNo ? String(S.chapNo).padStart(2, "0") + " · " + esc(S.chapter) : "");
+    html(el.cap, S.end > 0.5 ? "" : S.caption);
+    el.end.style.opacity = String(S.end);
+    el.end.style.pointerEvents = S.end > 0.9 ? "auto" : "none";
+  }
+
+  /* ---------------- sound effects (synthesised, no files) ---------------- */
+  var actx = null, noiseBuf = null;
+  function audio() {
+    if (!actx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { actx = new AC(); } catch (e) { return null; }
+      noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function noise(dur, freq, q, gain, type) {
+    var a = audio(); if (!a) return;
+    var s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), t0 = a.currentTime;
+    s.buffer = noiseBuf; f.type = type || "bandpass"; f.frequency.value = freq; f.Q.value = q || 1;
+    g.gain.setValueAtTime(gain, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(a.destination);
+    s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.03);
+  }
+  function tone(freq, dur, gain, delay, type) {
+    var a = audio(); if (!a) return;
+    var o = a.createOscillator(), g = a.createGain(), t0 = a.currentTime + (delay || 0);
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  var SFX = {
+    key: function () { noise(0.035, 2400 + Math.random() * 1600, 1.4, 0.10); },
+    enter: function () { noise(0.07, 900, 0.8, 0.20, "lowpass"); },
+    click: function () { noise(0.025, 4200, 2, 0.28); },
+    lid: function () { noise(1.1, 420, 0.6, 0.10, "lowpass"); tone(95, 0.3, 0.10, 0.9); },
+    boot: function () { tone(523, 0.5, 0.05); tone(784, 0.8, 0.05, 0.18); },
+    whoosh: function () { noise(1.4, 700, 0.5, 0.06, "bandpass"); },
+    blip: function () { tone(1320, 0.06, 0.025); },
+    chime: function () { tone(660, 0.6, 0.08); tone(990, 0.9, 0.08, 0.14); },
+    typo: function () { tone(170, 0.28, 0.05, 0, "square"); },
+    end: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 1.8, 0.045, i * 0.09); }); }
+  };
+  function sfxFor(prev, S) {
+    if (prev.lid === 0 && S.lid > 0) SFX.lid();
+    if (prev.screen === 0 && S.screen > 0) SFX.boot();
+    if (!prev.click && S.click > 0) SFX.click();
+    if (prev.zoom === 0 && S.zoom > 0) SFX.whoosh();
+    if ((S.typing || "").length > (prev.typing || "").length) SFX.key();
+    if (S.term.length > prev.term.length && S.term[S.term.length - 1].indexOf('class="pu"') >= 0) SFX.enter();
+    if (S.nano && prev.nano && (S.nano.row !== prev.nano.row || S.nano.col !== prev.nano.col)) SFX.key();
+    if (S.nano && S.nano.edited && !(prev.nano && prev.nano.edited)) SFX.typo();
+    if (S.sys.length > prev.sys.length) { if (S.sys[S.sys.length - 1].cls === "hot") SFX.chime(); else SFX.blip(); }
+    if (prev.end === 0 && S.end > 0) SFX.end();
+  }
+
+  /* ---------------- narration (the browser's built-in speech) ---------------- */
+  var synth = window.speechSynthesis || null, voice = null, utter = null, speaking = false, speakUntil = 0, spokenIdx = null;
+  function pickVoice() {
+    if (!synth) return null;
+    var vs = synth.getVoices().filter(function (v) { return /^en/i.test(v.lang); });
+    var pref = [/natural/i, /google us english/i, /samantha/i, /aria/i, /jenny/i, /daniel/i, /google uk english/i, /en-us/i];
+    for (var i = 0; i < pref.length; i++) {
+      for (var j = 0; j < vs.length; j++) if (pref[i].test(vs[j].name) || pref[i].test(vs[j].lang)) return vs[j];
+    }
+    return vs[0] || null;
+  }
+  if (synth) { voice = pickVoice(); synth.onvoiceschanged = function () { voice = pickVoice(); }; }
+  function hush() { if (synth) synth.cancel(); speaking = false; utter = null; }
+  function speak(text) {
+    if (!synth) return;
+    synth.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-US";
+    u.rate = Math.max(0.6, Math.min(1.8, 1.02 * speed));
+    u.onend = u.onerror = function () { if (utter === u) speaking = false; };
+    utter = u; speaking = true;
+    speakUntil = performance.now() + ((text.length / 14) / u.rate + 2) * 1000;
+    synth.speak(u);
+  }
+  function capAt(x) { var k = -1; for (var i = 0; i < CAPS.length; i++) { if (CAPS[i].t <= x) k = i; else break; } return k; }
+  function nextCapT(x) { for (var i = 0; i < CAPS.length; i++) if (CAPS[i].t > x) return CAPS[i].t; return null; }
+
+  /* ---------------- player ---------------- */
+  var time = 0, playing = false, speed = 1, last = null, started = false, voiceOn = !!synth, sfxOn = true, prevS = null;
+  var playBtn = $("#play"), scrub = $("#scrub"), timeEl = $("#time"), poster = $("#poster");
+  var voiceBtn = $("#voice"), sfxBtn = $("#sfx"), fsBtn = $("#fs"), player = $("#player");
+  scrub.max = TOTAL.toFixed(2);
+  function fmt(x) { x = Math.max(0, Math.floor(x)); return Math.floor(x / 60) + ":" + String(x % 60).padStart(2, "0"); }
+  var chapList = $("#chapters");
+  chapters.forEach(function (c, k) {
+    var li = document.createElement("li");
+    li.innerHTML = '<button class="chapbtn" type="button" data-k="' + k + '"><span class="no">' + String(c.no).padStart(2, "0") + " · " + fmt(c.t) + '</span><span class="tt">' + esc(c.title) + "</span><i></i></button>";
+    chapList.appendChild(li);
+  });
+  var chapBtns = Array.prototype.slice.call(chapList.querySelectorAll(".chapbtn"));
+  chapList.addEventListener("click", function (e) {
+    var b = e.target.closest(".chapbtn"); if (!b) return;
+    seek(chapters[+b.dataset.k].t + 0.001); if (!playing) setPlaying(true);
+  });
+
+  function updateUI() {
+    scrub.value = time.toFixed(2);
+    timeEl.textContent = fmt(time) + " / " + fmt(TOTAL);
+    var ci = 0;
+    chapters.forEach(function (c, k) { if (time >= c.t) ci = k; });
+    chapBtns.forEach(function (b, k) {
+      b.classList.toggle("cur", k === ci);
+      var c = chapters[k], end = k + 1 < chapters.length ? chapters[k + 1].t : TOTAL;
+      var f = time >= end ? 1 : time <= c.t ? 0 : (time - c.t) / (end - c.t);
+      b.querySelector("i").style.width = (f * 100) + "%";
+    });
+    el.cap.classList.toggle("speaking", voiceOn && speaking && playing);
+  }
+  function draw() { var S = stateAt(time); render(S); updateUI(); return S; }
+  function setPlaying(on) {
+    playing = on;
+    if (on && !started) { started = true; poster.hidden = true; }
+    if (on && time >= TOTAL) time = 0;
+    if (on && sfxOn) audio();
+    if (!on) { hush(); spokenIdx = null; }
+    prevS = null;
+    playBtn.querySelector("use").setAttribute("href", on ? "#i-pause" : "#i-play");
+    playBtn.querySelector("span").textContent = on ? "Pause" : (time >= TOTAL ? "Watch again" : time > 0 ? "Resume" : "Play");
+    last = null;
+    if (on) requestAnimationFrame(loop);
+    updateUI();
+  }
+  function seek(x) {
+    time = Math.max(0, Math.min(TOTAL, x));
+    if (!started) { started = true; poster.hidden = true; }
+    hush(); spokenIdx = null; prevS = null;
+    draw();
+  }
+  function loop(ts) {
+    if (!playing) return;
+    if (last !== null) {
+      var nt = time + Math.min(0.1, (ts - last) / 1000) * speed;
+      // hold the picture on the next caption until the narrator finishes the current one
+      if (voiceOn && speaking && performance.now() < speakUntil) {
+        var nc = nextCapT(time);
+        if (nc !== null && nt >= nc) nt = Math.max(time, nc - 0.0005);
+        if (nt >= TOTAL) nt = Math.max(time, TOTAL - 0.0005);
+      }
+      time = nt;
+    }
+    last = ts;
+    if (time >= TOTAL) { time = TOTAL; draw(); setPlaying(false); return; }
+    var S = draw();
+    if (voiceOn) {
+      var ci = capAt(time);
+      if (ci >= 0 && ci !== spokenIdx) { spokenIdx = ci; speak(CAPS[ci].say); }
+    }
+    if (sfxOn && prevS) sfxFor(prevS, S);
+    prevS = S;
+    requestAnimationFrame(loop);
+  }
+  playBtn.addEventListener("click", function () { setPlaying(!playing); });
+  poster.addEventListener("click", function () { setPlaying(true); });
+  $("#back").addEventListener("click", function () { seek(time - 5); });
+  $("#fwd").addEventListener("click", function () { seek(time + 5); });
+  scrub.addEventListener("input", function () { seek(parseFloat(scrub.value)); });
+  var speedBtns = Array.prototype.slice.call(document.querySelectorAll("[data-speed]"));
+  speedBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      speed = parseFloat(b.dataset.speed);
+      speedBtns.forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      if (speaking) { hush(); spokenIdx = null; }
+    });
+  });
+
+  function setToggle(btn, on, onText, offText) { btn.setAttribute("aria-pressed", on ? "true" : "false"); btn.querySelector("span").textContent = on ? onText : offText; }
+  if (!synth) { voiceBtn.disabled = true; setToggle(voiceBtn, false, "Voice on", "No voice in this browser"); }
+  else setToggle(voiceBtn, voiceOn, "Voice on", "Voice off");
+  voiceBtn.addEventListener("click", function () {
+    voiceOn = !voiceOn; setToggle(voiceBtn, voiceOn, "Voice on", "Voice off");
+    if (!voiceOn) hush(); spokenIdx = null; updateUI();
+  });
+  sfxBtn.addEventListener("click", function () { sfxOn = !sfxOn; setToggle(sfxBtn, sfxOn, "Sounds on", "Sounds off"); if (sfxOn) audio(); });
+
+  /* ---------------- fullscreen ---------------- */
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function toggleFs() {
+    if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    var req = player.requestFullscreen || player.webkitRequestFullscreen;
+    if (!req) return;
+    try { var p = req.call(player); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+  }
+  if (!(player.requestFullscreen || player.webkitRequestFullscreen)) fsBtn.hidden = true;
+  function onFs() { setToggle(fsBtn, false, "", fsElement() ? "Exit fullscreen" : "Fullscreen"); fsBtn.removeAttribute("aria-pressed"); fit(); }
+  document.addEventListener("fullscreenchange", onFs);
+  document.addEventListener("webkitfullscreenchange", onFs);
+  fsBtn.addEventListener("click", toggleFs);
+  el.frame.addEventListener("dblclick", function (e) { e.preventDefault(); toggleFs(); });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target.closest && e.target.closest("input, textarea")) return;
+    if (e.key === " " || e.key === "k") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowLeft") seek(time - 5);
+    else if (e.key === "ArrowRight") seek(time + 5);
+    else if (e.key === "f" || e.key === "F") toggleFs();
+  });
+  el.frame.addEventListener("click", function (e) {
+    if (e.target.closest(".poster")) return;
+    if (started) setPlaying(!playing);
+  });
+
+  // letterbox the 1280x720 stage inside whatever size the frame has (normal or fullscreen)
+  function fit() {
+    var w = el.frame.clientWidth, h = el.frame.clientHeight, k = Math.min(w / 1280, h / 720);
+    el.stage.style.transform = "translate(" + ((w - 1280 * k) / 2) + "px," + ((h - 720 * k) / 2) + "px) scale(" + k + ")";
+  }
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(el.frame); else window.addEventListener("resize", fit);
+  fit();
+  draw();
+})();
+</script>

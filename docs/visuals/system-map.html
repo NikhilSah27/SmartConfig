@@ -1,0 +1,1334 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<title>SmartConfig System Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #F1F4F3;
+  --surface: #FFFFFF;
+  --node: #F7F9F8;
+  --ink: #15212B;
+  --muted: #5A6772;
+  --line: #C6D0D4;
+  --grid: #E3E9EA;
+  --built: #0B7A68;
+  --built-soft: #DCF0EA;
+  --warn: #B4540A;
+  --warn-soft: #FBEBDD;
+  --bad: #B42318;
+  --bad-soft: #FDE8E6;
+  --plan: #7C8A94;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0E1418; --surface: #151D23; --node: #1A242B; --ink: #E2E8EB; --muted: #93A2AC;
+    --line: #2E3C46; --grid: #1F2A31; --built: #3CC4A9; --built-soft: #133A33;
+    --warn: #F0A24A; --warn-soft: #3A2A18; --bad: #FF7A6B; --bad-soft: #3D1D1A; --plan: #7F8F99;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0E1418; --surface: #151D23; --node: #1A242B; --ink: #E2E8EB; --muted: #93A2AC;
+  --line: #2E3C46; --grid: #1F2A31; --built: #3CC4A9; --built-soft: #133A33;
+  --warn: #F0A24A; --warn-soft: #3A2A18; --bad: #FF7A6B; --bad-soft: #3D1D1A; --plan: #7F8F99;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans);
+  font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 40px 72px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 64px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(34px, 6vw, 54px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 28px; font-weight: 600; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-size: 0.9em; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; }
+.lede { font-size: 18px; color: var(--muted); max-width: 60ch; }
+.sub { color: var(--muted); }
+
+header { display: grid; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand svg { width: 44px; height: 44px; color: var(--built); flex: none; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 6px; }
+.fact { font-family: var(--mono); font-size: 12.5px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-variant-numeric: tabular-nums; }
+.fact b { color: var(--built); font-weight: 500; }
+nav.jump { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+nav.jump a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+nav.jump a:hover { border-color: var(--built); color: var(--built); }
+
+/* buttons */
+button { font: inherit; color: inherit; }
+.btn {
+  font-family: var(--sans); font-size: 13.5px; font-weight: 500; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 7px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: var(--built); }
+.btn:focus-visible, .node:focus-visible, .stage:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--built); outline-offset: 2px; }
+.btn.primary { background: var(--built); border-color: var(--built); color: var(--surface); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn svg { width: 14px; height: 14px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bar .sp { flex: 1; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.count { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.progress { height: 3px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--built); transition: width .4s ease; }
+.narr { font-size: 15px; min-height: 3.2em; padding: 12px 14px; border-radius: 8px; background: var(--node); border: 1px solid var(--line); }
+.narr b { font-family: var(--display); font-weight: 600; }
+
+/* roadmap */
+.road { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.road li { background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; padding: 12px 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.road li.done { border: 1.5px solid var(--built); background: var(--built-soft); }
+.road .m { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+.road li.done .m { color: var(--built); }
+.road .name { font-family: var(--display); font-weight: 600; font-size: 16px; line-height: 1.2; }
+.road .what { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+@media (max-width: 860px) { .road { grid-template-columns: repeat(2, 1fr); } }
+
+/* build story */
+.story { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 860px) { .story { grid-template-columns: 1fr; } }
+.stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; position: relative; }
+.stages::before { content: ""; position: absolute; left: 15px; top: 14px; bottom: 14px; width: 2px; background: var(--line); }
+.stage {
+  position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start;
+  width: 100%; text-align: left; background: none; border: 0; padding: 8px 8px 8px 0; cursor: pointer; border-radius: 8px;
+}
+.stage .dot { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 2px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); z-index: 1; transition: all .3s; }
+.stage.past .dot { border-color: var(--built); color: var(--built); }
+.stage.cur .dot { background: var(--built); border-color: var(--built); color: var(--surface); transform: scale(1.08); }
+.stage .txt { display: grid; gap: 1px; padding-top: 3px; }
+.stage .tt { font-family: var(--display); font-weight: 600; font-size: 16px; }
+.stage .hh { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.stage.cur .tt { color: var(--built); }
+.stage:hover .tt { color: var(--built); }
+.repo { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 14px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.repo .detail { font-size: 14.5px; min-height: 6.5em; }
+.repo .detail h3 { margin-bottom: 6px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--node); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.stat b { display: block; font-family: var(--display); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat span { font-size: 12px; color: var(--muted); }
+.tree2 { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; margin: 0; padding: 10px 12px; background: var(--node); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; min-height: 120px; }
+.tree2 div { white-space: pre; }
+.tree2 .d { color: var(--muted); }
+.tree2 .note { color: var(--muted); }
+.tree2 .new { color: var(--built); font-weight: 500; animation: pop .9s ease; }
+@keyframes pop { from { background: var(--built-soft); } to { background: transparent; } }
+.badge { font-family: var(--mono); font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--built); color: var(--surface); }
+
+/* figures */
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; }
+.scroll { overflow-x: auto; }
+.scroll svg { display: block; min-width: 760px; width: 100%; height: auto; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 80ch; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 26px; height: 14px; border-radius: 4px; display: inline-block; }
+.sw.built { background: var(--built-soft); border: 1.5px solid var(--built); }
+.sw.plan { border: 1.5px dashed var(--plan); }
+.sw.have { background: var(--node); border: 1.5px solid var(--line); }
+.ln { width: 30px; height: 0; display: inline-block; border-top: 2px solid var(--built); }
+.ln.plan { border-top: 2px dashed var(--plan); }
+.info { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--node); font-size: 14.5px; }
+.info svg { width: 30px; height: 30px; color: var(--built); }
+.info b { font-family: var(--display); font-size: 16px; }
+
+/* svg */
+svg { color: var(--ink); }
+svg text { font-family: var(--sans); fill: var(--ink); }
+.node rect, .node polygon { fill: var(--node); stroke: var(--line); stroke-width: 1.5; transition: stroke-width .25s, filter .25s; }
+.node.built rect { fill: var(--built-soft); stroke: var(--built); stroke-width: 2; }
+.node.plan rect, .node.plan polygon { fill: var(--surface); stroke: var(--plan); stroke-dasharray: 6 5; }
+.node.muted rect { fill: var(--surface); }
+.node use { color: var(--ink); }
+.node.built use { color: var(--built); }
+.node.plan use { color: var(--plan); }
+.node .t { font-family: var(--display); font-weight: 600; font-size: 16px; }
+.node .t.m { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+.node .s { font-size: 11.5px; fill: var(--muted); }
+.node .s.mono { font-family: var(--mono); font-size: 11px; }
+.node .chip { font-family: var(--mono); font-size: 10px; fill: var(--muted); letter-spacing: 0.04em; }
+.node.built .chip { fill: var(--built); }
+.click .node { cursor: pointer; }
+.click .node:hover rect { stroke-width: 3; }
+.e { fill: none; stroke: var(--ink); stroke-width: 1.6; opacity: 0.75; }
+.e.built { stroke: var(--built); opacity: 1; stroke-width: 2; }
+.e.plan { stroke: var(--plan); stroke-dasharray: 6 5; opacity: 1; }
+.e.hot { stroke: var(--warn); opacity: 1; stroke-width: 2.2; }
+.e.ret { stroke-dasharray: 3 4; }
+.track { fill: none; stroke: none; }
+.ah { fill: var(--ink); }
+.ah.built { fill: var(--built); }
+.ah.plan { fill: var(--plan); }
+.ah.hot { fill: var(--warn); }
+.el { font-size: 11.5px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.el.built { fill: var(--built); font-weight: 500; }
+.el.hot { fill: var(--warn); font-weight: 600; }
+.life { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 5; }
+.num circle { fill: var(--ink); }
+.num text { fill: var(--surface); font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.num.hot circle { fill: var(--warn); }
+.num.built circle { fill: var(--built); }
+.pkt { fill: var(--warn); stroke: var(--surface); stroke-width: 2.5; opacity: 0; pointer-events: none; }
+.pkt.go { opacity: 1; }
+
+/* play states */
+svg .node, svg .e, svg .el, svg .num { transition: opacity .35s ease; }
+svg.today .pp { opacity: 0.16; }
+svg.playing .node, svg.playing .e, svg.playing .el, svg.playing .num { opacity: 0.2; }
+svg.playing .on { opacity: 1 !important; }
+svg.playing .node.on rect, svg.playing .node.on polygon { stroke-width: 3; filter: drop-shadow(0 3px 8px rgba(11, 122, 104, .28)); }
+svg.playing .e.on { stroke-width: 2.8; }
+
+/* state panels */
+.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.panels.two { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+@media (max-width: 820px) { .panels, .panels.two { grid-template-columns: 1fr; } }
+.panel { background: var(--node); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.panel h4 { margin: 0; font-family: var(--mono); font-size: 11.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.panel h4 svg { width: 16px; height: 16px; }
+.rowlist { display: grid; gap: 4px; font-family: var(--mono); font-size: 12px; }
+.rowlist div { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.rowlist .fresh { animation: pop 1.2s ease; }
+.rowlist .r { text-align: right; color: var(--muted); }
+.lines { font-family: var(--mono); font-size: 12px; white-space: pre; overflow-x: auto; line-height: 1.6; }
+.lines .bad { color: var(--bad); background: var(--bad-soft); border-radius: 3px; }
+.lines .gone { color: var(--built); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.kv dd { margin: 0; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.kv dd.fresh { animation: pop 1.2s ease; }
+.kv .ok { color: var(--built); font-weight: 500; }
+.kv .dif { color: var(--warn); font-weight: 500; }
+.term, .console { font-family: var(--mono); font-size: 12.5px; background: var(--node); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; }
+.term .p, .console .p { color: var(--muted); }
+
+/* pills */
+.pill { font-family: var(--mono); font-size: 11.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+.pill.manual { background: var(--surface); }
+.pill.pre { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.pill.restore { background: var(--built-soft); border-color: var(--built); color: var(--built); }
+
+/* M1 stack */
+.split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+.stack { display: grid; }
+.layer { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; grid-template-columns: 36px 1fr; gap: 4px 12px; }
+.layer .ic { grid-row: span 3; width: 32px; height: 32px; color: var(--built); }
+.layer .ttl { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.layer .ttl h3 { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+.layer .ttl span { font-size: 13px; color: var(--muted); }
+.layer p { font-size: 13.5px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips code { font-size: 12px; padding: 2px 8px; border-radius: 5px; background: var(--built-soft); color: var(--built); }
+.down { display: flex; align-items: center; gap: 10px; padding: 6px 0 6px 30px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.down svg { width: 14px; height: 22px; color: var(--muted); flex: none; }
+.disk { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .disk { grid-template-columns: 1fr; } }
+.disk .layer { grid-template-columns: 30px 1fr; }
+.disk .layer .ic { width: 26px; height: 26px; color: var(--ink); }
+.disk .layer.store .ic { color: var(--built); }
+pre.tree { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink); white-space: pre; overflow-x: auto; }
+.tree .c { color: var(--muted); }
+.side { display: grid; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; }
+.card p { font-size: 14px; }
+.formula { font-family: var(--mono); font-size: 13px; background: var(--node); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: nowrap; }
+.formula .k { color: var(--built); }
+
+/* simulator */
+.sim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+@media (max-width: 860px) { .sim { grid-template-columns: 1fr; } }
+.sim textarea { width: 100%; min-height: 230px; resize: vertical; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; tab-size: 8; background: var(--node); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.filehead { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.console { min-height: 230px; max-height: 340px; overflow-y: auto; }
+.console .err { color: var(--bad); }
+.console .add { color: var(--built); }
+.console .del { color: var(--bad); }
+.console .note { color: var(--muted); font-style: italic; }
+.cmdline { display: flex; gap: 8px; }
+.cmdline label { font-family: var(--mono); color: var(--muted); align-self: center; }
+.cmdline input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.guide { display: flex; flex-wrap: wrap; gap: 6px; }
+.guide .btn b { font-family: var(--mono); color: var(--built); font-weight: 500; }
+.dbtable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dbtable th, .dbtable td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+.dbtable th { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.dbtable td.id { font-family: var(--mono); font-weight: 500; }
+.dbtable tr.fresh td { animation: pop 1.2s ease; }
+.dbwrap { overflow-x: auto; }
+
+/* proof table */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table.log { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; font-variant-numeric: tabular-nums; }
+table.log th, table.log td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--grid); }
+table.log th { font-family: var(--mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+table.log tr:last-child td { border-bottom: 0; }
+table.log td.id { font-family: var(--mono); font-weight: 500; }
+table.log .num { text-align: right; font-family: var(--mono); }
+.checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 20px; list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
+@media (max-width: 760px) { .checks { grid-template-columns: 1fr; } }
+.checks li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; }
+.checks svg { width: 16px; height: 16px; color: var(--built); margin-top: 3px; }
+
+.next { display: grid; grid-template-columns: 48px 1fr; gap: 16px; align-items: start; background: var(--surface); border: 1.5px dashed var(--plan); border-radius: 12px; padding: 20px; }
+.next svg { width: 40px; height: 40px; color: var(--plan); }
+.next div { display: grid; gap: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></g></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15.5H17"/></g></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></g></symbol>
+    <symbol id="i-buoy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6"/></g></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 9.5h5v5h-5z"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></g></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></g></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 3L7 21M17 3l-2 18M4 8.5h17M3 15.5h17"/></g></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></g></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5" stroke-width="1.6"/><path d="M7.5 12.5l3 3 6-6.5"/></g></symbol>
+    <symbol id="i-net" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 12h18M3 19h18" stroke-dasharray="2 2.6"/><path d="M6 3v4M12 10v4M18 17v4"/></g></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 14 22"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v19M2 15l5 5 5-5"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-net"/></svg>
+    <span class="eyebrow">System map · 27 Sep 2026</span>
+  </div>
+  <h1>SmartConfig</h1>
+  <p class="lede">A safety net for the config files that take a Linux machine down. Snapshot a file before it changes, warn before a bad edit lands, explain what broke, and put one file back from the rescue shell.</p>
+  <div class="facts">
+    <span class="fact">milestone <b>1 of 7</b> built</span>
+    <span class="fact"><b>1</b> static binary, 6.1 MB</span>
+    <span class="fact"><b>20</b> Go tests</span>
+    <span class="fact"><b>7</b> commits</span>
+    <span class="fact">acceptance run <b>passed as root</b></span>
+  </div>
+  <nav class="jump" aria-label="Sections">
+    <a href="#built-how">How we built it</a>
+    <a href="#whole">The whole system</a>
+    <a href="#today">What exists today</a>
+    <a href="#flow-snap">Snapshot, step by step</a>
+    <a href="#flow-restore">Restore, step by step</a>
+    <a href="#try">Try it yourself</a>
+    <a href="#proof">Proof</a>
+  </nav>
+</header>
+
+<section aria-labelledby="road-h">
+  <span class="eyebrow">Roadmap</span>
+  <h2 id="road-h">Seven milestones, built one at a time</h2>
+  <ol class="road">
+    <li class="done"><span class="m"><span>M1</span><span>built</span></span><span class="name">Store + CLI</span><span class="what">snapshot, log, cat, diff, restore</span></li>
+    <li><span class="m"><span>M2</span><span>next</span></span><span class="name">Watcher</span><span class="what">scd daemon, inotify, auto-snapshots</span></li>
+    <li><span class="m"><span>M3</span></span><span class="name">Checkers</span><span class="what">validators, rules, sc edit and sc check</span></li>
+    <li><span class="m"><span>M4</span></span><span class="name">Rescue path</span><span class="what">GRUB entry, rescue.target, boot-ok</span></li>
+    <li><span class="m"><span>M5</span></span><span class="name">Package</span><span class="what">.deb with nfpm, clean-VM install</span></li>
+    <li><span class="m"><span>M6</span></span><span class="name">Incident factory</span><span class="what">broken configs and an eval set</span></li>
+    <li><span class="m"><span>M7</span></span><span class="name">Local model</span><span class="what">sc why with llama.cpp, opt-in</span></li>
+  </ol>
+</section>
+
+<!-- ============ BUILD STORY ============ -->
+<section id="built-how" aria-labelledby="story-h">
+  <span class="eyebrow">Where we started</span>
+  <h2 id="story-h">How milestone 1 was built, commit by commit</h2>
+  <p class="sub">We started from an empty repo containing only <code>go.mod</code>. Click any step, or replay the build and watch the repository fill in.</p>
+  <div class="bar">
+    <button class="btn primary" id="story-play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Replay the build</span></button>
+    <button class="btn" id="story-prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+    <button class="btn" id="story-next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+  </div>
+  <div class="story">
+    <ol class="stages" id="stages"></ol>
+    <div class="repo" aria-live="polite">
+      <div class="detail" id="story-detail"></div>
+      <div class="stats">
+        <div class="stat"><b id="st-commits">7</b><span>commits</span></div>
+        <div class="stat"><b id="st-tests">20</b><span>tests</span></div>
+        <div class="stat"><b id="st-files">24</b><span>files</span></div>
+      </div>
+      <div class="tree2" id="story-tree"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHOLE SYSTEM ============ -->
+<section id="whole" aria-labelledby="whole-h">
+  <span class="eyebrow">The whole system</span>
+  <h2 id="whole-h">Where every part sits, and which ones exist today</h2>
+  <figure id="whole-fig">
+    <div class="bar">
+      <span class="eyebrow">Show</span>
+      <span class="seg" role="group" aria-label="Which parts to show">
+        <button class="btn" type="button" data-view="today" aria-pressed="false">Built today</button>
+        <button class="btn" type="button" data-view="full" aria-pressed="true">Full design</button>
+      </span>
+      <span class="sp"></span>
+      <span class="eyebrow">Play a story</span>
+      <span class="seg" role="group" aria-label="Stories" id="w-scen">
+        <button class="btn" type="button" data-s="today" aria-pressed="true">Save and undo (today)</button>
+        <button class="btn" type="button" data-s="caught" aria-pressed="false">Bad edit caught (M2, M3)</button>
+        <button class="btn" type="button" data-s="boot" aria-pressed="false">Won't boot (M4, M7)</button>
+        <button class="btn" type="button" data-s="evals" aria-pressed="false">Testing it (M6)</button>
+      </span>
+    </div>
+    <div class="legend">
+      <span><i class="sw built"></i>built in M1</span>
+      <span><i class="sw plan"></i>planned (milestone on the box)</span>
+      <span><i class="sw have"></i>already on the machine</span>
+      <span><i class="ln"></i>working today</span>
+      <span><i class="ln plan"></i>planned connection</span>
+    </div>
+    <div class="scroll">
+    <svg id="w-svg" class="click" viewBox="0 0 1020 596" role="img" aria-label="SmartConfig architecture. Built today: the sc CLI, which reads and atomically writes files in /etc and stores blobs and rows in the store. Planned: the scd watcher, checkers, a rescue boot, sc why, and an incident factory.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="a1b" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path class="ah built" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="a1p" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path class="ah plan" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+
+      <path id="w-e1" class="e built" d="M630,130 V250" marker-end="url(#a1b)"/>
+      <text id="w-l1" class="el built" x="640" y="196">runs sc</text>
+      <path id="w-e2" class="e" d="M560,130 V190 H380 V250" marker-end="url(#a1)"/>
+      <text id="w-l2" class="el" x="470" y="183" text-anchor="middle">edits files</text>
+      <path id="w-e3" class="e plan pp" d="M290,250 V130" marker-end="url(#a1p)"/>
+      <text id="w-l3" class="el pp" x="282" y="196" text-anchor="end">inotify events</text>
+      <path id="w-e4" class="e plan pp" d="M340,50 V24 H910 V250" marker-end="url(#a1p)"/>
+      <text id="w-l4" class="el pp" x="625" y="17" text-anchor="middle">auto-snapshot on every write</text>
+      <path id="w-e5" class="e built" d="M420,280 H540" marker-start="url(#a1b)" marker-end="url(#a1b)"/>
+      <text id="w-l5a" class="el built" x="480" y="272" text-anchor="middle">reads</text>
+      <text id="w-l5b" class="el built" x="480" y="298" text-anchor="middle">atomic write</text>
+      <path id="w-e6" class="e built" d="M720,290 H820" marker-start="url(#a1b)" marker-end="url(#a1b)"/>
+      <text id="w-l6" class="el built" x="770" y="282" text-anchor="middle">blob + row</text>
+      <path id="w-e7" class="e plan pp" d="M630,440 V330" marker-end="url(#a1p)"/>
+      <text id="w-l7" class="el pp" x="640" y="392">warns before a bad edit</text>
+      <path id="w-e8" class="e plan pp" d="M910,330 V440" marker-end="url(#a1p)"/>
+      <text id="w-l8" class="el pp" x="920" y="392">diffs + history</text>
+      <path id="w-e9" class="e plan pp" d="M720,480 H820" marker-end="url(#a1p)"/>
+      <text id="w-l9" class="el pp" x="770" y="472" text-anchor="middle">findings</text>
+      <path id="w-e10" class="e plan pp" d="M340,440 V330" marker-end="url(#a1p)"/>
+      <text id="w-l10" class="el pp" x="350" y="392">restores one file</text>
+      <path id="w-e11" class="e plan pp" d="M110,520 V560 H910 V520" marker-end="url(#a1p)"/>
+      <path id="w-e12" class="e plan pp" d="M630,560 V520" marker-end="url(#a1p)"/>
+      <path id="w-t12" class="track" d="M110,520 V560 H630 V520"/>
+      <text id="w-l11" class="el pp" x="370" y="581" text-anchor="middle">replays broken configs to test them</text>
+
+      <g id="w-admin" class="node" data-k="admin" transform="translate(540,50)" tabindex="0" role="button" aria-label="You">
+        <rect width="180" height="80" rx="10"/><use href="#i-user" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">You</text><text class="s" x="48" y="54">shell · editor · apt</text>
+      </g>
+      <g id="w-scd" class="node plan pp" data-k="scd" transform="translate(260,50)" tabindex="0" role="button" aria-label="scd watcher">
+        <rect width="160" height="80" rx="10"/><use href="#i-eye" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">scd</text><text class="s" x="48" y="54">watcher daemon</text><text class="chip" x="148" y="70" text-anchor="end">M2</text>
+      </g>
+      <g id="w-etc" class="node" data-k="etc" transform="translate(260,250)" tabindex="0" role="button" aria-label="/etc config files">
+        <rect width="160" height="80" rx="10"/><use href="#i-file" x="14" y="16" width="24" height="24"/>
+        <text class="t m" x="48" y="34">/etc</text><text class="s" x="48" y="54">fstab · hosts · grub</text><text class="chip" x="148" y="70" text-anchor="end">your system</text>
+      </g>
+      <g id="w-sc" class="node built" data-k="sc" transform="translate(540,250)" tabindex="0" role="button" aria-label="sc CLI">
+        <rect width="180" height="80" rx="10"/><use href="#i-term" x="14" y="16" width="24" height="24"/>
+        <text class="t m" x="48" y="34">sc</text><text class="s" x="48" y="54">snapshot → restore</text><text class="chip" x="168" y="70" text-anchor="end">M1 · BUILT</text>
+      </g>
+      <g id="w-store" class="node built" data-k="store" transform="translate(820,250)" tabindex="0" role="button" aria-label="Store">
+        <rect width="180" height="80" rx="10"/><use href="#i-db" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">Store</text><text class="s" x="48" y="54">blobs + changes.db</text><text class="chip" x="168" y="70" text-anchor="end">M1 · BUILT</text>
+      </g>
+      <g id="w-m6" class="node plan pp" data-k="m6" transform="translate(20,440)" tabindex="0" role="button" aria-label="Incident factory">
+        <rect width="180" height="80" rx="10"/><use href="#i-flask" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">Incident factory</text><text class="s" x="48" y="54">broken configs → evals</text><text class="chip" x="168" y="70" text-anchor="end">M6</text>
+      </g>
+      <g id="w-rescue" class="node plan pp" data-k="rescue" transform="translate(260,440)" tabindex="0" role="button" aria-label="Rescue boot">
+        <rect width="160" height="80" rx="10"/><use href="#i-buoy" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">Rescue boot</text><text class="s" x="48" y="54">GRUB → rescue shell</text><text class="chip" x="148" y="70" text-anchor="end">M4</text>
+      </g>
+      <g id="w-check" class="node plan pp" data-k="check" transform="translate(540,440)" tabindex="0" role="button" aria-label="Checkers">
+        <rect width="180" height="80" rx="10"/><use href="#i-shield" x="14" y="16" width="24" height="24"/>
+        <text class="t" x="48" y="34">Checkers</text><text class="s" x="48" y="54">validators + rules</text><text class="chip" x="168" y="70" text-anchor="end">M3</text>
+      </g>
+      <g id="w-model" class="node plan pp" data-k="model" transform="translate(820,440)" tabindex="0" role="button" aria-label="sc why">
+        <rect width="180" height="80" rx="10"/><use href="#i-chip" x="14" y="16" width="24" height="24"/>
+        <text class="t m" x="48" y="34">sc why</text><text class="s" x="48" y="54">local model explains</text><text class="chip" x="168" y="70" text-anchor="end">M7</text>
+      </g>
+      <circle class="pkt" r="7" cx="0" cy="0"/>
+    </svg>
+    </div>
+    <div class="progress"><i></i></div>
+    <div class="bar ctl">
+      <button class="btn primary" data-act="play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+      <button class="btn" data-act="prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+      <button class="btn" data-act="next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+      <button class="btn" data-act="reset" type="button"><svg aria-hidden="true"><use href="#i-reset"/></svg><span>Reset</span></button>
+      <span class="sp"></span><span class="count"></span>
+    </div>
+    <div class="narr" aria-live="polite"></div>
+    <div class="info" id="w-info" aria-live="polite">
+      <svg aria-hidden="true"><use href="#i-term"/></svg>
+      <div><b>Click any box</b> to see what it does and which milestone builds it.</div>
+    </div>
+  </figure>
+</section>
+
+<!-- ============ TODAY ============ -->
+<section id="today" aria-labelledby="built-h">
+  <span class="eyebrow">What exists today · M1</span>
+  <h2 id="built-h">One static binary, three layers, two places on disk</h2>
+  <div class="split">
+    <div class="stack">
+      <div class="layer">
+        <svg class="ic" aria-hidden="true"><use href="#i-term"/></svg>
+        <div class="ttl"><h3>cmd/sc</h3><span>the CLI, built on cobra</span></div>
+        <div class="chips"><code>init</code><code>snapshot</code><code>log</code><code>cat</code><code>diff</code><code>restore</code></div>
+        <p>Thin. Any error becomes one line, <code>sc: …</code> on stderr, and exit code 1.</p>
+      </div>
+      <div class="down"><svg aria-hidden="true"><use href="#i-arrow-down"/></svg>calls</div>
+      <div class="layer">
+        <svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg>
+        <div class="ttl"><h3>internal/store</h3><span>history of every file</span></div>
+        <div class="chips"><code>Init</code><code>Open</code><code>Snapshot</code><code>List</code><code>Get</code><code>Blob</code><code>Restore</code><code>UnifiedDiff</code></div>
+        <p>Content-addressed blobs plus one SQLite row per change. Resolves id prefixes and verifies each blob's checksum before use.</p>
+      </div>
+      <div class="down"><svg aria-hidden="true"><use href="#i-arrow-down"/></svg>reads and writes files through</div>
+      <div class="layer">
+        <svg class="ic" aria-hidden="true"><use href="#i-cog"/></svg>
+        <div class="ttl"><h3>internal/fsutil</h3><span>the only code that touches files</span></div>
+        <div class="chips"><code>ReadWithMeta</code><code>WriteAtomic</code></div>
+        <p>Refuses symlinks, non-regular files and anything over 8 MB. Writes a temp file, sets owner and mode, fsyncs, then renames it over the original.</p>
+      </div>
+      <div class="down"><svg aria-hidden="true"><use href="#i-arrow-down"/></svg>on disk</div>
+      <div class="disk">
+        <div class="layer">
+          <svg class="ic" aria-hidden="true"><use href="#i-file"/></svg>
+          <div class="ttl"><h3>/etc/…</h3></div>
+          <p>The live config files. Only ever replaced by rename, never truncated in place.</p>
+        </div>
+        <div class="layer store">
+          <svg class="ic" aria-hidden="true"><use href="#i-db"/></svg>
+          <div class="ttl"><h3>$SC_HOME</h3></div>
+          <pre class="tree">/var/lib/smartconfig/  <span class="c">0700</span>
+├─ objects/
+│  ├─ c2/c2646361…  <span class="c">0600</span>
+│  └─ 97/97acb3b7…  <span class="c">0600</span>
+└─ changes.db  <span class="c">SQLite</span></pre>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <span class="eyebrow">One row in changes.db</span>
+        <pre class="tree">id      <span class="c">733bd9</span>
+ts      <span class="c">1790469360  (unix seconds)</span>
+path    <span class="c">/etc/hosts</span>
+blob    <span class="c">c2646361…  (sha256)</span>
+size    <span class="c">273</span>
+mode    <span class="c">0644 (+setuid/gid/sticky)</span>
+uid/gid <span class="c">0 / 0</span>
+origin  <span class="c">manual | pre-restore | restore</span>
+intent  <span class="c">"baseline"</span></pre>
+      </div>
+      <div class="card">
+        <span class="eyebrow">How an id is made</span>
+        <div class="formula"><span class="k">sha256</span>(path + "\n" + ts + "\n" + blob)[:6]</div>
+        <p>Two rows for the same file, content and second would get the same id. When an id is taken, <code>\n1</code>, <code>\n2</code>… is appended and it is hashed again. This happened in the real acceptance run: <code>d2b20b</code> and <code>0beb81</code> hold the same bytes, saved in the same second.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SNAPSHOT FLOW ============ -->
+<section id="flow-snap" aria-labelledby="snap-h">
+  <span class="eyebrow">Flow 1 · animated</span>
+  <h2 id="snap-h">What happens on <code>sc snapshot</code></h2>
+  <figure id="snap-fig">
+    <div class="bar">
+      <span class="eyebrow">Scenario</span>
+      <span class="seg" role="group" aria-label="Scenario">
+        <button class="btn" type="button" data-s="changed" aria-pressed="true">The file changed</button>
+        <button class="btn" type="button" data-s="same" aria-pressed="false">Nothing changed</button>
+      </span>
+    </div>
+    <div class="scroll">
+    <svg id="s-svg" viewBox="0 0 1000 290" role="img" aria-label="Snapshot flow: sc snapshot reads the file with safety checks, hashes it, and compares it with the newest snapshot. If identical it prints unchanged since the old id. Otherwise it stores the blob, inserts a manual row with a new id, and prints the id.">
+      <defs>
+        <marker id="b1" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="b1b" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah built" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <path id="s-e1" class="e" d="M180,68 H220" marker-end="url(#b1)"/>
+      <path id="s-e2" class="e" d="M400,68 H440" marker-end="url(#b1)"/>
+      <path id="s-e3" class="e" d="M590,68 H610" marker-end="url(#b1)"/>
+      <path id="s-e4" class="e" d="M770,68 H830" marker-end="url(#b1)"/>
+      <text id="s-l4" class="el" x="800" y="60" text-anchor="middle">yes</text>
+      <path id="s-e5" class="e built" d="M690,113 V200" marker-end="url(#b1b)"/>
+      <text id="s-l5" class="el built" x="700" y="160">no, it changed</text>
+      <path id="s-e6" class="e built" d="M600,238 H560" marker-end="url(#b1b)"/>
+      <path id="s-e7" class="e built" d="M370,238 H330" marker-end="url(#b1b)"/>
+
+      <g id="s-a" class="node" transform="translate(20,30)"><rect width="160" height="76" rx="10"/><use href="#i-term" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">You run</text><text class="s mono" x="48" y="52">sc snapshot</text></g>
+      <g id="s-b" class="node" transform="translate(220,30)"><rect width="180" height="76" rx="10"/><use href="#i-file" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">Read + check</text><text class="s" x="48" y="52">no symlink, ≤ 8 MB</text></g>
+      <g id="s-c" class="node" transform="translate(440,30)"><rect width="150" height="76" rx="10"/><use href="#i-hash" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">sha256</text><text class="s" x="48" y="52">of the bytes</text></g>
+      <g id="s-d" class="node"><polygon points="690,23 770,68 690,113 610,68"/><text class="t" x="690" y="64" text-anchor="middle" style="font-size:14px">Same as</text><text class="t" x="690" y="82" text-anchor="middle" style="font-size:14px">newest?</text></g>
+      <g id="s-e" class="node muted" transform="translate(830,30)"><rect width="150" height="76" rx="10"/><text class="t" x="16" y="32">Nothing saved</text><text class="s mono" x="16" y="52">unchanged since …</text></g>
+      <g id="s-f" class="node built" transform="translate(600,200)"><rect width="190" height="76" rx="10"/><use href="#i-db" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">Store blob</text><text class="s mono" x="48" y="52">objects/97/97acb3…</text></g>
+      <g id="s-g" class="node built" transform="translate(370,200)"><rect width="190" height="76" rx="10"/><use href="#i-layers" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">Insert row</text><text class="s" x="48" y="52">origin manual, new id</text></g>
+      <g id="s-h" class="node built" transform="translate(140,200)"><rect width="190" height="76" rx="10"/><use href="#i-term" x="14" y="14" width="24" height="24"/><text class="t" x="48" y="32">Print</text><text class="s mono" x="48" y="52">snapshot d2b20b …</text></g>
+      <circle class="pkt" r="7" cx="0" cy="0"/>
+    </svg>
+    </div>
+    <div class="progress"><i></i></div>
+    <div class="bar ctl">
+      <button class="btn primary" data-act="play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+      <button class="btn" data-act="prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+      <button class="btn" data-act="next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+      <button class="btn" data-act="reset" type="button"><svg aria-hidden="true"><use href="#i-reset"/></svg><span>Reset</span></button>
+      <span class="sp"></span><span class="count"></span>
+    </div>
+    <div class="panels two">
+      <div class="narr" aria-live="polite"></div>
+      <div class="panel">
+        <h4><svg aria-hidden="true"><use href="#i-hash"/></svg>What sc knows so far</h4>
+        <dl class="kv" id="snap-kv"></dl>
+      </div>
+    </div>
+    <figcaption><b>A snapshot only saves something when the file changed.</b> Each unique content is written once; the row records mode, owner and size alongside it so a restore can put all of them back.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ RESTORE FLOW ============ -->
+<section id="flow-restore" aria-labelledby="rest-h">
+  <span class="eyebrow">Flow 2 · animated</span>
+  <h2 id="rest-h">What happens on <code>sc restore 733bd9</code></h2>
+  <figure id="rest-fig">
+    <div class="scroll">
+    <svg id="r-svg" viewBox="0 0 1000 520" role="img" aria-label="Restore sequence in ten steps across sc, store, fsutil, /etc/hosts and $SC_HOME. The current file is saved as pre-restore 0beb81 before anything changes, then fsutil writes a temp file, sets owner and mode, fsyncs, and renames it over /etc/hosts. The store records restore row 460e5a.">
+      <defs>
+        <marker id="c1" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="c1b" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah built" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="c1h" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah hot" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <line class="life" x1="110" y1="66" x2="110" y2="505"/>
+      <line class="life" x1="320" y1="66" x2="320" y2="505"/>
+      <line class="life" x1="530" y1="66" x2="530" y2="505"/>
+      <line class="life" x1="740" y1="66" x2="740" y2="505"/>
+      <line class="life" x1="920" y1="66" x2="920" y2="505"/>
+
+      <g id="r-sc" class="node built" transform="translate(40,14)"><rect width="140" height="52" rx="9"/><use href="#i-term" x="12" y="14" width="24" height="24"/><text class="t m" x="44" y="32" style="font-size:14px">sc</text></g>
+      <g id="r-store" class="node built" transform="translate(250,14)"><rect width="140" height="52" rx="9"/><use href="#i-layers" x="12" y="14" width="24" height="24"/><text class="t" x="44" y="32" style="font-size:15px">store</text></g>
+      <g id="r-fs" class="node built" transform="translate(460,14)"><rect width="140" height="52" rx="9"/><use href="#i-cog" x="12" y="14" width="24" height="24"/><text class="t" x="44" y="32" style="font-size:15px">fsutil</text></g>
+      <g id="r-etc" class="node" transform="translate(670,14)"><rect width="140" height="52" rx="9"/><use href="#i-file" x="12" y="14" width="24" height="24"/><text class="t m" x="44" y="32" style="font-size:13px">/etc/hosts</text></g>
+      <g id="r-home" class="node" transform="translate(850,14)"><rect width="140" height="52" rx="9"/><use href="#i-db" x="12" y="14" width="24" height="24"/><text class="t m" x="44" y="32" style="font-size:13px">$SC_HOME</text></g>
+
+      <g id="r-n1" class="num"><circle cx="22" cy="104" r="10"/><text x="22" y="108" text-anchor="middle">1</text></g>
+      <g id="r-n2" class="num"><circle cx="22" cy="144" r="10"/><text x="22" y="148" text-anchor="middle">2</text></g>
+      <g id="r-n3" class="num"><circle cx="22" cy="184" r="10"/><text x="22" y="188" text-anchor="middle">3</text></g>
+      <g id="r-n4" class="num built"><circle cx="22" cy="224" r="10"/><text x="22" y="228" text-anchor="middle">4</text></g>
+      <g id="r-n5" class="num"><circle cx="22" cy="270" r="10"/><text x="22" y="274" text-anchor="middle">5</text></g>
+      <g id="r-n6" class="num"><circle cx="22" cy="310" r="10"/><text x="22" y="314" text-anchor="middle">6</text></g>
+      <g id="r-n7" class="num"><circle cx="22" cy="350" r="10"/><text x="22" y="354" text-anchor="middle">7</text></g>
+      <g id="r-n8" class="num hot"><circle cx="22" cy="390" r="10"/><text x="22" y="394" text-anchor="middle">8</text></g>
+      <g id="r-n9" class="num built"><circle cx="22" cy="434" r="10"/><text x="22" y="438" text-anchor="middle">9</text></g>
+      <g id="r-n10" class="num"><circle cx="22" cy="478" r="10"/><text x="22" y="482" text-anchor="middle">10</text></g>
+
+      <path id="r-e1" class="e" d="M110,104 H320" marker-end="url(#c1)"/>
+      <text id="r-l1" class="el" x="215" y="96" text-anchor="middle">restore "733bd9"</text>
+      <path id="r-e2" class="e" d="M320,144 H920" marker-end="url(#c1)"/>
+      <text id="r-l2" class="el" x="620" y="136" text-anchor="middle">read blob, check its sha256</text>
+      <path id="r-e3" class="e" d="M320,184 H740" marker-end="url(#c1)"/>
+      <text id="r-l3" class="el" x="630" y="176" text-anchor="middle">read the current file, mode and owner</text>
+      <path id="r-e4" class="e built" d="M320,224 H920" marker-end="url(#c1b)"/>
+      <text id="r-l4" class="el built" x="620" y="216" text-anchor="middle">save it as pre-restore 0beb81 (undo point)</text>
+      <path id="r-e5" class="e" d="M320,270 H530" marker-end="url(#c1)"/>
+      <text id="r-l5" class="el" x="425" y="262" text-anchor="middle">WriteAtomic(0644, root:root)</text>
+      <path id="r-e6" class="e" d="M530,310 H740" marker-end="url(#c1)"/>
+      <text id="r-l6" class="el" x="635" y="302" text-anchor="middle">write temp file in /etc</text>
+      <path id="r-e7" class="e" d="M530,350 H740" marker-end="url(#c1)"/>
+      <text id="r-l7" class="el" x="635" y="342" text-anchor="middle">chown · chmod · fsync</text>
+      <path id="r-e8" class="e hot" d="M530,390 H740" marker-end="url(#c1h)"/>
+      <text id="r-l8" class="el hot" x="635" y="382" text-anchor="middle">rename over /etc/hosts</text>
+      <path id="r-e9" class="e built" d="M320,434 H920" marker-end="url(#c1b)"/>
+      <text id="r-l9" class="el built" x="620" y="426" text-anchor="middle">insert row: restore 460e5a</text>
+      <path id="r-e10" class="e ret" d="M320,478 H110" marker-end="url(#c1)"/>
+      <text id="r-l10" class="el" x="215" y="470" text-anchor="middle">done, previous = 0beb81</text>
+      <circle class="pkt" r="7" cx="0" cy="0"/>
+    </svg>
+    </div>
+    <div class="progress"><i></i></div>
+    <div class="bar ctl">
+      <button class="btn primary" data-act="play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+      <button class="btn" data-act="prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+      <button class="btn" data-act="next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+      <button class="btn" data-act="reset" type="button"><svg aria-hidden="true"><use href="#i-reset"/></svg><span>Reset</span></button>
+      <span class="sp"></span><span class="count"></span>
+    </div>
+    <div class="narr" aria-live="polite"></div>
+    <div class="panels">
+      <div class="panel">
+        <h4><svg aria-hidden="true"><use href="#i-file"/></svg>/etc on disk</h4>
+        <div class="rowlist" id="r-dir"></div>
+        <div class="lines" id="r-hosts"></div>
+      </div>
+      <div class="panel">
+        <h4><svg aria-hidden="true"><use href="#i-db"/></svg>changes.db, newest first</h4>
+        <div class="rowlist" id="r-db"></div>
+      </div>
+      <div class="panel">
+        <h4><svg aria-hidden="true"><use href="#i-term"/></svg>Terminal</h4>
+        <div class="lines" id="r-term"></div>
+      </div>
+    </div>
+    <figcaption><b>Step 8 is the only moment /etc/hosts changes, and it is atomic.</b> Until the rename the original is untouched; if steps 5 to 7 fail, the temp file is deleted and nothing happened. Step 4 means a restore you regret is one more <code>sc restore 0beb81</code> away.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ SIMULATOR ============ -->
+<section id="try" aria-labelledby="try-h">
+  <span class="eyebrow">Try it yourself</span>
+  <h2 id="try-h">A copy of sc running in this page</h2>
+  <p class="sub">The same logic as the real tool, rewritten in JavaScript: real sha256 hashes, the same id formula and collision rule, the same messages. It works on a copy of this VM's <code>/etc/hosts</code>. Edit the file directly, type commands, or follow the numbered buttons.</p>
+  <div class="guide" id="guide">
+    <button class="btn" type="button" data-g="base"><b>1</b> Take a baseline</button>
+    <button class="btn" type="button" data-g="break"><b>2</b> Break the file</button>
+    <button class="btn" type="button" data-g="snap"><b>3</b> Snapshot the edit</button>
+    <button class="btn" type="button" data-g="diff"><b>4</b> See the damage</button>
+    <button class="btn" type="button" data-g="restore"><b>5</b> Restore the baseline</button>
+    <button class="btn" type="button" data-g="log"><b>6</b> Show the history</button>
+    <button class="btn" type="button" data-g="reset"><svg aria-hidden="true"><use href="#i-reset"/></svg>Start over</button>
+  </div>
+  <div class="sim">
+    <div class="panel">
+      <div class="filehead"><span>/etc/hosts</span><span id="sim-meta">273 bytes · 0644 root:root</span></div>
+      <textarea id="sim-file" spellcheck="false" aria-label="Contents of /etc/hosts"></textarea>
+      <h4><svg aria-hidden="true"><use href="#i-db"/></svg>changes.db</h4>
+      <div class="dbwrap"><table class="dbtable"><thead><tr><th>ID</th><th>Origin</th><th>Size</th><th>What</th></tr></thead><tbody id="sim-db"></tbody></table></div>
+      <div class="filehead"><span id="sim-blobs">objects/: 0 blobs</span></div>
+    </div>
+    <div class="panel">
+      <h4><svg aria-hidden="true"><use href="#i-term"/></svg>Terminal</h4>
+      <div class="console" id="sim-out" role="log" aria-live="polite"></div>
+      <form class="cmdline" id="sim-form" autocomplete="off">
+        <label for="sim-cmd">$</label>
+        <input id="sim-cmd" type="text" placeholder="sc snapshot /etc/hosts -m &quot;why&quot;">
+        <button class="btn primary" type="submit">Run</button>
+      </form>
+      <p class="sub" style="font-size:13px">Commands: <code>sc snapshot /etc/hosts [-m "why"] [-q]</code>, <code>sc log [-n N]</code>, <code>sc cat &lt;id&gt;</code>, <code>sc diff &lt;id&gt; [&lt;id2&gt;]</code>, <code>sc restore &lt;id&gt;</code>, <code>clear</code>. Id prefixes work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROOF ============ -->
+<section id="proof" aria-labelledby="proof-h">
+  <span class="eyebrow">Proof</span>
+  <h2 id="proof-h">The acceptance run on this VM, as root</h2>
+  <p>The script breaks the real <code>/etc/hosts</code> by adding a line, then fixes it with one command. This is the <code>sc log /etc/hosts</code> it ended with, newest first.</p>
+  <div class="tablewrap">
+    <table class="log">
+      <thead><tr><th>ID</th><th>When</th><th>Origin</th><th class="num">Size</th><th>What</th></tr></thead>
+      <tbody>
+        <tr><td class="id">460e5a</td><td>2026-09-27 00:36</td><td><span class="pill restore">restore</span></td><td class="num">273</td><td>restored from 733bd9</td></tr>
+        <tr><td class="id">0beb81</td><td>2026-09-27 00:36</td><td><span class="pill pre">pre-restore</span></td><td class="num">297</td><td>before restoring 733bd9</td></tr>
+        <tr><td class="id">d2b20b</td><td>2026-09-27 00:36</td><td><span class="pill manual">manual</span></td><td class="num">297</td><td>added smoke line</td></tr>
+        <tr><td class="id">733bd9</td><td>2026-09-27 00:36</td><td><span class="pill manual">manual</span></td><td class="num">273</td><td>baseline</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="checks">
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>diff showed <code>+127.0.0.1 smoke.invalid</code></span></li>
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>after restore, the smoke line is gone</span></li>
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>file is back to <code>644 root:root</code></span></li>
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>log order: restore, pre-restore, manual, manual</span></li>
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span><code>file bin/sc</code>: statically linked</span></li>
+    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span>test, vet and gofmt are clean</span></li>
+  </ul>
+</section>
+
+<section aria-labelledby="next-h">
+  <div class="next">
+    <svg aria-hidden="true"><use href="#i-eye"/></svg>
+    <div>
+      <span class="eyebrow">Next · M2</span>
+      <h2 id="next-h">The watcher: snapshots you never have to remember</h2>
+      <p>Today a snapshot happens only when someone runs <code>sc snapshot</code>. M2 adds <code>scd</code>, a daemon that watches config files with inotify and records every save, whether it comes from vim, nano, sed or apt. It writes into the same store, so <code>sc log</code>, <code>diff</code> and <code>restore</code> work on its snapshots unchanged.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function $(s, r) { return (r || document).querySelector(s); }
+  function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  /* ---------- packet travelling along a path ---------- */
+  function travel(svg, pathId, reverse) {
+    var pkt = svg.querySelector(".pkt");
+    var path = pathId && svg.querySelector("#" + pathId);
+    svg._tok = (svg._tok || 0) + 1;
+    var tok = svg._tok;
+    if (!pkt) return;
+    if (!path || reduce) { pkt.classList.remove("go"); return; }
+    var len = path.getTotalLength();
+    var dur = Math.min(1300, 450 + len * 1.4);
+    var t0 = null;
+    pkt.classList.add("go");
+    function frame(ts) {
+      if (tok !== svg._tok) return;
+      if (t0 === null) t0 = ts;
+      var k = Math.min(1, (ts - t0) / dur);
+      var e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      var p = path.getPointAtLength((reverse ? 1 - e : e) * len);
+      pkt.setAttribute("cx", p.x);
+      pkt.setAttribute("cy", p.y);
+      if (k < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- generic stepper ---------- */
+  function Stepper(fig, svg, opts) {
+    var i = -1, timer = null, steps = opts.steps;
+    var narr = $(".narr", fig), count = $(".count", fig), bar = $(".progress i", fig);
+    var playBtn = $('[data-act="play"]', fig);
+    function setPlayLabel(on) {
+      playBtn.querySelector("use").setAttribute("href", on ? "#i-pause" : "#i-play");
+      playBtn.querySelector("span").textContent = on ? "Pause" : (i >= steps.length - 1 ? "Play again" : (i >= 0 ? "Resume" : "Play"));
+    }
+    function show(n) {
+      i = n;
+      $$(".on", svg).forEach(function (el) { el.classList.remove("on"); });
+      if (n < 0) {
+        svg.classList.remove("playing");
+        travel(svg, null);
+        narr.innerHTML = opts.idle;
+        count.textContent = steps.length + " steps";
+        bar.style.width = "0";
+      } else {
+        var s = steps[n];
+        svg.classList.add("playing");
+        (s.on || []).forEach(function (id) { var el = svg.querySelector("#" + id); if (el) el.classList.add("on"); });
+        if (s.edge) { var ed = svg.querySelector("#" + s.edge); if (ed) ed.classList.add("on"); }
+        travel(svg, s.track || s.edge, s.rev);
+        narr.innerHTML = "<b>Step " + (n + 1) + " of " + steps.length + ".</b> " + s.text;
+        count.textContent = (n + 1) + " / " + steps.length;
+        bar.style.width = ((n + 1) / steps.length * 100) + "%";
+      }
+      if (opts.apply) opts.apply(n);
+      setPlayLabel(!!timer);
+    }
+    function stop() { if (timer) { clearTimeout(timer); timer = null; } setPlayLabel(false); }
+    function tick() {
+      if (i >= steps.length - 1) { stop(); return; }
+      show(i + 1);
+      timer = setTimeout(tick, reduce ? 3200 : 2600);
+      setPlayLabel(true);
+    }
+    function play() {
+      if (timer) { stop(); return; }
+      if (i >= steps.length - 1) show(-1);
+      timer = setTimeout(tick, 60);
+      setPlayLabel(true);
+    }
+    $('[data-act="play"]', fig).addEventListener("click", play);
+    $('[data-act="next"]', fig).addEventListener("click", function () { stop(); if (i < steps.length - 1) show(i + 1); });
+    $('[data-act="prev"]', fig).addEventListener("click", function () { stop(); if (i > -1) show(i - 1); });
+    $('[data-act="reset"]', fig).addEventListener("click", function () { stop(); show(-1); });
+    show(-1);
+    return {
+      setSteps: function (s, idle) { stop(); steps = s; if (idle) opts.idle = idle; show(-1); },
+      play: play, stop: stop
+    };
+  }
+
+  function pressGroup(btns, active) {
+    btns.forEach(function (b) { b.setAttribute("aria-pressed", b === active ? "true" : "false"); });
+  }
+
+  /* ================= BUILD STORY ================= */
+  var FILES = [
+    [".gitignore", 1], ["CLAUDE.md", 1], ["MILESTONES.md", 7], ["Makefile", 5],
+    ["bin/sc", 5, "static binary, not committed"],
+    ["cmd/sc/main.go", 4], ["cmd/sc/init.go", 4], ["cmd/sc/snapshot.go", 4], ["cmd/sc/log.go", 4],
+    ["cmd/sc/cat.go", 4], ["cmd/sc/diff.go", 4], ["cmd/sc/restore.go", 4], ["cmd/sc/main_test.go", 4],
+    ["go.mod", 0], ["go.sum", 3],
+    ["internal/fsutil/fsutil.go", 2], ["internal/fsutil/meta_linux.go", 2], ["internal/fsutil/fsutil_test.go", 2],
+    ["internal/store/store.go", 3], ["internal/store/diff.go", 3], ["internal/store/store_test.go", 3],
+    ["scripts/smoke.sh", 6]
+  ];
+  var STAGES = [
+    { t: "Read the brief", h: "no commit", commits: 0, tests: 0,
+      d: "Read your spec and CLAUDE.md, wrote a plan and a file tree, and checked the spec for contradictions. Found one: the id formula collides when the same file and content are saved in the same second, which the acceptance test itself does. Stopped and asked. You chose: rehash on conflict, module name <code>smartconfig</code>, commit on master." },
+    { t: "Project skeleton", h: "690ab95", commits: 1, tests: 0,
+      d: "Added CLAUDE.md exactly as you wrote it, renamed the module to <code>smartconfig</code>, and ignored <code>bin/</code>." },
+    { t: "fsutil", h: "481aa99", commits: 2, tests: 4,
+      d: "The only code that touches your files. <code>ReadWithMeta</code> refuses symlinks and files over 8 MB. <code>WriteAtomic</code> goes temp file → chown → chmod → fsync → rename. Tests prove no temp file is left behind, even when the write fails." },
+    { t: "store", h: "93394d1", commits: 3, tests: 18,
+      d: "SQLite through a pure-Go driver (no C compiler, so the binary stays static) plus content-addressed blobs. The newest driver needed Go 1.25, so it is pinned to v1.29.10 for this VM's Go 1.22.2. 14 tests, including the same-second collision." },
+    { t: "CLI", h: "9dbe3f9", commits: 4, tests: 20,
+      d: "Six cobra commands, one file each. Every error, even a crash, becomes a single <code>sc: …</code> line and exit code 1. An end-to-end test drives every command." },
+    { t: "Makefile", h: "394dfcc", commits: 5, tests: 20,
+      d: "<code>make build</code> produces <code>bin/sc</code>: 6.1 MB, statically linked, with <code>CGO_ENABLED=0</code>." },
+    { t: "Acceptance script", h: "ef200fe", commits: 6, tests: 20,
+      d: "The 9-step acceptance run. It uses a throwaway <code>SC_HOME</code> and puts <code>/etc/hosts</code> back on exit whatever happens. First run as a normal user against a copy of the file: PASS." },
+    { t: "MILESTONES.md", h: "020c205", commits: 7, tests: 20,
+      d: "All seven milestones listed, M1 marked done on 2026-09-27, with a note for every deliberate choice." },
+    { t: "Run as root", h: "sudo", commits: 7, tests: 20, badge: "PASS",
+      d: "With the sudo access you gave: the acceptance run against the real <code>/etc/hosts</code> passed, and the ownership test that only runs as root passed too." }
+  ];
+  var stagesEl = $("#stages"), cur = STAGES.length - 1, storyTimer = null;
+  STAGES.forEach(function (s, n) {
+    var li = document.createElement("li");
+    li.innerHTML = '<button class="stage" type="button" data-n="' + n + '"><span class="dot">' + n + '</span><span class="txt"><span class="tt">' + esc(s.t) + '</span><span class="hh">' + esc(s.h) + "</span></span></button>";
+    stagesEl.appendChild(li);
+  });
+  function renderStage(n, animate) {
+    cur = n;
+    $$(".stage", stagesEl).forEach(function (b, k) {
+      b.classList.toggle("cur", k === n);
+      b.classList.toggle("past", k < n);
+      if (k === n) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+    });
+    var s = STAGES[n];
+    $("#story-detail").innerHTML = "<h3>" + esc(s.t) + (s.badge ? ' <span class="badge">' + s.badge + "</span>" : "") + "</h3><p>" + s.d + "</p>";
+    $("#st-commits").textContent = s.commits;
+    $("#st-tests").textContent = s.tests;
+    var vis = FILES.filter(function (f) { return f[1] <= n; });
+    $("#st-files").textContent = vis.length;
+    var out = [], dirs = {};
+    vis.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; }).forEach(function (f) {
+      var parts = f[0].split("/");
+      for (var k = 1; k < parts.length; k++) {
+        var d = parts.slice(0, k).join("/");
+        if (!dirs[d]) { dirs[d] = 1; out.push('<div class="d">' + "  ".repeat(k - 1) + esc(parts[k - 1]) + "/</div>"); }
+      }
+      var fresh = animate && f[1] === n;
+      out.push('<div class="' + (fresh ? "new" : "") + '">' + "  ".repeat(parts.length - 1) + esc(parts[parts.length - 1]) +
+        (f[2] ? '  <span class="note">' + esc(f[2]) + "</span>" : "") + (fresh ? "  +" : "") + "</div>");
+    });
+    if (n === 0) out.push('<div class="note">(empty repo, go.mod not yet committed)</div>');
+    $("#story-tree").innerHTML = out.join("");
+  }
+  function storyStop() { if (storyTimer) { clearTimeout(storyTimer); storyTimer = null; } $("#story-play span").textContent = "Replay the build"; $("#story-play use").setAttribute("href", "#i-play"); }
+  stagesEl.addEventListener("click", function (e) { var b = e.target.closest(".stage"); if (!b) return; storyStop(); renderStage(+b.dataset.n, true); });
+  $("#story-prev").addEventListener("click", function () { storyStop(); if (cur > 0) renderStage(cur - 1, true); });
+  $("#story-next").addEventListener("click", function () { storyStop(); if (cur < STAGES.length - 1) renderStage(cur + 1, true); });
+  $("#story-play").addEventListener("click", function () {
+    if (storyTimer) { storyStop(); return; }
+    var n = cur >= STAGES.length - 1 ? 0 : cur + 1;
+    $("#story-play span").textContent = "Pause";
+    $("#story-play use").setAttribute("href", "#i-pause");
+    (function step() {
+      renderStage(n, true);
+      n++;
+      if (n < STAGES.length) storyTimer = setTimeout(step, 2400); else storyStop();
+    })();
+  });
+  renderStage(cur, false);
+
+  /* ================= WHOLE SYSTEM ================= */
+  var wsvg = $("#w-svg"), wfig = $("#whole-fig");
+  var INFO = {
+    admin: ["i-user", "You", "At a shell, editing files with anything: vim, nano, sed, or apt upgrading a package behind your back."],
+    scd: ["i-eye", "scd, the watcher (M2, not built)", "A small daemon that watches config files with inotify and snapshots every write into the same store, so nothing depends on remembering to run sc snapshot."],
+    etc: ["i-file", "/etc, your real config files", "fstab, hosts, sshd_config, default/grub. SmartConfig never truncates them; it only replaces them with an atomic rename."],
+    sc: ["i-term", "sc, the CLI (M1, built)", "One static Go binary with six commands: init, snapshot, log, cat, diff, restore. Static means it still runs when the system's shared libraries are broken."],
+    store: ["i-db", "The store (M1, built)", "$SC_HOME, default /var/lib/smartconfig. objects/ holds each unique file content once; changes.db holds one row per change with mode, owner, size and why."],
+    m6: ["i-flask", "Incident factory (M6, not built)", "A library of configs broken on purpose (a bad fstab UUID, a typo in sshd_config) used to measure whether the checkers and sc why get it right."],
+    rescue: ["i-buoy", "Rescue boot (M4, not built)", "A GRUB menu entry that boots into rescue.target, prints sc status, and lets you restore one file even with a read-only root."],
+    check: ["i-shield", "Checkers (M3, not built)", "Validators and regex rules per kind of file. sc edit and sc check run them and warn before a bad edit is applied, with a plain explanation."],
+    model: ["i-chip", "sc why (M7, opt-in, not built)", "Runs a local model with llama.cpp over the diff, the history and the checker findings, and explains in plain words what broke. Nothing leaves the machine."]
+  };
+  function showInfo(k) {
+    var v = INFO[k]; if (!v) return;
+    $("#w-info").innerHTML = '<svg aria-hidden="true"><use href="#' + v[0] + '"/></svg><div><b>' + esc(v[1]) + "</b><br>" + esc(v[2]) + "</div>";
+  }
+  $$(".node", wsvg).forEach(function (g) {
+    g.addEventListener("click", function () { showInfo(g.dataset.k); });
+    g.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showInfo(g.dataset.k); } });
+  });
+  var SCEN = {
+    today: { full: false, idle: "<b>Save and undo, with what exists today.</b> Press Play to watch a file get saved, broken and put back.", steps: [
+      { on: ["w-admin", "w-sc", "w-l1"], edge: "w-e1", text: "You run <code>sc snapshot /etc/fstab</code> before touching the file." },
+      { on: ["w-etc", "w-sc", "w-l5a"], edge: "w-e5", text: "sc reads the file together with its mode and owner." },
+      { on: ["w-sc", "w-store", "w-l6"], edge: "w-e6", text: "The content goes into the store once, plus one row of history." },
+      { on: ["w-admin", "w-etc", "w-l2"], edge: "w-e2", text: "Later you edit <code>/etc/fstab</code> and make a mistake." },
+      { on: ["w-store", "w-sc", "w-l6"], edge: "w-e6", rev: true, text: "<code>sc restore</code> pulls the last good version back out of the store…" },
+      { on: ["w-sc", "w-etc", "w-l5b"], edge: "w-e5", rev: true, text: "…and swaps it in atomically, with the original mode and owner. Fixed." }
+    ] },
+    caught: { full: true, idle: "<b>A bad edit gets caught (M2 and M3).</b> Press Play.", steps: [
+      { on: ["w-admin", "w-sc", "w-l1"], edge: "w-e1", text: "You run <code>sc edit /etc/fstab</code> (M3) instead of opening the file directly." },
+      { on: ["w-check", "w-sc", "w-l7"], edge: "w-e7", text: "The checkers validate the new version first and warn, for example about a UUID that no disk has. You fix it before it is applied." },
+      { on: ["w-admin", "w-etc", "w-l2"], edge: "w-e2", text: "Or you edit with any editor, or apt changes a file on its own…" },
+      { on: ["w-etc", "w-scd", "w-l3"], edge: "w-e3", text: "…inotify tells scd (M2) that the file changed…" },
+      { on: ["w-scd", "w-store", "w-l4"], edge: "w-e4", text: "…and scd snapshots it automatically. Every change has history, including the ones nobody announced." }
+    ] },
+    boot: { full: true, idle: "<b>The machine won't boot (M4 and M7).</b> Press Play.", steps: [
+      { on: ["w-rescue"], text: "After a bad fstab edit the machine no longer boots. You pick the SmartConfig entry in GRUB (M4), which starts a rescue shell." },
+      { on: ["w-rescue", "w-etc", "w-l10"], edge: "w-e10", text: "From there, one <code>sc restore</code> puts back the last <code>/etc/fstab</code> that booted." },
+      { on: ["w-store", "w-model", "w-l8"], edge: "w-e8", text: "Back up and running, <code>sc why</code> (M7) reads the diff between the broken and the good version…" },
+      { on: ["w-check", "w-model", "w-l9"], edge: "w-e9", text: "…adds what the checkers found, and explains in plain words what broke. It runs a local model and is opt-in." }
+    ] },
+    evals: { full: true, idle: "<b>How we'll know it works (M6).</b> Press Play.", steps: [
+      { on: ["w-m6"], text: "M6 builds a library of configs broken on purpose: bad UUIDs, typos, missing includes." },
+      { on: ["w-m6", "w-check", "w-e12", "w-l11"], edge: "w-e11", track: "w-t12", text: "Each one is replayed through the checkers to see whether they catch it…" },
+      { on: ["w-m6", "w-model", "w-l11"], edge: "w-e11", text: "…and through <code>sc why</code> to score its explanations." }
+    ] }
+  };
+  var viewBtns = $$("[data-view]", wfig);
+  function setView(v) { wsvg.classList.toggle("today", v === "today"); pressGroup(viewBtns, $('[data-view="' + v + '"]', wfig)); }
+  viewBtns.forEach(function (b) { b.addEventListener("click", function () { setView(b.dataset.view); }); });
+  var wStep = Stepper(wfig, wsvg, { steps: SCEN.today.steps, idle: SCEN.today.idle });
+  var scenBtns = $$("#w-scen [data-s]");
+  scenBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var sc = SCEN[b.dataset.s];
+      pressGroup(scenBtns, b);
+      if (sc.full) setView("full");
+      wStep.setSteps(sc.steps, sc.idle);
+      wStep.play();
+    });
+  });
+
+  /* ================= SNAPSHOT FLOW ================= */
+  var SHA_BASE = "c2646361092fcc60a389eca0da5c47717254499a28a6d5bcc564c746940cb275";
+  var SHA_EDIT = "97acb3b70302771e472a5950adc4e5296925a6c127c10bfe10dd07d9074f6b49";
+  var sfig = $("#snap-fig"), ssvg = $("#s-svg");
+  var SNAP = {
+    changed: [
+      { on: ["s-a"], text: 'You added a line to <code>/etc/hosts</code> and run <code>sc snapshot /etc/hosts -m "added smoke line"</code>.' },
+      { on: ["s-a", "s-b"], edge: "s-e1", text: "fsutil checks it is a regular file (not a symlink, at most 8 MB), then reads 297 bytes, mode 0644, owner root:root." },
+      { on: ["s-b", "s-c"], edge: "s-e2", text: "The bytes are hashed with sha256. The hash is the file's fingerprint and its storage name." },
+      { on: ["s-c", "s-d"], edge: "s-e3", text: "It is compared with the newest snapshot of <code>/etc/hosts</code>, 733bd9. The fingerprints differ." },
+      { on: ["s-d", "s-f", "s-l5"], edge: "s-e5", text: "The bytes are saved once under <code>objects/97/</code>, mode 0600. If this exact content had been saved before, that copy is reused." },
+      { on: ["s-f", "s-g"], edge: "s-e6", text: "One row goes into <code>changes.db</code>: id d2b20b, origin manual, mode, owner, size and your message." },
+      { on: ["s-g", "s-h"], edge: "s-e7", text: "sc prints <code>snapshot d2b20b  /etc/hosts  (297 bytes)</code>." }
+    ],
+    same: [
+      { on: ["s-a"], text: "The file is untouched since the baseline, and you run <code>sc snapshot /etc/hosts</code> again." },
+      { on: ["s-a", "s-b"], edge: "s-e1", text: "fsutil checks it and reads 273 bytes, mode 0644, owner root:root." },
+      { on: ["s-b", "s-c"], edge: "s-e2", text: "The bytes are hashed with sha256." },
+      { on: ["s-c", "s-d"], edge: "s-e3", text: "Compared with the newest snapshot, 733bd9: same fingerprint." },
+      { on: ["s-d", "s-e", "s-l4"], edge: "s-e4", text: "Nothing is written. sc prints <code>unchanged since 733bd9</code> and exits 0." }
+    ]
+  };
+  var snapMode = "changed";
+  function kv(rows) {
+    return rows.map(function (r) { return "<dt>" + r[0] + '</dt><dd class="' + (r[2] || "") + '">' + r[1] + "</dd>"; }).join("");
+  }
+  function applySnap(n) {
+    var ch = snapMode === "changed", L = [];
+    var fresh = function (k) { return n === k ? "fresh" : ""; };
+    L.push(["command", n >= 0 ? (ch ? 'sc snapshot /etc/hosts -m "added smoke line"' : "sc snapshot /etc/hosts") : "—"]);
+    L.push(["file", n >= 1 ? (ch ? "297 bytes" : "273 bytes") + " · 0644 root:root" : "—", fresh(1)]);
+    L.push(["sha256", n >= 2 ? (ch ? SHA_EDIT : SHA_BASE).slice(0, 16) + "…" : "—", fresh(2)]);
+    L.push(["newest", n >= 3 ? "733bd9 · " + SHA_BASE.slice(0, 16) + "…" : "—", fresh(3)]);
+    L.push(["same?", n >= 3 ? (ch ? '<span class="dif">no, it changed</span>' : '<span class="ok">yes</span>') : "—", fresh(3)]);
+    if (ch) {
+      L.push(["blob", n >= 4 ? "objects/97/" + SHA_EDIT.slice(0, 12) + "…" : "—", fresh(4)]);
+      L.push(["row", n >= 5 ? "d2b20b · manual · 297" : "—", fresh(5)]);
+      L.push(["prints", n >= 6 ? '<span class="ok">snapshot d2b20b  /etc/hosts  (297 bytes)</span>' : "—", fresh(6)]);
+    } else {
+      L.push(["prints", n >= 4 ? '<span class="ok">unchanged since 733bd9</span>' : "—", fresh(4)]);
+    }
+    $("#snap-kv").innerHTML = kv(L);
+  }
+  var sStep = Stepper(sfig, ssvg, { steps: SNAP.changed, idle: "Press <b>Play</b> to follow one snapshot through the code, or step through it with the arrows.", apply: applySnap });
+  var snapBtns = $$("[data-s]", sfig);
+  snapBtns.forEach(function (b) {
+    b.addEventListener("click", function () { snapMode = b.dataset.s; pressGroup(snapBtns, b); sStep.setSteps(SNAP[snapMode]); sStep.play(); });
+  });
+
+  /* ================= RESTORE FLOW ================= */
+  var rfig = $("#rest-fig"), rsvg = $("#r-svg");
+  var R = [
+    { on: ["r-sc", "r-store", "r-n1", "r-l1"], edge: "r-e1", text: "You run <code>sc restore 733bd9</code>. A prefix like <code>733</code> works too, as long as only one id starts with it." },
+    { on: ["r-store", "r-home", "r-n2", "r-l2"], edge: "r-e2", text: "The store reads blob <code>c2646361…</code> from <code>objects/</code> and re-checks its sha256. A corrupt copy stops the restore here, before anything is touched." },
+    { on: ["r-store", "r-etc", "r-n3", "r-l3"], edge: "r-e3", text: "It reads what is on disk now: 297 bytes, including the <code>smoke.invalid</code> line." },
+    { on: ["r-store", "r-home", "r-n4", "r-l4"], edge: "r-e4", text: "That current file is saved first, as pre-restore row <code>0beb81</code>. This is the undo point: if the restore was a mistake, <code>sc restore 0beb81</code> brings it back." },
+    { on: ["r-store", "r-fs", "r-n5", "r-l5"], edge: "r-e5", text: "fsutil gets the old bytes plus the recorded mode 0644 and owner root:root." },
+    { on: ["r-fs", "r-etc", "r-n6", "r-l6"], edge: "r-e6", text: "It writes a temp file next to the original, inside <code>/etc</code>, so the final rename stays on one filesystem." },
+    { on: ["r-fs", "r-etc", "r-n7", "r-l7"], edge: "r-e7", text: "It sets the owner, then the mode (in that order, so setuid bits survive), and fsyncs so the bytes are really on disk." },
+    { on: ["r-fs", "r-etc", "r-n8", "r-l8"], edge: "r-e8", text: "One rename swaps it in. Anyone reading <code>/etc/hosts</code> sees either the old file or the new one, never half of each." },
+    { on: ["r-store", "r-home", "r-n9", "r-l9"], edge: "r-e9", text: "The store records the restore itself as row <code>460e5a</code>." },
+    { on: ["r-store", "r-sc", "r-n10", "r-l10"], edge: "r-e10", text: "sc prints one line: where it came from, the mode and owner it set, and the undo id." }
+  ];
+  function applyRestore(n) {
+    var k = n + 1; // 1-based step reached; 0 = before
+    var dir = [];
+    if (k >= 6 && k < 8) {
+      dir.push(["hosts", "297 B", ""]);
+      dir.push([".hosts.sc-tmp-8123", "273 B", k === 6 ? "fresh" : ""]);
+    } else {
+      dir.push(["hosts", k >= 8 ? "273 B" : "297 B", k === 8 ? "fresh" : ""]);
+    }
+    $("#r-dir").innerHTML = dir.map(function (d) { return '<div class="' + d[2] + '"><span>' + d[0] + '</span><span></span><span class="r">' + d[1] + "</span></div>"; }).join("");
+    var tail = "…\nff02::2 ip6-allrouters\nff02::3 ip6-allhosts\n";
+    $("#r-hosts").innerHTML = esc(tail) + (k >= 8 ? '<span class="gone">(smoke line gone)</span>' : '<span class="bad">127.0.0.1 smoke.invalid</span>');
+    var rows = [["d2b20b", "manual", "297", ""], ["733bd9", "manual", "273", ""]];
+    if (k >= 4) rows.unshift(["0beb81", "pre-restore", "297", k === 4 ? "fresh" : ""]);
+    if (k >= 9) rows.unshift(["460e5a", "restore", "273", k === 9 ? "fresh" : ""]);
+    var pc = { manual: "manual", "pre-restore": "pre", restore: "restore" };
+    $("#r-db").innerHTML = rows.map(function (r) { return '<div class="' + r[3] + '"><span>' + r[0] + '</span><span class="pill ' + pc[r[1]] + '">' + r[1] + '</span><span class="r">' + r[2] + " B</span></div>"; }).join("");
+    var t = '<span class="p">$ sudo sc restore 733bd9</span>';
+    if (k === 0) t = '<span class="p">(waiting)</span>';
+    if (k >= 10) t += "\nrestored /etc/hosts from 733bd9\n(mode 0644 root:root), previous\nstate saved as 0beb81";
+    $("#r-term").innerHTML = t;
+  }
+  Stepper(rfig, rsvg, { steps: R, idle: "Press <b>Play</b> to watch the restore. The panels below show the disk, the database and the terminal changing at each step.", apply: applyRestore });
+
+  /* ================= SIMULATOR ================= */
+  var HOSTS = "127.0.0.1\tlocalhost.localdomain\tlocalhost\n::1\t\tlocalhost6.localdomain6\tlocalhost6\n\n# The following lines are desirable for IPv6 capable hosts\n::1     localhost ip6-localhost ip6-loopback\nfe00::0 ip6-localnet\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\nff02::3 ip6-allhosts\n";
+  var PATH = "/etc/hosts";
+  var enc = new TextEncoder();
+  var fileEl = $("#sim-file"), outEl = $("#sim-out"), cmdEl = $("#sim-cmd");
+  var db = [], blobs = {}, freshId = null, busy = false;
+
+  function bytes(s) { return enc.encode(s).length; }
+  async function sha256(s) {
+    var buf = await crypto.subtle.digest("SHA-256", enc.encode(s));
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+  }
+  function print(text, cls) {
+    var d = document.createElement("div");
+    if (cls) d.className = cls;
+    d.textContent = text;
+    outEl.appendChild(d);
+    outEl.scrollTop = outEl.scrollHeight;
+  }
+  function when(ts) {
+    var d = new Date(ts * 1000), p = function (x) { return String(x).padStart(2, "0"); };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+  function renderDb() {
+    var pc = { manual: "manual", "pre-restore": "pre", restore: "restore" };
+    $("#sim-db").innerHTML = db.length ? db.map(function (r) {
+      return '<tr class="' + (r.id === freshId ? "fresh" : "") + '"><td class="id">' + r.id + '</td><td><span class="pill ' + pc[r.origin] + '">' + r.origin + "</span></td><td>" + r.size + "</td><td>" + esc(r.intent) + "</td></tr>";
+    }).join("") : '<tr><td colspan="4" class="sub">empty: no snapshots yet</td></tr>';
+    $("#sim-blobs").textContent = "objects/: " + Object.keys(blobs).length + " blob" + (Object.keys(blobs).length === 1 ? "" : "s") + " (one per unique content)";
+    $("#sim-meta").textContent = bytes(fileEl.value) + " bytes · 0644 root:root";
+  }
+  async function makeId(path, ts, blob) {
+    for (var n = 0; ; n++) {
+      var text = path + "\n" + ts + "\n" + blob + (n > 0 ? "\n" + n : "");
+      var id = (await sha256(text)).slice(0, 6);
+      if (!db.some(function (r) { return r.id === id; })) return { id: id, rehashed: n };
+    }
+  }
+  async function snapshot(origin, intent) {
+    var content = fileEl.value, blob = await sha256(content);
+    if (origin === "manual") {
+      var last = db.filter(function (r) { return r.path === PATH; })[0];
+      if (last && last.blob === blob) return { row: last, unchanged: true };
+    }
+    blobs[blob] = content;
+    var ts = Math.floor(Date.now() / 1000);
+    var made = await makeId(PATH, ts, blob);
+    var row = { id: made.id, ts: ts, path: PATH, blob: blob, size: bytes(content), origin: origin, intent: intent || "" };
+    db.unshift(row);
+    freshId = row.id;
+    return { row: row, rehashed: made.rehashed };
+  }
+  function get(prefix) {
+    var p = String(prefix || "").toLowerCase();
+    if (!/^[0-9a-f]{1,6}$/.test(p)) throw new Error('invalid id "' + prefix + '": expected up to 6 hex characters');
+    var m = db.filter(function (r) { return r.id.indexOf(p) === 0; });
+    if (!m.length) throw new Error('no snapshot with id "' + prefix + '"');
+    if (m.length > 1) throw new Error('ambiguous id "' + prefix + '" matches ' + m.map(function (r) { return r.id; }).sort().join(", "));
+    return m[0];
+  }
+  function splitLines(s) {
+    if (!s) return [];
+    var L = s.split("\n");
+    if (L[L.length - 1] === "") L.pop(); else L[L.length - 1] += "\n\\ No newline at end of file";
+    return L;
+  }
+  function unified(a, b, la, lb) {
+    if (a === b) return null;
+    var A = splitLines(a), B = splitLines(b), n = A.length, m = B.length, i, j;
+    var dp = [];
+    for (i = 0; i <= n; i++) { dp.push(new Array(m + 1).fill(0)); }
+    for (i = n - 1; i >= 0; i--) for (j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    var ops = []; i = 0; j = 0;
+    while (i < n || j < m) {
+      if (i < n && j < m && A[i] === B[j]) { ops.push([" ", A[i]]); i++; j++; }
+      else if (i < n && (j >= m || dp[i + 1][j] >= dp[i][j + 1])) { ops.push(["-", A[i]]); i++; }
+      else { ops.push(["+", B[j]]); j++; }
+    }
+    var ch = []; ops.forEach(function (o, k) { if (o[0] !== " ") ch.push(k); });
+    var ranges = [];
+    ch.forEach(function (k) {
+      var s = Math.max(0, k - 3), e = Math.min(ops.length - 1, k + 3), last = ranges[ranges.length - 1];
+      if (last && s <= last[1] + 1) last[1] = Math.max(last[1], e); else ranges.push([s, e]);
+    });
+    var out = ["--- " + la, "+++ " + lb];
+    ranges.forEach(function (r) {
+      var os = 1, ns = 1, oc = 0, nc = 0, k;
+      for (k = 0; k < r[0]; k++) { if (ops[k][0] !== "+") os++; if (ops[k][0] !== "-") ns++; }
+      for (k = r[0]; k <= r[1]; k++) { if (ops[k][0] !== "+") oc++; if (ops[k][0] !== "-") nc++; }
+      if (oc === 0) os--; if (nc === 0) ns--;
+      out.push("@@ -" + os + (oc === 1 ? "" : "," + oc) + " +" + ns + (nc === 1 ? "" : "," + nc) + " @@");
+      for (k = r[0]; k <= r[1]; k++) out.push(ops[k][0] + ops[k][1]);
+    });
+    return out;
+  }
+  function tokenize(s) {
+    var out = [], re = /"([^"]*)"|'([^']*)'|(\S+)/g, m;
+    while ((m = re.exec(s))) out.push(m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2] : m[3]);
+    return out;
+  }
+  function checkPath(p) {
+    if (!p) throw new Error("accepts 1 arg(s), received 0");
+    if (p !== PATH) {
+      if (p.charAt(0) !== "/") throw new Error("this demo runs in / and only has /etc/hosts; use the absolute path");
+      throw new Error("read " + p + ": no such file or directory (this demo only has /etc/hosts)");
+    }
+  }
+  async function run(line) {
+    var raw = line.trim();
+    if (!raw) return;
+    print("$ " + raw, "p");
+    var a = tokenize(raw);
+    if (a[0] === "sudo") a.shift();
+    if (a[0] === "clear") { outEl.innerHTML = ""; return; }
+    if (a[0] === "./bin/sc" || a[0] === "bin/sc") a[0] = "sc";
+    if (a[0] !== "sc") { print(a[0] + ": command not found here; try sc snapshot /etc/hosts", "err"); return; }
+    var cmd = a[1], args = a.slice(2);
+    try {
+      if (!cmd || cmd === "help" || cmd === "--help") {
+        print("Commands: init, snapshot <path> [-m why] [-q], log [path] [-n N], cat <id>, diff <id> [<id2>], restore <id>");
+      } else if (cmd === "init") {
+        print("initialised /var/lib/smartconfig");
+      } else if (cmd === "snapshot") {
+        var path = null, msg = "", quiet = false;
+        for (var k = 0; k < args.length; k++) {
+          if (args[k] === "-m" || args[k] === "--message") msg = args[++k] || "";
+          else if (args[k] === "-q" || args[k] === "--quiet") quiet = true;
+          else if (args[k].charAt(0) === "-") throw new Error("unknown shorthand flag: '" + args[k].replace(/^-+/, "") + "' in " + args[k]);
+          else path = args[k];
+        }
+        checkPath(path);
+        var r = await snapshot("manual", msg);
+        if (quiet) print(r.row.id);
+        else if (r.unchanged) print("unchanged since " + r.row.id);
+        else print("snapshot " + r.row.id + "  " + PATH + "  (" + r.row.size + " bytes)");
+        if (r.rehashed) print("(id collided with an existing row; rehashed " + r.rehashed + "×)", "note");
+      } else if (cmd === "log") {
+        var n = 50, p = "";
+        for (var q = 0; q < args.length; q++) { if (args[q] === "-n") n = parseInt(args[++q], 10) || 0; else p = args[q]; }
+        if (p) checkPath(p);
+        var rows = n > 0 ? db.slice(0, n) : db.slice();
+        if (!rows.length) { print("no snapshots"); }
+        else {
+          var tab = [["ID", "WHEN", "ORIGIN", "FILE", "SIZE", "WHAT"]].concat(rows.map(function (r) { return [r.id, when(r.ts), r.origin, r.path, String(r.size), r.intent]; }));
+          var w = tab[0].map(function (_, c) { return Math.max.apply(null, tab.map(function (row) { return row[c].length; })); });
+          tab.forEach(function (row) { print(row.map(function (c, ci) { return ci === row.length - 1 ? c : c.padEnd(w[ci] + 2); }).join("")); });
+        }
+      } else if (cmd === "cat") {
+        if (args.length !== 1) throw new Error("accepts 1 arg(s), received " + args.length);
+        print(blobs[get(args[0]).blob].replace(/\n$/, ""));
+      } else if (cmd === "diff") {
+        if (args.length < 1 || args.length > 2) throw new Error("accepts between 1 and 2 arg(s), received " + args.length);
+        var c1 = get(args[0]), la = "a" + c1.path + " (snapshot " + c1.id + ")", other, lb;
+        if (args.length === 2) { var c2 = get(args[1]); other = blobs[c2.blob]; lb = "b" + c2.path + " (snapshot " + c2.id + ")"; }
+        else { other = fileEl.value; lb = "b" + c1.path + " (on disk)"; }
+        var d = unified(blobs[c1.blob], other, la, lb);
+        if (!d) print("no differences");
+        else d.forEach(function (l, li) {
+          var cls = li < 2 ? "" : l.charAt(0) === "+" ? "add" : l.charAt(0) === "-" ? "del" : "";
+          print(l, cls);
+        });
+      } else if (cmd === "restore") {
+        if (args.length !== 1) throw new Error("accepts 1 arg(s), received " + args.length);
+        var src = get(args[0]);
+        var pre = await snapshot("pre-restore", "before restoring " + src.id);
+        fileEl.value = blobs[src.blob];
+        var ts = Math.floor(Date.now() / 1000);
+        var made = await makeId(src.path, ts, src.blob);
+        db.unshift({ id: made.id, ts: ts, path: src.path, blob: src.blob, size: src.size, origin: "restore", intent: "restored from " + src.id });
+        freshId = made.id;
+        print("restored " + src.path + " from " + src.id + " (mode 0644 root:root), previous state saved as " + pre.row.id);
+        if (pre.rehashed || made.rehashed) print("(an id collided in the same second and was rehashed, exactly like the real run)", "note");
+      } else {
+        throw new Error('unknown command "' + cmd + '" for "sc"');
+      }
+    } catch (err) {
+      print("sc: " + err.message, "err");
+    }
+    renderDb();
+  }
+  async function runQueued(line) {
+    if (busy) return;
+    busy = true;
+    try { await run(line); } finally { busy = false; }
+  }
+  function firstManual() { var m = db.filter(function (r) { return r.origin === "manual"; }); return m.length ? m[m.length - 1].id : null; }
+  function reset() {
+    db = []; blobs = {}; freshId = null;
+    fileEl.value = HOSTS;
+    outEl.innerHTML = "";
+    print("# a fresh store; /etc/hosts is a copy of this VM's file", "note");
+    renderDb();
+  }
+  $("#sim-form").addEventListener("submit", function (e) { e.preventDefault(); var v = cmdEl.value; cmdEl.value = ""; runQueued(v); });
+  fileEl.addEventListener("input", renderDb);
+  $("#guide").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-g]"); if (!b) return;
+    var g = b.dataset.g, base = firstManual();
+    if (g === "reset") { reset(); return; }
+    if (g === "base") { runQueued('sc snapshot /etc/hosts -m "baseline"'); return; }
+    if (g === "break") {
+      var v = fileEl.value; if (v && v.slice(-1) !== "\n") v += "\n";
+      fileEl.value = v + "127.0.0.1 smoke.invalid\n";
+      print("# you edited /etc/hosts and added: 127.0.0.1 smoke.invalid", "note");
+      renderDb(); return;
+    }
+    if (g === "snap") { runQueued('sc snapshot /etc/hosts -m "added smoke line"'); return; }
+    if (g === "log") { runQueued("sc log /etc/hosts"); return; }
+    if (!base) { print("# take a baseline first (button 1)", "note"); return; }
+    if (g === "diff") runQueued("sc diff " + base);
+    if (g === "restore") runQueued("sudo sc restore " + base);
+  });
+  if (!(window.crypto && crypto.subtle)) {
+    $("#sim-out").textContent = "This browser does not allow sha256 in this page, so the simulator is off.";
+    $$("#guide button, #sim-form button, #sim-cmd").forEach(function (b) { b.disabled = true; });
+    fileEl.value = HOSTS;
+  } else {
+    reset();
+  }
+})();
+</script>

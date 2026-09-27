@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<title>SmartConfig Films</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&family=Ubuntu:wght@400;500;700&display=swap">
+<style>
+/* One dark "screening room" look for all three films, chosen on purpose. */
+:root {
+  color-scheme: dark;
+  --room: #0A0D12; --panel: #121820; --ink: #E6EAF0; --muted: #98A3B1; --line: #273140;
+  --aub: #300A24; --tgreen: #8AE234; --tblue: #729FCF; --tred: #EF2929; --tfg: #EEEEEC;
+  --cyan: #6FE3D6; --amber: #FFB547; --violet: #C3A6FF; --bad: #FF6B6B; --good: #7BE0A8; --orange: #E95420;
+  --ui: "Ubuntu", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Ubuntu Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--room); color: var(--ink); font-family: var(--ui); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 28px 64px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-size: clamp(26px, 4.4vw, 40px); font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
+.kicker { font-family: var(--mono); font-size: 14px; color: var(--cyan); letter-spacing: .06em; text-transform: uppercase; }
+.lede { color: var(--muted); margin: 0; max-width: 72ch; }
+code { font-family: var(--mono); font-size: 1.05em; }
+
+/* film picker */
+.picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .picker { grid-template-columns: 1fr; } }
+.pick { text-align: left; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: grid; gap: 3px; }
+.pick:hover { border-color: var(--cyan); }
+.pick[aria-pressed="true"] { border-color: var(--orange); box-shadow: 0 0 0 1px var(--orange) inset; }
+.pick .no { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.pick .tt { font-weight: 700; font-size: 17px; }
+.pick .ds { font-size: 13.5px; color: var(--muted); }
+.tag { font-family: var(--mono); font-size: 11.5px; padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; }
+.tag.real { color: var(--good); } .tag.concept { color: var(--amber); } .tag.without { color: var(--bad); }
+
+/* ---------- stage ---------- */
+.player { display: grid; gap: 14px; }
+.frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #05070A; box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px var(--line); }
+.stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; overflow: hidden; font-family: var(--ui); }
+.layer { position: absolute; inset: 0; opacity: 0; }
+.room { position: absolute; inset: 0; background: radial-gradient(900px 500px at 50% 40%, #1B2330 0%, #0B0F15 60%, #06080B 100%); }
+.desk { position: absolute; left: 0; right: 0; top: 520px; bottom: 0; background: linear-gradient(#1A1511, #0E0B09); }
+.world { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; }
+.lidwrap { position: absolute; left: 320px; top: 60px; width: 640px; height: 400px; perspective: 1500px; perspective-origin: 50% 100%; }
+.lid { position: absolute; inset: 0; transform-origin: 50% 100%; border-radius: 14px 14px 4px 4px; background: linear-gradient(#2A2F36, #1B1F25); padding: 14px; box-shadow: 0 0 0 1px #3A414B inset; }
+.screen { position: relative; width: 612px; height: 372px; overflow: hidden; border-radius: 4px; background: #000; }
+.wall { position: absolute; inset: 0; background: radial-gradient(420px 260px at 18% 20%, #6A2C55 0%, transparent 70%), radial-gradient(380px 300px at 85% 85%, #C4572A 0%, transparent 70%), linear-gradient(135deg, #2B0A26 0%, #3E1236 45%, #5A1E33 100%); }
+.topbar { position: absolute; left: 0; right: 0; top: 0; height: 18px; background: rgba(0,0,0,.55); color: #ddd; font-size: 10px; display: flex; justify-content: center; align-items: center; }
+.dock { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 8px 10px; background: rgba(20,12,20,.55); border-radius: 12px; border: 1px solid rgba(255,255,255,.12); }
+.ico { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: #fff; }
+.ico svg { width: 18px; height: 18px; }
+.ico.a { background: #5B6B7D; } .ico.b { background: #2F6FB3; } .ico.c { background: #7A5C2E; } .ico.t { background: #1D1F21; box-shadow: 0 0 0 1px #555 inset; } .ico.e { background: #4B4F56; }
+.miniwin { position: absolute; left: 60px; top: 40px; width: 492px; height: 290px; border-radius: 8px; overflow: hidden; background: var(--aub); box-shadow: 0 16px 40px rgba(0,0,0,.6); transform-origin: 284px 302px; }
+.chrome { height: 30px; background: #2B2B2B; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #cfcfcf; font-size: 12px; }
+.chrome i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; background: #555; }
+.chrome i:first-child { background: var(--orange); }
+.chrome span { flex: 1; text-align: center; margin-right: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.miniwin .chrome { height: 16px; font-size: 7px; padding: 0 6px; gap: 4px; }
+.miniwin .chrome i { width: 6px; height: 6px; }
+.mbody { padding: 6px 8px; font-family: var(--mono); font-size: 9px; color: var(--tfg); }
+.cursor { position: absolute; left: 0; top: 0; width: 18px; height: 24px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.6)); }
+.ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid #fff; opacity: 0; pointer-events: none; }
+.screendark { position: absolute; inset: 0; background: #000; pointer-events: none; }
+.base { position: absolute; left: 230px; top: 460px; width: 820px; height: 24px; background: linear-gradient(#C9CED6, #7E8691); clip-path: polygon(3% 0, 97% 0, 100% 100%, 0 100%); border-radius: 0 0 10px 10px; }
+.shadow { position: absolute; left: 250px; top: 478px; width: 780px; height: 40px; background: radial-gradient(closest-side, rgba(0,0,0,.6), transparent); }
+
+/* terminal scene */
+.termbg { position: absolute; inset: 0; background: radial-gradient(900px 600px at 30% 30%, #151B24, #080A0E); }
+.twin { position: absolute; left: 20px; top: 56px; height: 560px; width: 1240px; border-radius: 10px; overflow: hidden; background: var(--aub); box-shadow: 0 20px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+.twin .chrome { height: 34px; font-size: 14px; flex: none; }
+.twin .chrome i { width: 13px; height: 13px; }
+.tbody { flex: 1; padding: 12px 16px 16px; font-family: var(--mono); font-size: 18px; line-height: 1.38; color: var(--tfg); display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.tbody div, .cbody div { white-space: pre-wrap; word-break: break-all; min-height: 1.38em; }
+.pu { color: var(--tgreen); font-weight: 700; } .pp { color: var(--tblue); font-weight: 700; } .pr { color: var(--tred); font-weight: 700; }
+.caret { display: inline-block; width: .55em; height: 1.05em; vertical-align: -0.18em; background: currentColor; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.o-dim { color: #B9B4B8; } .o-add { color: var(--tgreen); } .o-del { color: var(--tred); } .o-hunk { color: #34E2E2; }
+.o-ok { color: var(--tgreen); font-weight: 700; } .o-bad { color: #FF7B72; font-weight: 700; } .o-warn { color: #FCE94F; } .o-sc { color: #8FD3FF; }
+mark { background: #FCE94F; color: #300A24; border-radius: 2px; padding: 0 1px; }
+.xray { position: absolute; top: 56px; left: 740px; width: 520px; height: 560px; border-radius: 10px; overflow: hidden;
+  background: linear-gradient(rgba(111,227,214,.05) 1px, transparent 1px) 0 0 / 100% 24px, linear-gradient(90deg, rgba(111,227,214,.05) 1px, transparent 1px) 0 0 / 24px 100%, #0B1620;
+  border: 1px solid #1E3B44; box-shadow: 0 20px 60px rgba(0,0,0,.6); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; opacity: 0; }
+.xh { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 500; }
+.xh .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.sys { display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; flex: 1; overflow: hidden; }
+.sc { border-left: 2px solid #24414A; padding: 3px 8px; opacity: .55; }
+.sc .c { font-family: var(--mono); font-size: 15px; color: #D8E6EA; white-space: pre-wrap; }
+.sc .n { font-size: 13px; color: var(--muted); }
+.sc.sql .c { color: var(--violet); }
+.sc.live { opacity: 1; border-left-color: var(--cyan); background: rgba(111,227,214,.08); }
+.sc.live .n { color: var(--ink); }
+.sc.hot { border-left-color: var(--amber); } .sc.hot .c { color: var(--amber); }
+.sc.bad { border-left-color: var(--bad); } .sc.bad .c { color: var(--bad); }
+.sc.good { border-left-color: var(--good); } .sc.good .c { color: var(--good); }
+
+/* nano (shared by terminal and console) */
+.nano { position: absolute; left: 20px; top: 90px; width: 1240px; height: 526px; background: var(--aub); font-family: var(--mono); font-size: 18px; line-height: 1.38; color: var(--tfg); display: flex; flex-direction: column; z-index: 3; border-radius: 0 0 10px 10px; }
+.nano.onconsole { left: 0; top: 0; width: 1280px; height: 620px; background: #000; border-radius: 0; }
+.nano .nh { background: #D3D7CF; color: #300A24; display: flex; justify-content: space-between; padding: 0 12px; white-space: pre; }
+.nano .nb { flex: 1; padding: 6px 12px; white-space: pre; overflow: hidden; }
+.nano .ns { text-align: center; min-height: 1.38em; } .nano .ns span { background: #D3D7CF; color: #300A24; padding: 0 6px; }
+.nano .nk { padding: 0 12px 6px; white-space: pre; } .nano .nk b { background: #D3D7CF; color: #300A24; font-weight: 400; }
+.cur { background: var(--tfg); color: var(--aub); }
+
+/* text console (boot, emergency, rescue) */
+.console { background: #000; }
+.cbody { position: absolute; left: 24px; right: 24px; top: 16px; bottom: 104px; font-family: var(--mono); font-size: 19px; line-height: 1.36; color: #D0D0D0; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.k-ok { color: #4EE44E; } .k-fail { color: #FF5555; } .k-warn { color: #FFFF55; } .k-time { color: #FF5555; } .k-hi { color: #fff; font-weight: 700; } .k-sc { color: #6FE3D6; } .k-dim { color: #8A8A8A; }
+.star1 { color: #FF5555; } .star2 { color: #B03030; }
+
+/* GRUB */
+.grub { background: #000; font-family: var(--mono); color: #C8C8C8; }
+.gtitle { position: absolute; top: 40px; left: 0; right: 0; text-align: center; font-size: 20px; color: #fff; }
+.gbox { position: absolute; left: 90px; right: 90px; top: 90px; height: 340px; border: 2px solid #C8C8C8; padding: 8px 6px; font-size: 20px; line-height: 1.5; overflow: hidden; }
+.gbox div { white-space: pre; padding: 0 8px; }
+.gbox .sel { background: #C8C8C8; color: #000; }
+.gbox .sc { border: 0; opacity: 1; padding: 0 8px; color: #6FE3D6; }
+.gbox .sc.sel { background: #6FE3D6; color: #000; }
+.gbox.edit div { white-space: pre-wrap; word-break: break-all; font-size: 17px; line-height: 1.35; }
+.ghelp { position: absolute; left: 110px; right: 110px; top: 450px; font-size: 17px; line-height: 1.45; color: #C8C8C8; white-space: pre-wrap; }
+
+/* boards (diagrams, title cards) */
+.boardbg { background: radial-gradient(1000px 600px at 50% 30%, #152029, #080B10); }
+.board { position: absolute; left: 40px; right: 40px; top: 50px; height: 570px; display: flex; flex-direction: column; gap: 14px; }
+.board .bk { font-family: var(--mono); font-size: 15px; color: var(--cyan); letter-spacing: .08em; text-transform: uppercase; }
+.board h2 { margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+.board .bt { font-size: 21px; color: #C9D1DA; max-width: 1000px; }
+.board svg { width: 100%; flex: 1; min-height: 0; }
+.rise { animation: rise .7s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.cards { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-top: 16px; }
+.mcard { background: #111922; border: 1.5px dashed #3A4957; border-radius: 12px; padding: 14px; display: grid; gap: 6px; align-content: start; min-height: 190px; }
+.mcard .m { font-family: var(--mono); font-size: 15px; color: var(--muted); }
+.mcard .n { font-weight: 700; font-size: 20px; line-height: 1.15; }
+.mcard .d { font-size: 14.5px; color: var(--muted); line-height: 1.35; }
+.mcard.done { border: 2px solid var(--cyan); background: rgba(111,227,214,.08); }
+.mcard.done .m { color: var(--cyan); }
+.mcard.on { border: 2px solid var(--amber); box-shadow: 0 0 30px rgba(255,181,71,.25); }
+.mcard.on .m { color: var(--amber); }
+.incs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 10px; }
+.inc { background: #111922; border: 1px solid #2A3744; border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; }
+.inc .f { font-family: var(--mono); font-size: 15px; color: var(--muted); }
+.inc .w { font-family: var(--mono); font-size: 16px; color: #FFD7A8; white-space: pre-wrap; }
+.inc .r { font-size: 16px; font-weight: 700; }
+.inc .r.ok { color: var(--good); } .inc .r.no { color: var(--bad); } .inc .r.wait { color: var(--muted); font-weight: 400; }
+.score { font-size: 26px; font-weight: 700; color: var(--cyan); margin-top: 6px; }
+.probline { font-family: var(--mono); font-size: 24px; background: #1A0F17; border: 1px solid #4A2A3F; border-radius: 10px; padding: 18px 22px; color: var(--tfg); white-space: pre-wrap; }
+.flowrow { display: grid; grid-template-columns: 1fr 80px 1fr; align-items: center; gap: 10px; margin-top: 10px; }
+.arrow { font-size: 44px; color: var(--amber); text-align: center; }
+.emerg { font-family: var(--mono); font-size: 18px; background: #000; border: 1px solid #333; border-radius: 10px; padding: 16px 18px; color: #D0D0D0; white-space: pre-wrap; }
+.titlecard { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 16px; padding: 0 120px 90px; }
+.titlecard .bk { font-family: var(--mono); font-size: 18px; letter-spacing: .1em; text-transform: uppercase; color: var(--cyan); }
+.titlecard h2 { margin: 0; font-size: 62px; font-weight: 700; line-height: 1.05; letter-spacing: -0.015em; text-wrap: balance; }
+.titlecard p { margin: 0 auto; font-size: 24px; color: #C9D1DA; max-width: 900px; }
+
+/* diagram (inside boards) */
+.dn rect { fill: #121A22; stroke: #3A4957; stroke-width: 1.6; }
+.dn.built rect { fill: rgba(111,227,214,.10); stroke: var(--cyan); stroke-width: 2.2; }
+.dn.plan rect { stroke: #7F8F99; stroke-dasharray: 7 6; }
+.dn.lit rect { stroke: var(--amber); stroke-width: 3; fill: rgba(255,181,71,.12); stroke-dasharray: none; }
+.dn text { fill: var(--ink); font-family: var(--ui); }
+.dn .t { font-size: 18px; font-weight: 700; } .dn .s { font-size: 13px; fill: var(--muted); } .dn .chip { font-family: var(--mono); font-size: 12px; fill: var(--muted); }
+.dn.built .chip { fill: var(--cyan); } .dn.lit .chip { fill: var(--amber); }
+.de { fill: none; stroke: #6B7B88; stroke-width: 1.8; }
+.de.built { stroke: var(--cyan); stroke-width: 2.2; } .de.plan { stroke-dasharray: 7 6; } .de.lit { stroke: var(--amber); stroke-width: 3; stroke-dasharray: none; }
+.dl { font-size: 13px; fill: var(--muted); font-family: var(--ui); paint-order: stroke; stroke: #0B1016; stroke-width: 5px; }
+.dl.lit { fill: var(--amber); font-weight: 700; }
+.pkgbox { fill: none; stroke: var(--violet); stroke-width: 2; stroke-dasharray: 3 6; }
+.pkglbl { fill: var(--violet); font-family: var(--mono); font-size: 14px; }
+
+/* phone overlay */
+.phone { position: absolute; right: 70px; top: 70px; width: 330px; height: 560px; border-radius: 38px; background: #0C0C0E; border: 10px solid #22252B; box-shadow: 0 30px 80px rgba(0,0,0,.8); overflow: hidden; z-index: 6; transform: translateY(120%); padding: 34px 14px 14px; display: grid; gap: 10px; align-content: start; font-family: var(--ui); }
+.phone .q { background: #1E2127; border-radius: 99px; padding: 9px 14px; font-size: 15px; color: #fff; }
+.phone .res { background: #16191E; border-radius: 12px; padding: 10px 12px; display: grid; gap: 3px; }
+.phone .res b { font-size: 15px; color: #9CC3FF; font-weight: 500; line-height: 1.3; }
+.phone .res span { font-size: 13px; color: #A8B0BA; line-height: 1.35; }
+.phone .clockp { text-align: center; color: #fff; font-size: 13px; position: absolute; top: 8px; left: 0; right: 0; }
+
+/* overlays */
+.chap { position: absolute; left: 20px; top: 12px; font-family: var(--mono); font-size: 14px; color: #fff; background: rgba(0,0,0,.55); padding: 5px 12px; border-radius: 99px; border: 1px solid rgba(255,255,255,.15); z-index: 7; }
+.chap:empty, .badge:empty, .clock:empty { display: none; }
+.badge { position: absolute; right: 20px; top: 12px; font-family: var(--mono); font-size: 13px; padding: 5px 12px; border-radius: 99px; z-index: 7; letter-spacing: .05em; background: rgba(0,0,0,.6); border: 1.5px solid currentColor; }
+.badge.real { color: var(--good); } .badge.concept { color: var(--amber); } .badge.without { color: var(--bad); }
+.clock { position: absolute; right: 20px; top: 48px; z-index: 7; font-family: var(--mono); font-size: 16px; color: #fff; background: rgba(120,20,20,.85); padding: 5px 12px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.clock.good { background: rgba(20,90,70,.9); }
+.cap { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); max-width: 1220px; width: max-content; text-align: center; font-size: 23px; line-height: 1.32; color: #fff; background: rgba(5,7,10,.8); padding: 8px 18px; border-radius: 10px; z-index: 7; text-wrap: balance; }
+.cap:empty { display: none; }
+.cap code { color: var(--cyan); font-size: 1em; }
+.cap.speaking::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); margin-right: 10px; vertical-align: 2px; animation: blink 1s steps(1) infinite; }
+.endcard { position: absolute; inset: 0; z-index: 8; background: radial-gradient(800px 500px at 50% 45%, rgba(18,40,44,.97), rgba(5,7,10,.98)); display: grid; place-content: center; text-align: center; gap: 18px; opacity: 0; pointer-events: none; padding: 0 80px; }
+.endcard.dark { background: radial-gradient(800px 500px at 50% 45%, rgba(50,14,14,.97), rgba(5,7,10,.98)); }
+.endcard h2 { margin: 0; font-size: 52px; font-weight: 700; text-wrap: balance; }
+.endcard p { margin: 0 auto; color: #B8C2CE; font-size: 22px; max-width: 920px; }
+.endstats { display: flex; gap: 44px; justify-content: center; margin-top: 10px; }
+.endstats div { display: grid; }
+.endstats b { font-size: 50px; color: var(--cyan); font-weight: 700; line-height: 1; }
+.endcard.dark .endstats b { color: var(--bad); }
+.endstats span { color: var(--muted); font-size: 17px; margin-top: 6px; max-width: 220px; }
+.poster { position: absolute; inset: 0; z-index: 9; border: 0; cursor: pointer; background: radial-gradient(900px 500px at 50% 40%, rgba(30,40,55,.55), rgba(5,7,10,.92)); color: #fff; display: grid; place-content: center; justify-items: center; gap: 16px; font-family: var(--ui); padding: 0 40px; }
+.poster .big { width: 120px; height: 120px; border-radius: 50%; background: rgba(233,84,32,.95); display: grid; place-items: center; box-shadow: 0 0 0 10px rgba(233,84,32,.25); transition: transform .2s; }
+.poster:hover .big { transform: scale(1.06); }
+.poster .big svg { width: 52px; height: 52px; margin-left: 8px; }
+.poster .pt { font-size: 50px; font-weight: 700; text-align: center; }
+.poster .ps { font-size: 22px; color: #D0D6DE; text-align: center; }
+
+/* ---------- controls ---------- */
+.controls { display: grid; gap: 10px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pbtn { font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.pbtn:hover { border-color: var(--cyan); }
+.pbtn:focus-visible, input[type=range]:focus-visible, .chapbtn:focus-visible, .poster:focus-visible, .pick:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.pbtn svg { width: 15px; height: 15px; }
+.pbtn.main { background: var(--orange); border-color: var(--orange); color: #fff; }
+.pbtn[aria-pressed="true"] { background: var(--ink); color: var(--room); border-color: var(--ink); }
+.time { font-family: var(--mono); font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 96px; }
+input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
+.spacer { flex: 1; }
+.chapters { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.chapbtn { width: 100%; text-align: left; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: grid; gap: 1px; position: relative; overflow: hidden; height: 100%; }
+.chapbtn .no { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.chapbtn .tt { font-size: 14px; font-weight: 500; line-height: 1.25; }
+.chapbtn.cur { border-color: var(--orange); } .chapbtn.cur .no { color: var(--orange); }
+.chapbtn i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--orange); width: 0; }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+@media (max-width: 760px) { .notes { grid-template-columns: 1fr; } }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 14px; color: var(--muted); }
+.note b { color: var(--ink); display: block; margin-bottom: 4px; font-weight: 500; }
+.player:fullscreen { background: #000; display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 14px; }
+.player:fullscreen .frame { flex: 1; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.player:fullscreen .chapters, .player:fullscreen .hint { display: none; }
+.player:-webkit-full-screen { background: #000; display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 14px; width: 100%; height: 100%; }
+.player:-webkit-full-screen .frame { flex: 1; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.player:-webkit-full-screen .chapters, .player:-webkit-full-screen .hint { display: none; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M11 6l-6 6 6 6M19 6l-6 6 6 6"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M13 6l6 6-6 6M5 6l6 6-6 6"/></symbol>
+  <symbol id="i-voice" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5M17.5 5.5a4.5 4.5 0 0 1 0 5M20 3a8 8 0 0 1 0 10"/></g></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></g></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></g></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M9 12h6M9 16h6"/></g></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M5 8l4 4-4 4M12 17h7"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></g></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <span class="kicker">SmartConfig · three short films</span>
+  <h1>How SmartConfig gets built, how it will work, and life without it</h1>
+  <p class="lede">Pick a film. Each one is narrated (your browser reads the captions aloud), has sound effects, chapters and a fullscreen mode. Tags say what is real and what is a mock-up of software that isn't built yet.</p>
+
+  <div class="picker" id="picker"></div>
+
+  <div class="player" id="player">
+    <div class="frame" id="frame">
+      <div class="stage" id="stage" aria-hidden="true">
+        <!-- laptop -->
+        <div class="layer" id="L-laptop">
+          <div class="room"></div><div class="desk"></div>
+          <div class="world" id="world">
+            <div class="shadow"></div>
+            <div class="lidwrap"><div class="lid" id="lid"><div class="screen">
+              <div class="wall"></div>
+              <div class="topbar" id="clocktop">Sun 27 Sep  09:10</div>
+              <div class="dock">
+                <div class="ico a"><svg><use href="#i-folder"/></svg></div>
+                <div class="ico b"><svg><use href="#i-globe"/></svg></div>
+                <div class="ico c"><svg><use href="#i-doc"/></svg></div>
+                <div class="ico t"><svg><use href="#i-term"/></svg></div>
+                <div class="ico e"><svg><use href="#i-cog"/></svg></div>
+              </div>
+              <div class="miniwin" id="miniwin">
+                <div class="chrome"><i></i><i></i><i></i><span>vboxuser@Ubuntu: ~</span></div>
+                <div class="mbody"><span class="pu">vboxuser@Ubuntu</span>:<span class="pp">~</span>$ <span class="caret"></span></div>
+              </div>
+              <div class="ripple" id="ripple"></div>
+              <svg class="cursor" id="cursor" viewBox="0 0 18 24"><path d="M1 1v19l5-5 3.5 7.5 3-1.4L9 13.8h7z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <div class="screendark" id="screendark"></div>
+            </div></div></div>
+            <div class="base"></div>
+          </div>
+        </div>
+        <!-- terminal -->
+        <div class="layer" id="L-term">
+          <div class="termbg"></div>
+          <div class="twin" id="twin">
+            <div class="chrome"><i></i><i></i><i></i><span id="ttitle">vboxuser@Ubuntu: ~</span></div>
+            <div class="tbody" id="tbody"></div>
+          </div>
+          <div class="xray" id="xray">
+            <div class="xh"><span class="dot"></span><span id="xtitle">Inside the machine</span></div>
+            <div class="sys" id="sys"></div>
+          </div>
+        </div>
+        <!-- console -->
+        <div class="layer console" id="L-console"><div class="cbody" id="cbody"></div></div>
+        <!-- grub -->
+        <div class="layer grub" id="L-grub"><div class="gtitle">GNU GRUB  version 2.12</div><div class="gbox" id="gbox"></div><div class="ghelp" id="ghelp"></div></div>
+        <!-- boards and title cards -->
+        <div class="layer boardbg" id="L-board"><div id="boardhost"></div></div>
+        <div class="nano" id="nano" hidden></div>
+        <div class="phone" id="phone"></div>
+        <div class="chap" id="chap"></div>
+        <div class="badge" id="badge"></div>
+        <div class="clock" id="clock"></div>
+        <div class="cap" id="cap"></div>
+        <div class="endcard" id="endcard"></div>
+      </div>
+      <button class="poster" id="poster" type="button" aria-label="Play the film">
+        <span class="big"><svg aria-hidden="true"><use href="#i-play"/></svg></span>
+        <span class="pt" id="posterT"></span>
+        <span class="ps" id="posterS"></span>
+      </button>
+    </div>
+
+    <div class="controls">
+      <div class="row">
+        <button class="pbtn main" id="play" type="button"><svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+        <button class="pbtn" id="back" type="button" aria-label="Back 5 seconds"><svg aria-hidden="true"><use href="#i-back"/></svg></button>
+        <button class="pbtn" id="fwd" type="button" aria-label="Forward 5 seconds"><svg aria-hidden="true"><use href="#i-fwd"/></svg></button>
+        <input type="range" id="scrub" min="0" max="100" step="0.05" value="0" aria-label="Seek">
+        <span class="time" id="time">0:00 / 0:00</span>
+        <button class="pbtn" id="voice" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-voice"/></svg><span>Voice on</span></button>
+        <button class="pbtn" id="sfx" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-sound"/></svg><span>Sounds on</span></button>
+        <button class="pbtn" id="fs" type="button"><svg aria-hidden="true"><use href="#i-full"/></svg><span>Fullscreen</span></button>
+      </div>
+      <div class="row">
+        <span class="kicker" style="font-size:12px">Speed</span>
+        <button class="pbtn" type="button" data-speed="0.75" aria-pressed="false">0.75×</button>
+        <button class="pbtn" type="button" data-speed="1" aria-pressed="true">1×</button>
+        <button class="pbtn" type="button" data-speed="1.5" aria-pressed="false">1.5×</button>
+        <button class="pbtn" type="button" data-speed="2" aria-pressed="false">2×</button>
+        <span class="spacer"></span>
+        <span class="kicker hint" style="font-size:12px;color:var(--muted)">Space: play/pause · ← →: 5 s · F: fullscreen</span>
+      </div>
+      <ol class="chapters" id="chapters"></ol>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note"><b>What is real</b>Milestone 1 scenes use the real output of <code>sc</code> recorded on this VM. The boot failure is based on running systemd's own fstab generator against the broken file on this VM: the <code>/data</code> mount requires the missing disk, so boot waits 90 s and stops. The root account on this VM is locked, as on every default Ubuntu install.</div>
+    <div class="note"><b>What is a mock-up</b>Everything tagged <span class="tag concept">concept</span> shows milestones 2 to 7, which are not built yet: the watcher, checkers, rescue boot entry, package and <code>sc why</code>. Their commands and messages are the current design and may change.</div>
+    <div class="note"><b>About the clock</b>The downtime counter in "Without SmartConfig" is illustrative: how long it typically takes someone who knows the <code>init=/bin/bash</code> trick. Without it, the next step is a live USB stick.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  function $(s) { return document.querySelector(s); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function ease(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+
+  /* ================= shared data ================= */
+  var FSTAB9 = [
+    "# /etc/fstab: static file system information.",
+    "#",
+    "# Use 'blkid' to print the universally unique identifier for a",
+    "# device; this may be used with UUID= as a more robust way to name devices",
+    "# that works even if disks are added and removed. See fstab(5).",
+    "#",
+    "# <file system> <mount point>   <type>  <options>       <dump>  <pass>",
+    "# / was on /dev/sda2 during curtin installation",
+    "/dev/disk/by-uuid/e41c582c-c4d8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1"
+  ];
+  var GOOD = "5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a8";
+  var TYPO = "5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a3";
+  var DATALINE = "/dev/disk/by-uuid/" + TYPO + " /data ext4 defaults 0 2";
+  var UNIT = "dev-disk-by\\x2duuid-5f3a91c2\\x2d8b7e\\x2d4d21\\x2da0c4\\x2d7e19b2d6f0a3.device";
+  var KERNEL = "7.0.0-34-generic";
+  var ROOTUUID = "e41c582c-c4d8-4225-9e5d-249c8248cb80";
+
+  function P(kind) {
+    if (kind === "root") return '<span class="pr">root@Ubuntu</span>:<span class="pp">~</span># ';
+    if (kind === "none") return "root@(none):/# ";
+    if (kind === "repo") return '<span class="pu">vboxuser@Ubuntu</span>:<span class="pp">~/code/smartconfig</span>$ ';
+    return '<span class="pu">vboxuser@Ubuntu</span>:<span class="pp">~</span>$ ';
+  }
+  function o(t, cls) { return '<span class="' + (cls || "") + '">' + esc(t) + "</span>"; }
+  function markTail(uuid, cls) { return esc(uuid.slice(0, -1)) + "<mark>" + uuid.slice(-1) + "</mark>"; }
+
+  /* ================= script builder ================= */
+  var B, chapters, CAPS, chapNo, FILM;
+  function add(d, run) { B.push({ d: d, run: run }); }
+  function spell(s) { return s.toUpperCase().split("").join(" "); }
+  function sayify(text) {
+    return text.replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "and").replace(/…/g, ", ").replace(/→/g, "to")
+      .replace(/init=\/bin\/bash/g, "init equals bin bash")
+      .replace(/\/etc\/fstab/g, "etc F-stab").replace(/\bfstab\b/g, "F-stab")
+      .replace(/\/dev\/sdb1/g, "dev S D B 1").replace(/\/data\b/g, "slash data")
+      .replace(/\bnofail\b/g, "no-fail").replace(/\bblkid\b/g, "B L K I D")
+      .replace(/\bscd\b/g, "S C D").replace(/\.deb\b/g, " dot deb").replace(/\bsshd_config\b/g, "S S H D config")
+      .replace(/\bsha256\b/gi, "SHA 256").replace(/\bUUIDs?\b/g, function (m) { return m.length > 4 ? "U U I Ds" : "U U I D"; })
+      .replace(/\bM(\d)\b/g, "milestone $1").replace(/\bsc\b/g, "S C")
+      .replace(/\bmount -a\b/g, "mount dash A").replace(/\brescue\.target\b/g, "rescue target")
+      .replace(/\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{3,6}\b/g, spell)
+      .replace(/[()]/g, "");
+  }
+  function CH(title, badge) { chapNo++; var no = chapNo; chapters.push({ no: no, title: title, beat: B.length }); add(0, function (S) { S.chapter = title; S.chapNo = no; S.caption = ""; if (badge !== undefined) S.badge = badge; }); }
+  function C(text, say) { CAPS.push({ beat: B.length, say: say || sayify(text) }); add(0, function (S) { S.caption = text; }); }
+  function SAY(say) { CAPS.push({ beat: B.length, say: say }); add(0, function () {}); }
+  function W(d) { add(d, function () {}); }
+  function BADGE(b) { add(0, function (S) { S.badge = b; }); }
+  function SCENE(name, d) { add(d || 0.8, function (S, p) { if (S.scene !== name || p < 1) { if (p === 0 || S._sceneTo !== name) { S.scenePrev = S.scene; S._sceneTo = name; } } S.scene = name; S.sceneP = ease(p); }); }
+  function CUT(name) { add(0, function (S) { S.scene = name; S.scenePrev = null; S.sceneP = 1; S._sceneTo = name; }); }
+  function TT(title) { add(0, function (S) { S.ttitle = title; }); }
+  function T(cmd, kind) {
+    var d = 0.45 + cmd.length / 24;
+    add(d, function (S, p) {
+      S.pkind = kind || S.pkind;
+      if (p < 1) S.typing = cmd.slice(0, Math.floor(cmd.length * Math.min(1, p / 0.88)));
+      else { S.typing = null; S.term.push(P(S.pkind) + esc(cmd)); }
+    });
+  }
+  function PK(kind) { add(0, function (S) { S.pkind = kind; }); }
+  function O(lines, d) { add(d || 0.35 + lines.length * 0.14, function (S, p) { var n = Math.max(1, Math.ceil(p * lines.length)); for (var i = 0; i < n; i++) S.term.push(lines[i]); }); }
+  function TCLR() { add(0, function (S) { S.term = []; }); }
+  function X(on, title) { add(0.7, function (S, p) { S.xray = on ? ease(p) : 1 - ease(p); if (title) S.xtitle = title; if (on && p === 0) S.sys = []; }); }
+  function XR(c, n, cls, d) { add(d || 1.4, function (S) { S.sys.push({ c: c, n: n, cls: cls || "", at: S.cur }); }); }
+  function XCLR() { add(0, function (S) { S.sys = []; }); }
+
+  /* console */
+  function CON(lines, d) { add(d || 0.2 + lines.length * 0.18, function (S, p) { var n = Math.max(1, Math.ceil(p * lines.length)); for (var i = 0; i < n; i++) S.con.push(lines[i]); }); }
+  function CONCLR() { add(0, function (S) { S.con = []; S.job = null; }); }
+  function CT(cmd, prompt) {
+    var d = 0.45 + cmd.length / 22;
+    add(d, function (S, p) {
+      S.cprompt = prompt;
+      if (p < 1) S.ctyping = cmd.slice(0, Math.floor(cmd.length * Math.min(1, p / 0.88)));
+      else { S.ctyping = null; S.con.push(prompt + esc(cmd)); }
+    });
+  }
+  function CPROMPT(prompt) { add(0, function (S) { S.cprompt = prompt; S.ctyping = ""; }); }
+  function CPROMPTOFF() { add(0, function (S) { S.ctyping = null; }); }
+  function JOB(label, from, to, d, clockFrom, clockTo) {
+    add(d, function (S, p) {
+      S.job = { label: label, secs: Math.floor(lerp(from, to, p)), ph: Math.floor(p * d * 6) };
+      if (clockFrom !== undefined) S.clock.secs = lerp(clockFrom, clockTo, p);
+      if (p >= 1) S.job = null;
+    });
+  }
+
+  /* grub */
+  function GRUB(items, sel, help) { add(0.6, function (S) { S.grub = { items: items, sel: sel, help: help, edit: null }; }); }
+  function GSEL(i, d) { add(d || 0.5, function (S, p) { if (p >= 0.5) S.grub.sel = i; }); }
+  function GEDIT(lines, help) { add(0.6, function (S) { S.grub.edit = { lines: lines.slice(), help: help }; }); }
+  function GTYPE(line, text, d) { add(d || 0.4 + text.length / 16, function (S, p) { var e = S.grub.edit; e.lines = e.lines.slice(); e.lines[line] = e.lines[line] + text.slice(0, Math.floor(text.length * Math.min(1, p / 0.9))); e.cur = line; }); }
+
+  /* nano */
+  function NANO(file, lines, onConsole) { add(0.5, function (S) { S.nano = { file: file, lines: lines.slice(), row: 0, col: 0, status: "", mod: false, con: !!onConsole }; }); }
+  function NMOVE(row, col, d) { add(d || 1.6, function (S, p) { var e = ease(p), n = S.nano; var r0 = n._r0 === undefined ? (n._r0 = n.row) : n._r0; n.row = Math.round(lerp(r0, row, Math.min(1, e * 1.5))); n.col = Math.round(col * Math.max(0, (e - 0.5) / 0.5)); if (p >= 1) { delete n._r0; } }); }
+  function NNEW(text, d) {
+    add(d || 0.6 + text.length / 20, function (S, p) {
+      var n = S.nano, k = Math.floor(text.length * Math.min(1, p / 0.92));
+      if (n.lines.length === n._base || n._base === undefined) { n._base = n.lines.length; n.lines.push(""); }
+      n.lines[n.lines.length - 1] = text.slice(0, k); n.row = n.lines.length - 1; n.col = k; n.mod = true;
+      if (p >= 1) delete n._base;
+    });
+  }
+  function NINS(row, col, text, d) { add(d || 0.8, function (S, p) { var n = S.nano; if (p >= 0.4) { n.lines[row] = n.lines[row].slice(0, col) + text + n.lines[row].slice(col); n.col = col + text.length; n.mod = true; } n.row = row; }); }
+  function NSTAT(text, fx) { add(1.1, function (S) { S.nano.status = text; if (/Wrote/.test(text)) S.nano.mod = false; if (fx) fx(S); }); }
+  function NCLOSE() { add(0.4, function (S, p) { if (p >= 0.5) S.nano = null; }); }
+
+  /* boards, title, phone, clock, end */
+  function BOARD(html, d) { add(d || 0.1, function (S) { S.board = html; }); }
+  function PHONE(query, results, d) {
+    add(d || 1.2, function (S, p) { S.phone = { q: query.slice(0, Math.floor(query.length * Math.min(1, p / 0.6))), res: p > 0.7 ? results : [], y: 1 - ease(Math.min(1, p * 2.2)) }; });
+  }
+  function PHONEOFF() { add(0.7, function (S, p) { if (S.phone) S.phone.y = ease(p); if (p >= 1) S.phone = null; }); }
+  function CLOCK(label, secs, cls) { add(0, function (S) { S.clock = { label: label, secs: secs, cls: cls || "" }; }); }
+  function CLOCKRUN(to, d) { add(d, function (S, p) { if (!S.clock._from && S.clock._from !== 0) S.clock._from = S.clock.secs; S.clock.secs = lerp(S.clock._from, to, p); if (p >= 1) delete S.clock._from; }); }
+  function CLOCKOFF() { add(0, function (S) { S.clock = null; }); }
+  function END(title, text, stats, dark) { add(1.2, function (S, p) { S.end = ease(p); S.endc = { t: title, x: text, s: stats, dark: !!dark }; }); }
+
+  /* laptop intro: open lid, click terminal, zoom in */
+  function LAPTOP(clock) {
+    add(0, function (S) { S.scene = "laptop"; S.sceneP = 1; S.scenePrev = null; S.topclock = clock || "09:10"; });
+    W(0.6);
+    add(1.8, function (S, p) { S.lid = ease(p); });
+    add(0.9, function (S, p) { S.screen = p; });
+    add(1.3, function (S, p) { var e = ease(p); S.curOn = 1; S.curPos = [lerp(430, 344, e), lerp(230, 342, e)]; });
+    add(0.4, function (S, p) { S.curOn = 1; S.curPos = [344, 342]; S.click = p < 1 ? p : 0; });
+    add(0.7, function (S, p) { S.curOn = 1; S.curPos = [344, 342]; S.win = ease(p); });
+    add(0.3, function (S) { S.win = 1; S.curOn = 0; });
+    add(1.6, function (S, p) { S.win = 1; S.zoom = ease(p); S.scenePrev = "laptop"; S.scene = "term"; S._sceneTo = "term"; S.sceneP = p < 0.8 ? 0 : (p - 0.8) / 0.2; });
+  }
+
+  /* ---------- diagram used by boards ---------- */
+  var NODES = [
+    { id: "admin", x: 540, y: 50, w: 180, t: "You", s: "shell · editor · apt", m: 0 },
+    { id: "scd", x: 260, y: 50, w: 160, t: "scd", s: "watcher daemon", m: 2 },
+    { id: "etc", x: 260, y: 250, w: 160, t: "/etc", s: "fstab · hosts · grub", m: 0 },
+    { id: "sc", x: 540, y: 250, w: 180, t: "sc", s: "snapshot → restore", m: 1 },
+    { id: "store", x: 820, y: 250, w: 180, t: "Store", s: "blobs + changes.db", m: 1 },
+    { id: "m6", x: 20, y: 440, w: 180, t: "Incident factory", s: "broken configs → evals", m: 6 },
+    { id: "rescue", x: 260, y: 440, w: 160, t: "Rescue boot", s: "GRUB → rescue shell", m: 4 },
+    { id: "check", x: 540, y: 440, w: 180, t: "Checkers", s: "validators + rules", m: 3 },
+    { id: "model", x: 820, y: 440, w: 180, t: "sc why", s: "local model explains", m: 7 }
+  ];
+  var EDGES = [
+    { a: "admin", b: "sc", d: "M630,130 V250", l: "runs sc", lx: 640, ly: 196, m: 1 },
+    { a: "admin", b: "etc", d: "M560,130 V190 H380 V250", l: "edits files", lx: 470, ly: 183, m: 0, mid: true },
+    { a: "etc", b: "scd", d: "M290,250 V130", l: "inotify", lx: 282, ly: 196, m: 2, end: true },
+    { a: "scd", b: "store", d: "M340,50 V24 H910 V250", l: "auto-snapshot every save", lx: 625, ly: 17, m: 2, mid: true },
+    { a: "etc", b: "sc", d: "M420,280 H540", l: "read · write", lx: 480, ly: 272, m: 1, mid: true },
+    { a: "sc", b: "store", d: "M720,290 H820", l: "history", lx: 770, ly: 282, m: 1, mid: true },
+    { a: "check", b: "sc", d: "M630,440 V330", l: "warns first", lx: 640, ly: 392, m: 3 },
+    { a: "store", b: "model", d: "M910,330 V440", l: "diffs", lx: 920, ly: 392, m: 7 },
+    { a: "check", b: "model", d: "M720,480 H820", l: "findings", lx: 770, ly: 472, m: 7, mid: true },
+    { a: "rescue", b: "etc", d: "M340,440 V330", l: "restores", lx: 350, ly: 392, m: 4 },
+    { a: "m6", b: "model", d: "M110,520 V560 H910 V520", l: "tests checkers and model", lx: 470, ly: 581, m: 6, mid: true },
+    { a: "m6", b: "check", d: "M630,560 V520", l: "", m: 6 }
+  ];
+  function arch(M, lit, builtUpTo) {
+    lit = lit || []; builtUpTo = builtUpTo === undefined ? 1 : builtUpTo;
+    var s = '<svg viewBox="0 0 1020 600" role="img"><defs><marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8FA0AE"/></marker></defs>';
+    if (M >= 5) s += '<rect class="pkgbox rise" x="236" y="6" width="778" height="532" rx="16"/><text class="pkglbl" x="1004" y="530" text-anchor="end">smartconfig.deb (M5)</text>';
+    EDGES.forEach(function (e) {
+      if (e.m > M) return;
+      var isLit = lit.indexOf(e.a) >= 0 && lit.indexOf(e.b) >= 0;
+      var cls = "de" + (e.m <= builtUpTo && e.m > 0 ? " built" : e.m > builtUpTo ? " plan" : "") + (isLit ? " lit" : "");
+      s += '<path class="' + cls + '" d="' + e.d + '" marker-end="url(#ah)"/>';
+      if (e.l) s += '<text class="dl' + (isLit ? " lit" : "") + '" x="' + e.lx + '" y="' + e.ly + '"' + (e.mid ? ' text-anchor="middle"' : e.end ? ' text-anchor="end"' : "") + ">" + esc(e.l) + "</text>";
+    });
+    NODES.forEach(function (n) {
+      if (n.m > M) return;
+      var cls = "dn" + (n.m === 0 ? "" : n.m <= builtUpTo ? " built" : " plan") + (lit.indexOf(n.id) >= 0 ? " lit" : "");
+      var chip = n.m === 0 ? "" : n.m <= builtUpTo ? "M" + n.m + " · BUILT" : "M" + n.m;
+      s += '<g class="' + cls + (n.m === M && M > 0 ? " rise" : "") + '" transform="translate(' + n.x + "," + n.y + ')"><rect width="' + n.w + '" height="80" rx="12"/><text class="t" x="16" y="34">' + esc(n.t) + '</text><text class="s" x="16" y="56">' + esc(n.s) + '</text><text class="chip" x="' + (n.w - 12) + '" y="72" text-anchor="end">' + chip + "</text></g>";
+    });
+    return s + "</svg>";
+  }
+  function boardArch(kicker, title, text, M, lit, built) {
+    return '<div class="board"><div class="bk rise">' + kicker + '</div><h2 class="rise">' + title + '</h2><div class="bt rise">' + text + "</div>" + arch(M, lit, built) + "</div>";
+  }
+  function titleCard(k, t, p) { return '<div class="titlecard"><div class="bk rise">' + k + '</div><h2 class="rise">' + t + '</h2><p class="rise">' + p + "</p></div>"; }
+  var MS = [
+    ["M1", "Store + CLI", "snapshot, diff, restore with mode and owner"],
+    ["M2", "Watcher", "scd snapshots every save automatically"],
+    ["M3", "Checkers", "warn before a bad edit is applied"],
+    ["M4", "Rescue path", "boot menu entry, restore from a broken boot"],
+    ["M5", "Package", "one .deb, installs on a clean machine"],
+    ["M6", "Incident factory", "broken configs to test everything"],
+    ["M7", "sc why", "a local model explains what broke"]
+  ];
+  function roadmap(upto, on) {
+    var h = '<div class="board"><div class="bk rise">The plan</div><h2 class="rise">Seven milestones, one at a time</h2><div class="cards">';
+    MS.forEach(function (m, i) {
+      if (i >= upto) return;
+      h += '<div class="mcard rise ' + (i === 0 ? "done" : "") + (i === on ? " on" : "") + '"><span class="m">' + m[0] + (i === 0 ? " · built" : " · planned") + '</span><span class="n">' + m[1] + '</span><span class="d">' + m[2] + "</span></div>";
+    });
+    return h + "</div></div>";
+  }
+
+  /* ================= FILM 1: the whole journey ================= */
+  function filmJourney() {
+    CUT("board");
+    CH("The problem", "");
+    BOARD(titleCard("SmartConfig", "One line can stop a machine from booting", "A safety net for the config files that take Linux down."));
+    C("Linux reads a handful of config files every time it starts. One wrong character in the wrong one, and the machine never reaches a login screen.");
+    W(2.5);
+    BOARD('<div class="board"><div class="bk rise">For example</div><h2 class="rise">A new disk, one mistyped character</h2>' +
+      '<div class="probline rise">/dev/disk/by-uuid/5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a<mark>3</mark> /data ext4 defaults 0 2</div>' +
+      '<div class="flowrow rise"><div class="bt">The disk is really …f0a8. At boot, systemd waits 90 seconds for a disk that doesn\'t exist, then gives up.</div><div class="arrow">→</div>' +
+      '<div class="emerg">You are in emergency mode. …\nCannot open access to console,\nthe root account is locked.\n\nPress Enter to continue.</div></div></div>');
+    C("Here, a new disk was added to <code>/etc/fstab</code> with one wrong character in its UUID. At the next boot, the machine stops in emergency mode.");
+    W(3.5);
+    C("SmartConfig is being built to catch that mistake, undo it, and explain it. This film shows how it comes together, one milestone at a time.");
+    W(2.5);
+
+    CH("The plan", "");
+    for (var i = 1; i <= 7; i++) (function (k) { BOARD(roadmap(k, k - 1)); W(0.55); })(i);
+    C("Seven milestones. Each one is finished, tested and committed before the next one starts.");
+    W(3);
+
+    CH("M1 · Store and CLI", "real");
+    BOARD(boardArch("Milestone 1 · built", "A store and a command-line tool", "sc keeps every version of a file: the bytes, the mode, the owner, and why it changed.", 1, ["sc", "store", "etc"]));
+    C("Milestone 1 is built and tested. <code>sc</code> saves versions of a file into a store, and can put any version back.");
+    W(3.2);
+    SCENE("term", 0.8);
+    TT("vboxuser@Ubuntu: ~/code/smartconfig"); PK("repo");
+    T('sudo ./bin/sc snapshot /etc/fstab -m "before editing"');
+    O([o("snapshot 2c6901  /etc/fstab  (446 bytes)")]);
+    T("sudo ./bin/sc diff 2c6");
+    O([o("--- a/etc/fstab (snapshot 2c6901)"), o("+++ b/etc/fstab (on disk)"), o("@@ -6,4 +6,4 @@", "o-hunk"),
+      '<span class="o-del">-/dev/disk/by-uuid/e41c582c-c4<mark>d</mark>8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1</span>',
+      '<span class="o-add">+/dev/disk/by-uuid/e41c582c-c4<mark>b</mark>8-4225-9e5d-249c8248cb80 / ext4 defaults 0 1</span>']);
+    C("This is the real output from this VM: a snapshot, a one-character mistake shown by <code>diff</code>…");
+    W(1.5);
+    T("sudo ./bin/sc restore 2c6");
+    O([o("restored /etc/fstab from 2c6901 (mode 0644 root:root), previous state saved as a8d6f5")]);
+    C("…and a restore that swaps the file back atomically. The restore itself can be undone.");
+    W(2.8);
+
+    CH("M2 · The watcher", "concept");
+    SCENE("board", 0.8);
+    BOARD(boardArch("Milestone 2 · planned", "Snapshots nobody has to remember", "scd watches config files and saves every change, whoever makes it.", 2, ["etc", "scd", "store"]));
+    C("Milestone 2 adds <code>scd</code>, a small background service. It watches config files and snapshots every save, from any editor, or from apt.");
+    W(3.2);
+    SCENE("term", 0.8);
+    TCLR(); PK("user"); TT("vboxuser@Ubuntu: ~");
+    X(true, "What scd sees");
+    T("sudo vim /etc/ssh/sshd_config");
+    XR("inotify: IN_CLOSE_WRITE /etc/ssh/sshd_config", "vim saved the file", "", 1.3);
+    XR("scd: snapshot 4be1a7 (auto)", "stored, with who and when", "good", 1.3);
+    T("sc log /etc/ssh/sshd_config -n 1");
+    O([o("ID      WHEN              ORIGIN  FILE                    SIZE  WHAT"), o("4be1a7  2026-10-12 09:14  auto    /etc/ssh/sshd_config    3297  vim (uid 1000)")]);
+    C("You never ran <code>sc snapshot</code>, but the change is already in the history.");
+    W(2.6);
+
+    CH("M3 · Checkers", "concept");
+    X(false);
+    SCENE("board", 0.8);
+    BOARD(boardArch("Milestone 3 · planned", "Warn before a bad edit lands", "Validators and rules for each kind of config file, run before a change is applied.", 3, ["check", "sc"]));
+    C("Milestone 3 adds checkers: one for each kind of config file. They look at a change before it is applied.");
+    W(3);
+    SCENE("term", 0.8);
+    TCLR();
+    T("sudo sc check /etc/fstab");
+    O([o("sc: checking /etc/fstab"),
+      '<span class="o-bad">  ✗ line 10: no disk has UUID ' + markTail(TYPO) + "</span>",
+      o("      did you mean " + GOOD + " (/dev/sdb1, ext4)?", "o-warn"),
+      o("  ! /data has no 'nofail': if this disk is missing, boot stops", "o-warn")], 1.6);
+    C("For fstab, the checker asks the system which disks really exist. A UUID that matches nothing gets flagged, with the closest real one suggested.");
+    W(3.4);
+
+    CH("M4 · Rescue path", "concept");
+    SCENE("grub", 0.8);
+    GRUB(["Ubuntu", "Advanced options for Ubuntu", "SmartConfig rescue (last good boot: 09:02)", "UEFI Firmware Settings"], 0, "   Use the ↑ and ↓ keys to select which entry is highlighted.\n   Press enter to boot the selected OS, `e' to edit the commands\n   before booting or `c' for a command-line.");
+    GSEL(1, 0.5); GSEL(2, 0.5);
+    C("Milestone 4 handles the worst case: a machine that no longer boots. SmartConfig adds its own entry to the boot menu.");
+    W(2.6);
+    SCENE("console", 0.6);
+    CONCLR();
+    CON(['<span class="k-sc">SmartConfig rescue</span>  <span class="k-dim">· root filesystem read-only · no password needed</span>', "",
+      "Changed since the last good boot (09:02):",
+      "  /etc/fstab   7d31e0   sc edit   09:14   <span class=\"k-fail\">✗ line 10: no disk has UUID …f0a3</span>", "",
+      '<span class="k-hi">[r]</span> restore /etc/fstab to 2c6901 (last good boot)   <span class="k-hi">[s]</span> shell   <span class="k-hi">[b]</span> boot normally'], 1.6);
+    C("It shows what changed since the last boot that worked, and puts it back with one key. No live USB, no root password.");
+    W(3.2);
+
+    CH("M5 · Package", "concept");
+    SCENE("term", 0.7);
+    TCLR();
+    T("sudo apt install ./smartconfig_1.0.0_amd64.deb");
+    O([o("Setting up smartconfig (1.0.0) ...", "o-dim"),
+      o("Created symlink /etc/systemd/system/multi-user.target.wants/scd.service → /usr/lib/systemd/system/scd.service.", "o-dim"),
+      o("smartconfig: baseline snapshots of 23 config files", "o-sc"),
+      o("smartconfig: added boot menu entry 'SmartConfig rescue'", "o-sc")], 1.4);
+    C("Milestone 5 turns everything into one .deb package that installs cleanly on a fresh Ubuntu machine.");
+    W(3);
+
+    CH("M6 · Incident factory", "concept");
+    SCENE("board", 0.8);
+    var INC = [["fstab", "UUID with one wrong character", 1], ["fstab", "USB disk without nofail", 1], ["sshd_config", "PermitRootLogin yess", 1],
+      ["netplan", "a tab instead of spaces", 1], ["sudoers", "missing ALL on the last line", 1], ["default/grub", "GRUB_DEFAULT names a removed kernel", 0]];
+    function incBoard(k) {
+      var h = '<div class="board"><div class="bk">Milestone 6 · planned</div><h2>Break things on purpose, measure the catch rate</h2><div class="incs">';
+      INC.forEach(function (c, i) {
+        var r = i < k ? (c[2] ? '<span class="r ok">✓ caught by checker</span>' : '<span class="r no">✗ missed → new rule</span>') : '<span class="r wait">testing…</span>';
+        h += '<div class="inc"><span class="f">' + c[0] + '</span><span class="w">' + esc(c[1]) + "</span>" + r + "</div>";
+      });
+      return h + "</div>" + (k >= INC.length ? '<div class="score rise">5 of 6 caught · the miss becomes a new rule</div>' : "") + "</div>";
+    }
+    BOARD(incBoard(0));
+    C("Milestone 6 is a factory of broken configs. Each one is fed to the checkers and to <code>sc why</code>, to measure what gets caught and what doesn't.");
+    for (var j = 1; j <= INC.length; j++) (function (k) { W(0.7); BOARD(incBoard(k)); })(j);
+    W(2.4);
+
+    CH("M7 · sc why", "concept");
+    SCENE("term", 0.8);
+    TCLR();
+    T("sc why");
+    O([o("The last boot stopped because /etc/fstab line 10 names a disk that doesn't exist."),
+      '<span>The disk you added is …f0a<mark>8</mark>; the file says …f0a<mark>3</mark>.</span>',
+      o("With no 'nofail', systemd waited 90 s for it, then stopped the boot."),
+      o("(explained by a local model · nothing left this machine)", "o-dim")], 1.8);
+    C("Milestone 7 adds <code>sc why</code>. A small local model reads the diff, the history and the checker's findings, and explains in plain words what broke. It's opt-in, and nothing leaves the machine.");
+    W(3.2);
+
+    CH("All together", "");
+    SCENE("board", 0.8);
+    BOARD(boardArch("The finished system", "Catch it, undo it, explain it", "Milestone 1 is built today. The dashed parts are next.", 7, [], 1));
+    C("Put together: every change is recorded, bad ones are caught early, a broken boot can be undone from the boot menu, and the cause is explained.");
+    W(3.5);
+    END("Built one milestone at a time", "Milestone 1 works today on this VM. Milestones 2 to 7 are designed and next in line.",
+      [["1 / 7", "milestones built"], ["20", "tests passing"], ["4", "safety nets when done"]]);
+    SAY("That's the whole journey. Milestone 1 works today. The rest is designed, and next in line.");
+    W(5);
+    return { poster: ["The whole journey", "From one fragile line to a finished safety net · about 4 minutes"] };
+  }
+
+  /* ================= FILM 2: after it's built ================= */
+  function filmAfter() {
+    CH("Install", "concept");
+    LAPTOP("09:00");
+    C("It's the finished product. You have a fresh Ubuntu machine, and you install SmartConfig.");
+    T("sudo apt install ./smartconfig_1.0.0_amd64.deb");
+    O([o("Reading package lists... Done", "o-dim"), o("Building dependency tree... Done", "o-dim"),
+      o("The following NEW packages will be installed:", "o-dim"), o("  smartconfig", "o-dim"),
+      o("Setting up smartconfig (1.0.0) ...", "o-dim"),
+      o("Created symlink /etc/systemd/system/multi-user.target.wants/scd.service → /usr/lib/systemd/system/scd.service.", "o-dim"),
+      o("smartconfig: initialised /var/lib/smartconfig", "o-sc"),
+      o("smartconfig: baseline snapshots of 23 config files", "o-sc"),
+      o("smartconfig: added boot menu entry 'SmartConfig rescue'", "o-sc")], 2.2);
+    C("Installing it takes a baseline snapshot of the important config files, starts the watcher, and adds a rescue entry to the boot menu.");
+    W(2.2);
+    T("sc status");
+    O([o("scd          running, watching 23 files"), o("last good boot  today 09:02"), o("changes since   none", "o-ok")]);
+    W(1.5);
+
+    CH("A new disk", "concept");
+    C("A week later you add a second disk, and want it mounted at <code>/data</code> on every boot.");
+    T("sudo blkid /dev/sdb1");
+    O([o('/dev/sdb1: UUID="' + GOOD + '" BLOCK_SIZE="4096" TYPE="ext4"')]);
+    T("sudo mkdir /data");
+    C("You open fstab through <code>sc edit</code>, and copy the UUID by hand.");
+    T("sudo sc edit /etc/fstab");
+    NANO("/etc/fstab", FSTAB9);
+    NMOVE(8, 0, 1.2);
+    NNEW(DATALINE, 3.2);
+    C("The last character comes out as 3 instead of 8. Easy to miss.");
+    W(1.6);
+    NSTAT("[ Wrote 10 lines ]");
+    NCLOSE();
+
+    CH("The warning", "concept");
+    X(true, "What SmartConfig checks");
+    XR("blkid: 2 filesystems on this machine", "e41c…cb80 (sda2), 5f3a…f0a8 (sdb1)", "", 1.2);
+    XR("fstab line 10 → " + "5f3a…f0a3", "matches no disk", "bad", 1.2);
+    O([o("sc: checking /etc/fstab"),
+      '<span class="o-bad">  ✗ line 10: no disk has UUID ' + markTail(TYPO) + "</span>",
+      o("      did you mean " + GOOD + " (/dev/sdb1)?", "o-warn"),
+      o("  ! /data has no 'nofail': if this disk is missing, boot stops", "o-warn"),
+      o("[f]ix UUID  [e]dit again  [a]pply anyway  [q]uit without saving: ")], 1.6);
+    C("Before the file is replaced, the checker compares it with the disks that really exist. It catches the typo and suggests the right UUID.");
+    W(3.4);
+    add(0.6, function (S, p) { if (p >= 0.5) S.term[S.term.length - 1] += "a"; });
+    C("Say you're in a hurry and apply it anyway. There are still two more safety nets.");
+    O([o("applied. snapshot 7d31e0 (sc edit) · previous version 2c6901")]);
+    XR("scd: snapshot 7d31e0 (sc edit)", "the change is recorded", "good", 1.2);
+    W(1.8);
+
+    CH("Reboot", "concept");
+    X(false);
+    T("sudo reboot");
+    SCENE("console", 0.6);
+    CONCLR();
+    CLOCK("Machine down", 0, "");
+    CON(['[  <span class="k-ok">OK</span>  ] Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.',
+      '[  <span class="k-ok">OK</span>  ] Started systemd-udevd.service - Rule-based Manager for Device Events and Files.',
+      '[  <span class="k-ok">OK</span>  ] Reached target swap.target - Swaps.'], 1.0);
+    C("Now the reboot. Without the disk's real UUID, systemd waits for a disk that will never appear.");
+    JOB("/dev/disk/by-uuid/" + TYPO, 0, 90, 4.5, 0, 90);
+    CON(['[ <span class="k-time">TIME</span> ] Timed out waiting for device ' + esc(UNIT) + ".",
+      '[<span class="k-fail">DEPEND</span>] Dependency failed for data.mount - /data.',
+      '[<span class="k-fail">DEPEND</span>] Dependency failed for local-fs.target - Local File Systems.',
+      "",
+      "You are in emergency mode. After logging in, type \"journalctl -xb\" to view",
+      "system logs, \"systemctl reboot\" to reboot, or \"exit\" to continue bootup.",
+      '<span class="k-sc">SmartConfig: this boot failed right after a change to /etc/fstab (sc edit, 09:14).</span>',
+      '<span class="k-sc">SmartConfig: reboot and choose "SmartConfig rescue" in the boot menu to undo it.</span>',
+      "Cannot open access to console, the root account is locked.",
+      "Press Enter to continue."], 2.4);
+    C("The boot still stops, but this time the screen says why, and what to do next.");
+    W(3.2);
+    CLOCKRUN(110, 1);
+    SCENE("grub", 0.6);
+    GRUB(["Ubuntu", "Advanced options for Ubuntu", "SmartConfig rescue (last good boot: 09:02)", "UEFI Firmware Settings"], 0, "   Use the ↑ and ↓ keys to select which entry is highlighted.\n   Press enter to boot the selected OS, `e' to edit the commands\n   before booting or `c' for a command-line.");
+    C("You reboot and choose SmartConfig rescue.");
+    GSEL(1, 0.5); GSEL(2, 0.6); W(0.8);
+    CLOCKRUN(140, 1);
+
+    CH("Rescue", "concept");
+    SCENE("console", 0.5);
+    CONCLR();
+    CON(['<span class="k-sc">SmartConfig rescue</span>  <span class="k-dim">· root filesystem read-only · no password needed</span>', "",
+      "Changed since the last good boot (09:02):",
+      '  /etc/fstab   7d31e0   sc edit   09:14   <span class="k-fail">✗ line 10: no disk has UUID …f0a3</span>', "",
+      '<span class="k-hi">[r]</span> restore /etc/fstab to 2c6901 (last good boot)   <span class="k-hi">[s]</span> shell   <span class="k-hi">[b]</span> boot normally'], 1.4);
+    C("The rescue screen lists what changed since the last boot that worked. Only one file did.");
+    W(2.4);
+    CPROMPT("choice: ");
+    CT("r", "choice: ");
+    CPROMPTOFF();
+    CON(["remounting / read-write", "restored /etc/fstab from 2c6901 (mode 0644 root:root), previous state saved as 9e04b2", "rebooting…"], 1.4);
+    CLOCKRUN(190, 1.4);
+    C("One key. The last good fstab is back, and the broken one is kept in history.");
+    W(1.2);
+    CONCLR();
+    CON(['[  <span class="k-ok">OK</span>  ] Reached target local-fs.target - Local File Systems.',
+      '[  <span class="k-ok">OK</span>  ] Reached target graphical.target - Graphical Interface.',
+      '<span class="k-sc">SmartConfig: boot OK · this configuration is now the last good one.</span>'], 1.4);
+    add(0, function (S) { S.clock.cls = "good"; S.clock.label = "Back up after"; });
+    CLOCKRUN(235, 1.2);
+    C("The machine boots. SmartConfig marks this configuration as good.");
+    W(1.8);
+
+    CH("Why it broke", "concept");
+    CLOCKOFF();
+    SCENE("term", 0.8);
+    TCLR();
+    T("sc why");
+    O([o("The last failed boot stopped because /etc/fstab line 10 names a disk that doesn't exist."),
+      '<span>The disk you added (/dev/sdb1) is …f0a<mark>8</mark>; the line says …f0a<mark>3</mark>.</span>',
+      o("With no 'nofail', systemd waited 90 s for it, then stopped the boot."),
+      o("Fix: use " + GOOD + ", and add 'nofail' if /data isn't needed to boot."),
+      o("(explained by a local model · nothing left this machine)", "o-dim")], 2);
+    C("Afterwards, <code>sc why</code> explains what happened, in plain words, with the fix.");
+    W(3.2);
+    T("sc log /etc/fstab -n 4");
+    O([o("ID      WHEN              ORIGIN       FILE        SIZE  WHAT"),
+      o("b71f2c  2026-10-19 09:17  restore      /etc/fstab  446   restored from 2c6901 (rescue)"),
+      o("9e04b2  2026-10-19 09:17  pre-restore  /etc/fstab  527   before restoring 2c6901"),
+      o("7d31e0  2026-10-19 09:14  sc edit      /etc/fstab  527   applied despite 1 error"),
+      o("2c6901  2026-10-12 09:00  install      /etc/fstab  446   baseline")], 1.4);
+    C("And the whole story stays in the history: the baseline, the edit, the rescue.");
+    W(2.8);
+    END("Back in about four minutes", "No live USB, no root password, no guessing. The mistake was flagged, undone from the boot menu, and explained.",
+      [["3", "safety nets: warn, rescue, explain"], ["1", "key pressed in the rescue"], ["0", "files edited by hand"]]);
+    SAY("Back in about four minutes. Warned, rescued from the boot menu, and explained.");
+    W(5);
+    return { poster: ["After it's built", "Install it, break fstab, watch it get rescued · concept · about 4 minutes"] };
+  }
+
+  /* ================= FILM 3: without SmartConfig ================= */
+  function filmWithout() {
+    CH("A new disk", "without");
+    LAPTOP("09:10");
+    C("Same machine, same new disk. This time there is no SmartConfig.");
+    T("sudo blkid /dev/sdb1");
+    O([o('/dev/sdb1: UUID="' + GOOD + '" BLOCK_SIZE="4096" TYPE="ext4"')]);
+    T("sudo mkdir /data");
+    T("sudo nano /etc/fstab");
+    NANO("/etc/fstab", FSTAB9);
+    NMOVE(8, 0, 1.2);
+    NNEW(DATALINE, 3.2);
+    C("You copy the UUID by hand, and the last character comes out as 3 instead of 8.");
+    W(1.6);
+    NSTAT("[ Wrote 10 lines ]");
+    NCLOSE();
+    C("Nothing checks it. Running <code>sudo mount -a</code> now would have caught it, but most people don't.");
+    W(2.6);
+
+    CH("Reboot", "without");
+    T("sudo reboot");
+    SCENE("console", 0.6);
+    CONCLR();
+    CLOCK("Machine down", 0);
+    CON(['[  <span class="k-ok">OK</span>  ] Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.',
+      '[  <span class="k-ok">OK</span>  ] Started systemd-udevd.service - Rule-based Manager for Device Events and Files.',
+      '[  <span class="k-ok">OK</span>  ] Reached target swap.target - Swaps.'], 1.0);
+    C("At boot, systemd waits for the disk named in fstab. That disk doesn't exist.");
+    JOB("/dev/disk/by-uuid/" + TYPO, 0, 90, 5, 0, 90);
+    CON(['[ <span class="k-time">TIME</span> ] Timed out waiting for device ' + esc(UNIT) + ".",
+      '[<span class="k-fail">DEPEND</span>] Dependency failed for systemd-fsck@' + esc(UNIT.replace(".device", "")) + ".service - File System Check on /dev/disk/by-uuid/" + TYPO + ".",
+      '[<span class="k-fail">DEPEND</span>] Dependency failed for data.mount - /data.',
+      '[<span class="k-fail">DEPEND</span>] Dependency failed for local-fs.target - Local File Systems.',
+      "",
+      "You are in emergency mode. After logging in, type \"journalctl -xb\" to view",
+      "system logs, \"systemctl reboot\" to reboot, or \"exit\" to continue bootup.",
+      "Cannot open access to console, the root account is locked.",
+      "See sulogin(8) man page for more details.",
+      "",
+      "Press Enter to continue."], 2.4);
+    C("After 90 seconds it gives up and drops into emergency mode. And emergency mode needs the root password.");
+    W(2.6);
+    C("On Ubuntu the root account is locked, so there is no password to give. Pressing Enter just starts over.");
+    add(0.8, function (S, p) { if (p >= 0.5) S.con.push("", "Reloading system manager configuration", "Starting default.target", "You are in emergency mode. …", "Cannot open access to console, the root account is locked.", "Press Enter to continue."); });
+    CLOCKRUN(160, 2.2);
+    add(0.8, function (S, p) { if (p >= 0.5) S.con.push("", "You are in emergency mode. …", "Cannot open access to console, the root account is locked.", "Press Enter to continue."); });
+    CLOCKRUN(300, 2.4);
+
+    CH("Searching", "without");
+    PHONE("ubuntu emergency mode root account is locked", [
+      ["Stuck in emergency mode after editing fstab", "The root account is locked, so you can't log in. Edit the boot entry in GRUB…"],
+      ["How to get a root shell when root is locked", "Press e in GRUB and add init=/bin/bash to the linux line…"],
+      ["Boot from a live USB and fix /etc/fstab", "Mount your root partition from the live session and edit…"]], 2.4);
+    C("So you pick up your phone and search for the error message.");
+    CLOCKRUN(1100, 4);
+    C("Twenty minutes later, you have a plan: break in through the boot menu.");
+    W(1.2);
+    PHONEOFF();
+
+    CH("Breaking in", "without");
+    C("Reboot, hold Shift to show the GRUB menu, and press e to edit the boot entry.");
+    SCENE("grub", 0.6);
+    GRUB(["Ubuntu", "Advanced options for Ubuntu", "Memory test (memtest86+x64.efi)", "UEFI Firmware Settings"], 0, "   Use the ↑ and ↓ keys to select which entry is highlighted.\n   Press enter to boot the selected OS, `e' to edit the commands\n   before booting or `c' for a command-line.");
+    W(1.2);
+    GEDIT(["setparams 'Ubuntu'", "", "        recordfail", "        load_video", "        gfxmode $linux_gfx_mode", "        insmod gzio",
+      "        insmod part_gpt", "        insmod ext2", "        search --no-floppy --fs-uuid --set=root " + ROOTUUID,
+      "        linux   /boot/vmlinuz-" + KERNEL + " root=UUID=" + ROOTUUID + " ro quiet splash $vt_handoff",
+      "        initrd  /boot/initrd.img-" + KERNEL],
+      "   Minimum Emacs-like screen editing is supported. TAB lists possible\n   completions. Press Ctrl-x or F10 to boot, Ctrl-c or F2 for a\n   command-line or ESC to discard edits and return to the GRUB menu.");
+    C("At the end of the line that starts with linux, you add <code>init=/bin/bash</code>: start a bare root shell instead of the normal system.");
+    GTYPE(9, " init=/bin/bash", 1.6);
+    W(1.4);
+    CLOCKRUN(1500, 1.5);
+    SCENE("console", 0.6);
+    CONCLR();
+    CON(['<span class="k-dim">[    2.914312] EXT4-fs (sda2): mounted filesystem ' + ROOTUUID + ' ro with ordered data mode.</span>',
+      "bash: cannot set terminal process group (-1): Inappropriate ioctl for device",
+      "bash: no job control in this shell"], 1.2);
+    C("You're in. But the disk is mounted read-only, so first you remount it for writing.");
+    CT("mount -o remount,rw /", "root@(none):/# ");
+    CT("nano /etc/fstab", "root@(none):/# ");
+    NANO("/etc/fstab", FSTAB9.concat([DATALINE]), true);
+    C("Which line is wrong? You don't know yet, so you comment out the new one.");
+    NMOVE(9, 0, 1.4);
+    NINS(9, 0, "#", 0.8);
+    NSTAT("[ Wrote 10 lines ]");
+    NCLOSE();
+    CT("exec /sbin/init", "root@(none):/# ");
+    CLOCKRUN(2300, 2);
+    CONCLR();
+    CON(['[  <span class="k-ok">OK</span>  ] Reached target local-fs.target - Local File Systems.', '[  <span class="k-ok">OK</span>  ] Reached target graphical.target - Graphical Interface.'], 1);
+    add(0, function (S) { S.clock.label = "Back up after"; });
+    C("The machine boots again, about forty minutes later.");
+    W(2);
+
+    CH("Back, sort of", "without");
+    CLOCKOFF();
+    SCENE("term", 0.8);
+    TCLR();
+    T("ls /data");
+    O([o("")]);
+    C("But <code>/data</code> is empty: the new disk isn't mounted, and you still don't know why.");
+    W(1.2);
+    T("grep data /etc/fstab ; sudo blkid /dev/sdb1");
+    O(['<span>#/dev/disk/by-uuid/5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a<mark>3</mark> /data ext4 defaults 0 2</span>',
+      '<span>/dev/sdb1: UUID="5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a<mark>8</mark>" BLOCK_SIZE="4096" TYPE="ext4"</span>'], 1);
+    C("No history of what changed, no copy of the old file. You find the typo by comparing thirty-six characters by eye.");
+    W(3.2);
+    END("About forty minutes down", "One character, no warning, a locked emergency shell, and a boot-menu trick you had to look up. Without that trick, the next step is a live USB stick.",
+      [["90 s", "boot timeout for a missing disk"], ["0", "snapshots or history"], ["~40 min", "downtime (illustrative)"]], true);
+    SAY("About forty minutes down, for one character. That's the gap SmartConfig is built to close.");
+    W(5);
+    return { poster: ["Without SmartConfig", "The same typo, no safety net · about 4 minutes"] };
+  }
+
+  var FILMS = [
+    { id: "journey", no: "Film 1", name: "The whole journey", desc: "The problem, the plan, and every milestone from M1 to M7.", tag: ["real", "M1 real · rest concept"], build: filmJourney },
+    { id: "after", no: "Film 2", name: "After it's built", desc: "Install it, add a disk, make a typo, get warned, rescued and told why.", tag: ["concept", "concept"], build: filmAfter },
+    { id: "without", no: "Film 3", name: "Without SmartConfig", desc: "The same typo with no safety net: emergency mode and a locked root.", tag: ["without", "realistic"], build: filmWithout }
+  ];
+
+  var TOTAL = 0, META = null;
+  function buildFilm(f) {
+    B = []; chapters = []; CAPS = []; chapNo = 0; FILM = f;
+    META = f.build();
+    var t = 0;
+    B.forEach(function (b) { b.t = t; t += b.d; });
+    TOTAL = t;
+    chapters.forEach(function (c) { c.t = B[c.beat].t; });
+    CAPS.forEach(function (c) { c.t = B[c.beat].t; });
+  }
+
+  /* ================= state ================= */
+  function init() {
+    return { scene: "board", scenePrev: null, sceneP: 1, _sceneTo: null,
+      lid: 0, screen: 0, curOn: 0, curPos: [430, 230], click: 0, win: 0, zoom: 0, topclock: "09:10",
+      term: [], typing: null, pkind: "user", ttitle: "vboxuser@Ubuntu: ~", xray: 0, xtitle: "Inside the machine", sys: [],
+      con: [], ctyping: null, cprompt: "", job: null, grub: null, board: "", nano: null, phone: null,
+      clock: null, badge: "", caption: "", chapter: "", chapNo: 0, end: 0, endc: null, cur: -1 };
+  }
+  function stateAt(time) {
+    var S = init();
+    for (var i = 0; i < B.length; i++) {
+      var b = B[i];
+      if (time < b.t) break;
+      S.cur = i;
+      if (time >= b.t + b.d) b.run(S, 1);
+      else { b.run(S, b.d ? (time - b.t) / b.d : 1); break; }
+    }
+    return S;
+  }
+
+  /* ================= render ================= */
+  var el = {
+    stage: $("#stage"), frame: $("#frame"), world: $("#world"), lid: $("#lid"), dark: $("#screendark"), cursor: $("#cursor"), ripple: $("#ripple"), mini: $("#miniwin"), topclock: $("#clocktop"),
+    Llaptop: $("#L-laptop"), Lterm: $("#L-term"), Lconsole: $("#L-console"), Lgrub: $("#L-grub"), Lboard: $("#L-board"),
+    twin: $("#twin"), tbody: $("#tbody"), ttitle: $("#ttitle"), xray: $("#xray"), xtitle: $("#xtitle"), sys: $("#sys"),
+    cbody: $("#cbody"), gbox: $("#gbox"), ghelp: $("#ghelp"), board: $("#boardhost"), nano: $("#nano"), phone: $("#phone"),
+    chap: $("#chap"), badge: $("#badge"), clock: $("#clock"), cap: $("#cap"), end: $("#endcard")
+  };
+  var cache = new Map();
+  function html(node, s) { if (cache.get(node) !== s) { cache.set(node, s); node.innerHTML = s; } }
+  function fmtClock(s) { s = Math.max(0, Math.floor(s)); var m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); }
+  var Z = 2.48, ZX = 640 - 640 * Z, ZY = 360 - 259 * Z;
+  var LAYERS = { laptop: "Llaptop", term: "Lterm", console: "Lconsole", grub: "Lgrub", board: "Lboard" };
+
+  function render(S) {
+    Object.keys(LAYERS).forEach(function (k) {
+      var op = (S.scene === k ? S.sceneP : 0) + (S.scenePrev === k && S.scene !== k ? 1 - S.sceneP : 0);
+      el[LAYERS[k]].style.opacity = String(Math.min(1, op));
+      el[LAYERS[k]].style.visibility = op > 0 ? "visible" : "hidden";
+    });
+    /* laptop */
+    el.lid.style.transform = "rotateX(" + (-94 * (1 - S.lid)) + "deg)";
+    el.dark.style.opacity = String(1 - S.screen);
+    el.cursor.style.display = S.curOn ? "block" : "none";
+    el.cursor.style.transform = "translate(" + S.curPos[0] + "px," + S.curPos[1] + "px)";
+    el.ripple.style.left = S.curPos[0] + "px"; el.ripple.style.top = S.curPos[1] + "px";
+    el.ripple.style.opacity = S.click ? String(1 - S.click) : "0";
+    el.ripple.style.transform = "scale(" + (0.4 + S.click * 1.4) + ")";
+    el.mini.style.opacity = String(S.win);
+    el.mini.style.transform = "scale(" + (0.06 + 0.94 * S.win) + ")";
+    el.world.style.transform = "translate(" + (ZX * S.zoom) + "px," + (ZY * S.zoom) + "px) scale(" + lerp(1, Z, S.zoom) + ")";
+    html(el.topclock, "Sun 27 Sep  " + esc(S.topclock));
+    /* terminal */
+    el.twin.style.width = lerp(1240, 700, S.xray) + "px";
+    el.xray.style.opacity = String(S.xray);
+    el.xray.style.transform = "translateX(" + ((1 - S.xray) * 560) + "px)";
+    html(el.ttitle, esc(S.ttitle));
+    var lines = S.term.slice(-40).map(function (l) { return "<div>" + l + "</div>"; });
+    if (!S.nano) lines.push("<div>" + P(S.pkind) + esc(S.typing || "") + '<span class="caret"></span></div>');
+    html(el.tbody, lines.join(""));
+    html(el.xtitle, esc(S.xtitle));
+    html(el.sys, S.sys.slice(-6).map(function (r) { return '<div class="sc ' + r.cls + (r.at === S.cur ? " live" : "") + '"><div class="c">' + esc(r.c) + '</div><div class="n">' + esc(r.n) + "</div></div>"; }).join(""));
+    /* console */
+    var cl = S.con.slice(-26).map(function (l) { return "<div>" + l + "</div>"; });
+    if (S.job) {
+      var pos = S.job.ph % 6, stars = "";
+      for (var k = 0; k < 3; k++) { var on = (k === pos % 3); stars += on ? '<span class="star1">*</span>' : '<span class="star2">*</span>'; }
+      cl.push("<div>[ " + stars + "  ] A start job is running for " + esc(S.job.label) + " (" + (S.job.secs < 60 ? S.job.secs + "s" : Math.floor(S.job.secs / 60) + "min " + (S.job.secs % 60) + "s") + " / 1min 30s)</div>");
+    }
+    if (S.ctyping !== null && !S.nano) cl.push("<div>" + S.cprompt + esc(S.ctyping) + '<span class="caret"></span></div>');
+    html(el.cbody, cl.join(""));
+    /* grub */
+    if (S.grub) {
+      if (S.grub.edit) {
+        el.gbox.className = "gbox edit";
+        html(el.gbox, S.grub.edit.lines.map(function (l, i) { return "<div>" + esc(l) + (i === S.grub.edit.cur ? '<span class="caret"></span>' : "") + "</div>"; }).join(""));
+        html(el.ghelp, esc(S.grub.edit.help));
+      } else {
+        el.gbox.className = "gbox";
+        html(el.gbox, S.grub.items.map(function (it, i) {
+          var isSc = /SmartConfig/.test(it);
+          return '<div class="' + (isSc ? "sc" : "") + (i === S.grub.sel ? " sel" : "") + '">' + (i === S.grub.sel ? "*" : " ") + esc(it) + "</div>";
+        }).join(""));
+        html(el.ghelp, esc(S.grub.help));
+      }
+    }
+    /* board */
+    html(el.board, S.board);
+    /* nano */
+    if (S.nano) {
+      el.nano.hidden = false;
+      el.nano.classList.toggle("onconsole", S.nano.con);
+      var n = S.nano;
+      var body = n.lines.map(function (line, r) {
+        var parts = [], L = line + (r === n.row && n.col >= line.length ? " " : "");
+        for (var c = 0; c < L.length; c++) { var ch = esc(L.charAt(c)); parts.push(r === n.row && c === n.col ? '<span class="cur">' + ch + "</span>" : ch); }
+        return parts.join("");
+      }).join("\n");
+      html(el.nano, '<div class="nh"><span>  GNU nano 7.2</span><span>' + esc(n.file) + "</span><span>" + (n.mod ? "Modified  " : "          ") + "</span></div>" +
+        '<div class="nb">' + body + "</div>" + '<div class="ns">' + (n.status ? "<span>" + esc(n.status) + "</span>" : "") + "</div>" +
+        '<div class="nk"><b>^G</b> Help      <b>^O</b> Write Out  <b>^W</b> Where Is   <b>^K</b> Cut        <b>^T</b> Execute\n<b>^X</b> Exit      <b>^R</b> Read File  <b>^\\</b> Replace    <b>^U</b> Paste      <b>^J</b> Justify</div>');
+    } else el.nano.hidden = true;
+    /* phone */
+    if (S.phone) {
+      el.phone.style.transform = "translateY(" + (S.phone.y * 120) + "%)";
+      html(el.phone, '<div class="clockp">09:31</div><div class="q">' + esc(S.phone.q) + "</div>" + S.phone.res.map(function (r) { return '<div class="res"><b>' + esc(r[0]) + "</b><span>" + esc(r[1]) + "</span></div>"; }).join(""));
+    } else el.phone.style.transform = "translateY(120%)";
+    /* overlays */
+    html(el.chap, S.chapNo ? String(S.chapNo).padStart(2, "0") + " · " + esc(S.chapter) : "");
+    var BL = { real: "REAL RUN · M1", concept: "CONCEPT · NOT BUILT YET", without: "WITHOUT SMARTCONFIG" };
+    el.badge.className = "badge " + (S.badge || "");
+    html(el.badge, S.badge ? BL[S.badge] : "");
+    if (S.clock) { el.clock.className = "clock " + (S.clock.cls || ""); html(el.clock, esc(S.clock.label) + " " + fmtClock(S.clock.secs)); } else html(el.clock, "");
+    html(el.cap, S.end > 0.5 ? "" : S.caption);
+    el.end.style.opacity = String(S.end);
+    if (S.endc) {
+      el.end.className = "endcard" + (S.endc.dark ? " dark" : "");
+      html(el.end, "<h2>" + esc(S.endc.t) + "</h2><p>" + esc(S.endc.x) + '</p><div class="endstats">' + S.endc.s.map(function (s) { return "<div><b>" + esc(s[0]) + "</b><span>" + esc(s[1]) + "</span></div>"; }).join("") + "</div>");
+    }
+  }
+
+  /* ================= sound effects ================= */
+  var actx = null, noiseBuf = null;
+  function audio() {
+    if (!actx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { actx = new AC(); } catch (e) { return null; }
+      noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function noise(dur, freq, q, gain, type) {
+    var a = audio(); if (!a) return;
+    var s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), t0 = a.currentTime;
+    s.buffer = noiseBuf; f.type = type || "bandpass"; f.frequency.value = freq; f.Q.value = q || 1;
+    g.gain.setValueAtTime(gain, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(a.destination); s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.03);
+  }
+  function tone(freq, dur, gain, delay, type) {
+    var a = audio(); if (!a) return;
+    var o2 = a.createOscillator(), g = a.createGain(), t0 = a.currentTime + (delay || 0);
+    o2.type = type || "sine"; o2.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o2.connect(g); g.connect(a.destination); o2.start(t0); o2.stop(t0 + dur + 0.05);
+  }
+  var SFX = {
+    key: function () { noise(0.035, 2400 + Math.random() * 1600, 1.4, 0.10); },
+    enter: function () { noise(0.07, 900, 0.8, 0.2, "lowpass"); },
+    click: function () { noise(0.025, 4200, 2, 0.28); },
+    lid: function () { noise(1.1, 420, 0.6, 0.1, "lowpass"); tone(95, 0.3, 0.1, 0.9); },
+    boot: function () { tone(523, 0.5, 0.05); tone(784, 0.8, 0.05, 0.18); },
+    whoosh: function () { noise(1.2, 700, 0.5, 0.06); },
+    blip: function () { tone(1320, 0.06, 0.025); },
+    good: function () { tone(660, 0.6, 0.07); tone(990, 0.9, 0.07, 0.14); },
+    bad: function () { tone(196, 0.35, 0.06, 0, "square"); tone(147, 0.5, 0.05, 0.18, "square"); },
+    tick: function () { tone(880, 0.03, 0.02); },
+    beep: function () { tone(1000, 0.18, 0.05, 0, "square"); },
+    end: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 1.8, 0.045, i * 0.09); }); },
+    endDark: function () { [220, 262, 311].forEach(function (f, i) { tone(f, 2, 0.05, i * 0.12, "triangle"); }); },
+    pop: function () { tone(740, 0.12, 0.04); }
+  };
+  function sfxFor(a, S) {
+    if (a.lid === 0 && S.lid > 0) SFX.lid();
+    if (a.screen === 0 && S.screen > 0) SFX.boot();
+    if (!a.click && S.click > 0) SFX.click();
+    if (a.zoom === 0 && S.zoom > 0) SFX.whoosh();
+    if ((S.typing || "").length > (a.typing || "").length) SFX.key();
+    if ((S.ctyping || "").length > (a.ctyping || "").length) SFX.key();
+    if (S.term.length > a.term.length) { var l = S.term[S.term.length - 1]; if (l.indexOf('class="p') >= 0 && l.indexOf("$ ") >= 0 || l.indexOf("# ") >= 0) SFX.enter(); if (l.indexOf("o-bad") >= 0) SFX.bad(); }
+    if (S.con.length > a.con.length) { var c = S.con.slice(a.con.length).join(""); if (/k-fail|k-time/.test(c)) SFX.bad(); else if (/k-sc/.test(c)) SFX.good(); else SFX.tick(); }
+    if (S.nano && a.nano && (S.nano.row !== a.nano.row || S.nano.col !== a.nano.col)) SFX.key();
+    if (S.sys.length > a.sys.length) { var r = S.sys[S.sys.length - 1]; if (r.cls === "bad") SFX.bad(); else if (r.cls === "good") SFX.good(); else SFX.blip(); }
+    if (S.grub && a.grub && S.grub.sel !== a.grub.sel) SFX.tick();
+    if (S.grub && S.grub.edit && a.grub && a.grub.edit && S.grub.edit.lines[9] !== a.grub.edit.lines[9]) SFX.key();
+    if (S.board !== a.board && S.board) SFX.pop();
+    if (S.phone && !a.phone) SFX.whoosh();
+    if (S.clock && a.clock && Math.floor(S.clock.secs / 60) !== Math.floor(a.clock.secs / 60) && S.clock.secs - a.clock.secs < 5) SFX.tick();
+    if (a.end === 0 && S.end > 0) { if (S.endc && S.endc.dark) SFX.endDark(); else SFX.end(); }
+  }
+
+  /* ================= narration ================= */
+  var synth = window.speechSynthesis || null, voice = null, utter = null, speaking = false, speakUntil = 0, spokenIdx = null;
+  function pickVoice() {
+    if (!synth) return null;
+    var vs = synth.getVoices().filter(function (v) { return /^en/i.test(v.lang); });
+    var pref = [/natural/i, /google us english/i, /samantha/i, /aria/i, /jenny/i, /daniel/i, /google uk english/i, /en-us/i];
+    for (var i = 0; i < pref.length; i++) for (var j = 0; j < vs.length; j++) if (pref[i].test(vs[j].name) || pref[i].test(vs[j].lang)) return vs[j];
+    return vs[0] || null;
+  }
+  if (synth) { voice = pickVoice(); synth.onvoiceschanged = function () { voice = pickVoice(); }; }
+  function hush() { if (synth) synth.cancel(); speaking = false; utter = null; }
+  function speak(text) {
+    if (!synth) return;
+    synth.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-US";
+    u.rate = Math.max(0.6, Math.min(1.8, 1.02 * speed));
+    u.onend = u.onerror = function () { if (utter === u) speaking = false; };
+    utter = u; speaking = true;
+    speakUntil = performance.now() + ((text.length / 14) / u.rate + 2) * 1000;
+    synth.speak(u);
+  }
+  function capAt(x) { var k = -1; for (var i = 0; i < CAPS.length; i++) { if (CAPS[i].t <= x) k = i; else break; } return k; }
+  function nextCapT(x) { for (var i = 0; i < CAPS.length; i++) if (CAPS[i].t > x) return CAPS[i].t; return null; }
+
+  /* ================= player ================= */
+  var time = 0, playing = false, speed = 1, last = null, started = false, voiceOn = !!synth, sfxOn = true, prevS = null;
+  var playBtn = $("#play"), scrub = $("#scrub"), timeEl = $("#time"), poster = $("#poster");
+  var voiceBtn = $("#voice"), sfxBtn = $("#sfx"), fsBtn = $("#fs"), player = $("#player"), chapList = $("#chapters"), chapBtns = [];
+  function fmt(x) { x = Math.max(0, Math.floor(x)); return Math.floor(x / 60) + ":" + String(x % 60).padStart(2, "0"); }
+
+  function loadFilm(idx) {
+    setPlaying(false);
+    buildFilm(FILMS[idx]);
+    time = 0; started = false; poster.hidden = false; prevS = null; spokenIdx = null;
+    $("#posterT").textContent = META.poster[0];
+    $("#posterS").textContent = META.poster[1];
+    playBtn.querySelector("span").textContent = "Play";
+    scrub.max = TOTAL.toFixed(2);
+    chapList.innerHTML = "";
+    chapters.forEach(function (c, k) {
+      var li = document.createElement("li");
+      li.innerHTML = '<button class="chapbtn" type="button" data-k="' + k + '"><span class="no">' + String(c.no).padStart(2, "0") + " · " + fmt(c.t) + '</span><span class="tt">' + esc(c.title) + "</span><i></i></button>";
+      chapList.appendChild(li);
+    });
+    chapBtns = Array.prototype.slice.call(chapList.querySelectorAll(".chapbtn"));
+    Array.prototype.forEach.call(document.querySelectorAll(".pick"), function (b, i) { b.setAttribute("aria-pressed", i === idx ? "true" : "false"); });
+    cache.clear();
+    draw();
+    try { localStorage.setItem("sc-film", String(idx)); } catch (e) {}
+  }
+  chapList.addEventListener("click", function (e) {
+    var b = e.target.closest(".chapbtn"); if (!b) return;
+    seek(chapters[+b.dataset.k].t + 0.001); if (!playing) setPlaying(true);
+  });
+  function updateUI() {
+    scrub.value = time.toFixed(2);
+    timeEl.textContent = fmt(time) + " / " + fmt(TOTAL);
+    var ci = 0;
+    chapters.forEach(function (c, k) { if (time >= c.t) ci = k; });
+    chapBtns.forEach(function (b, k) {
+      b.classList.toggle("cur", k === ci);
+      var c = chapters[k], end = k + 1 < chapters.length ? chapters[k + 1].t : TOTAL;
+      var f = time >= end ? 1 : time <= c.t ? 0 : (time - c.t) / (end - c.t);
+      b.querySelector("i").style.width = (f * 100) + "%";
+    });
+    el.cap.classList.toggle("speaking", voiceOn && speaking && playing);
+  }
+  function draw() { var S = stateAt(time); render(S); updateUI(); return S; }
+  function setPlaying(on) {
+    playing = on;
+    if (on && !started) { started = true; poster.hidden = true; }
+    if (on && time >= TOTAL) time = 0;
+    if (on && sfxOn) audio();
+    if (!on) { hush(); spokenIdx = null; }
+    prevS = null;
+    playBtn.querySelector("use").setAttribute("href", on ? "#i-pause" : "#i-play");
+    playBtn.querySelector("span").textContent = on ? "Pause" : (time >= TOTAL ? "Watch again" : time > 0 ? "Resume" : "Play");
+    last = null;
+    if (on) requestAnimationFrame(loop);
+    updateUI();
+  }
+  function seek(x) { time = Math.max(0, Math.min(TOTAL, x)); if (!started) { started = true; poster.hidden = true; } hush(); spokenIdx = null; prevS = null; draw(); }
+  function loop(ts) {
+    if (!playing) return;
+    if (last !== null) {
+      var nt = time + Math.min(0.1, (ts - last) / 1000) * speed;
+      if (voiceOn && speaking && performance.now() < speakUntil) {
+        var nc = nextCapT(time);
+        if (nc !== null && nt >= nc) nt = Math.max(time, nc - 0.0005);
+        if (nt >= TOTAL) nt = Math.max(time, TOTAL - 0.0005);
+      }
+      time = nt;
+    }
+    last = ts;
+    if (time >= TOTAL) { time = TOTAL; draw(); setPlaying(false); return; }
+    var S = draw();
+    if (voiceOn) { var ci = capAt(time); if (ci >= 0 && ci !== spokenIdx) { spokenIdx = ci; speak(CAPS[ci].say); } }
+    if (sfxOn && prevS) sfxFor(prevS, S);
+    prevS = S;
+    requestAnimationFrame(loop);
+  }
+  playBtn.addEventListener("click", function () { setPlaying(!playing); });
+  poster.addEventListener("click", function () { setPlaying(true); });
+  $("#back").addEventListener("click", function () { seek(time - 5); });
+  $("#fwd").addEventListener("click", function () { seek(time + 5); });
+  scrub.addEventListener("input", function () { seek(parseFloat(scrub.value)); });
+  var speedBtns = Array.prototype.slice.call(document.querySelectorAll("[data-speed]"));
+  speedBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      speed = parseFloat(b.dataset.speed);
+      speedBtns.forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      if (speaking) { hush(); spokenIdx = null; }
+    });
+  });
+  function setToggle(btn, on, onText, offText) { btn.setAttribute("aria-pressed", on ? "true" : "false"); btn.querySelector("span").textContent = on ? onText : offText; }
+  if (!synth) { voiceBtn.disabled = true; setToggle(voiceBtn, false, "Voice on", "No voice in this browser"); }
+  voiceBtn.addEventListener("click", function () { voiceOn = !voiceOn; setToggle(voiceBtn, voiceOn, "Voice on", "Voice off"); if (!voiceOn) hush(); spokenIdx = null; updateUI(); });
+  sfxBtn.addEventListener("click", function () { sfxOn = !sfxOn; setToggle(sfxBtn, sfxOn, "Sounds on", "Sounds off"); if (sfxOn) audio(); });
+
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function toggleFs() {
+    if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    var req = player.requestFullscreen || player.webkitRequestFullscreen;
+    if (!req) return;
+    try { var p = req.call(player); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+  }
+  if (!(player.requestFullscreen || player.webkitRequestFullscreen)) fsBtn.hidden = true;
+  function onFs() { fsBtn.querySelector("span").textContent = fsElement() ? "Exit fullscreen" : "Fullscreen"; fit(); }
+  document.addEventListener("fullscreenchange", onFs);
+  document.addEventListener("webkitfullscreenchange", onFs);
+  fsBtn.addEventListener("click", toggleFs);
+  el.frame.addEventListener("dblclick", function (e) { e.preventDefault(); toggleFs(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.closest && e.target.closest("input, textarea")) return;
+    if (e.key === " " || e.key === "k") { e.preventDefault(); setPlaying(!playing); }
+    else if (e.key === "ArrowLeft") seek(time - 5);
+    else if (e.key === "ArrowRight") seek(time + 5);
+    else if (e.key === "f" || e.key === "F") toggleFs();
+  });
+  el.frame.addEventListener("click", function (e) { if (e.target.closest(".poster")) return; if (started) setPlaying(!playing); });
+  function fit() {
+    var w = el.frame.clientWidth, h = el.frame.clientHeight, k = Math.min(w / 1280, h / 720);
+    el.stage.style.transform = "translate(" + ((w - 1280 * k) / 2) + "px," + ((h - 720 * k) / 2) + "px) scale(" + k + ")";
+  }
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(el.frame); else window.addEventListener("resize", fit);
+
+  /* picker */
+  var picker = $("#picker");
+  FILMS.forEach(function (f, i) {
+    var b = document.createElement("button");
+    b.className = "pick"; b.type = "button";
+    b.innerHTML = '<span class="no">' + f.no + ' · <span class="tag ' + f.tag[0] + '">' + f.tag[1] + '</span></span><span class="tt">' + esc(f.name) + '</span><span class="ds">' + esc(f.desc) + "</span>";
+    b.addEventListener("click", function () { loadFilm(i); });
+    picker.appendChild(b);
+  });
+  var start = 0;
+  try { var sv = parseInt(localStorage.getItem("sc-film"), 10); if (sv >= 0 && sv < FILMS.length) start = sv; } catch (e) {}
+  fit();
+  loadFilm(start);
+})();
+</script>
