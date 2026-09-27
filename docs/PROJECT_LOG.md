@@ -154,6 +154,7 @@ sudo visudo -c        # every file must say "parsed OK"
 
 ```sh
 gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git     # lets plain `git push` use that login
 git push
 ```
 
