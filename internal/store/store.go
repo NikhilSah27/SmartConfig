@@ -3,8 +3,10 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,7 +16,8 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"smartconfig/internal/fsutil"
 )
@@ -60,6 +63,14 @@ type Change struct {
 	Origin string
 	Intent string
 }
+
+// busyTimeoutMS is how long one statement waits for another connection's
+// lock before failing with SQLITE_BUSY. Tests shorten it.
+var busyTimeoutMS = 5000
+
+// commitAttempts is how many times writeTx tries COMMIT while other
+// connections are busy. Each attempt waits up to busyTimeoutMS.
+const commitAttempts = 6
 
 // testHookAfterRestoreWrite, if set by a test, runs in Restore after the file
 // is in place and before the restore row is committed.
@@ -108,7 +119,7 @@ func Open(dir string) (*Store, error) {
 
 func open(dir string) (*Store, error) {
 	dsn := "file:" + filepath.Join(dir, "changes.db") +
-		"?_pragma=busy_timeout(5000)&_txlock=immediate"
+		"?_pragma=busy_timeout(" + strconv.Itoa(busyTimeoutMS) + ")&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -179,21 +190,62 @@ func makeID(path string, ts int64, blob string, attempt int) string {
 	return hex.EncodeToString(sum[:])[:idLen]
 }
 
-// insert assigns c.ID and inserts the row inside one write transaction, so
-// the uniqueness check and the insert cannot race another writer. If during
-// is not nil it runs after the row is inserted and before the commit, while
-// the write lock is held; if it fails, the row is rolled back and its error
-// is returned as is.
-func (s *Store) insert(c *Change, during func() error) error {
-	tx, err := s.db.Begin()
+// writeTx runs fn inside one write transaction (BEGIN IMMEDIATE, so the
+// database write lock is held from the start) on a connection of its own.
+// If fn fails, the transaction is rolled back and fn's error is returned as
+// is. COMMIT is retried while other connections keep it busy, because fn may
+// already have changed files on disk. A connection whose transaction cannot
+// be ended is discarded, never handed back to the pool still holding the
+// lock (database/sql's Tx does not guarantee that after a failed COMMIT).
+func (s *Store) writeTx(fn func(ctx context.Context, conn *sql.Conn) error) error {
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
+		return fmt.Errorf("database connection: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
-	defer tx.Rollback()
+	if err := fn(ctx, conn); err != nil {
+		rollback(ctx, conn)
+		return err
+	}
+	for attempt := 1; ; attempt++ {
+		_, err = conn.ExecContext(ctx, "COMMIT")
+		if err == nil {
+			return nil
+		}
+		if !isBusy(err) || attempt == commitAttempts {
+			break
+		}
+	}
+	rollback(ctx, conn)
+	return fmt.Errorf("commit: %w", err)
+}
+
+// rollback ends the open transaction on conn. If even that fails, the
+// connection is marked bad so database/sql closes it instead of pooling it.
+func rollback(ctx context.Context, conn *sql.Conn) {
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
+}
+
+// isBusy reports whether err is SQLite's "database is locked".
+func isBusy(err error) bool {
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code()&0xff == sqlite3.SQLITE_BUSY
+}
+
+// insertTx assigns c.ID and inserts the row within the caller's write
+// transaction, so the uniqueness check and the insert cannot race another
+// writer.
+func insertTx(ctx context.Context, conn *sql.Conn, c *Change) error {
 	for attempt := 0; ; attempt++ {
 		id := makeID(c.Path, c.TS, c.Blob, attempt)
 		var one int
-		err := tx.QueryRow(`SELECT 1 FROM changes WHERE id = ?`, id).Scan(&one)
+		err := conn.QueryRowContext(ctx, `SELECT 1 FROM changes WHERE id = ?`, id).Scan(&one)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.ID = id
 			break
@@ -202,21 +254,29 @@ func (s *Store) insert(c *Change, during func() error) error {
 			return fmt.Errorf("check id: %w", err)
 		}
 	}
-	_, err = tx.Exec(`INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin, intent)
+	_, err := conn.ExecContext(ctx, `INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin, intent)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, c.TS, c.Path, c.Blob, c.Size, uint32(c.Mode), c.UID, c.GID, c.Origin, c.Intent)
 	if err != nil {
 		return fmt.Errorf("record change: %w", err)
 	}
-	if during != nil {
-		if err := during(); err != nil {
+	return nil
+}
+
+// insert records c in its own write transaction. If during is not nil it
+// runs after the row is inserted and before the commit, while the write lock
+// is held; if it fails, the row is rolled back and its error is returned as
+// is.
+func (s *Store) insert(c *Change, during func() error) error {
+	return s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
+		if err := insertTx(ctx, conn, c); err != nil {
 			return err
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	return nil
+		if during != nil {
+			return during()
+		}
+		return nil
+	})
 }
 
 func (s *Store) blobPath(sha string) string {

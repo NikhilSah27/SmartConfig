@@ -427,3 +427,105 @@ func TestRestoreWriteFailureRecordsNothing(t *testing.T) {
 		t.Fatalf("history changed by a failed restore: %+v", cs)
 	}
 }
+
+// holdReadLock opens a second connection, starts a read transaction and
+// returns a function that ends it. While it is held, a COMMIT elsewhere
+// cannot finish.
+func holdReadLock(t *testing.T) (release func()) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM changes").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		conn.ExecContext(ctx, "ROLLBACK")
+		conn.Close()
+		db.Close()
+	}
+}
+
+func shortBusyTimeout(t *testing.T) {
+	old := busyTimeoutMS
+	busyTimeoutMS = 100
+	t.Cleanup(func() { busyTimeoutMS = old })
+}
+
+// A reader that holds its lock a little longer than one busy timeout must
+// not make the restore give up: the file is already in place, so COMMIT is
+// retried.
+func TestRestoreCommitRetriedWhileReaderBusy(t *testing.T) {
+	shortBusyTimeout(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	testHookAfterRestoreWrite = func() {
+		release := holdReadLock(t)
+		go func() { time.Sleep(350 * time.Millisecond); release() }()
+	}
+	defer func() { testHookAfterRestoreWrite = nil }()
+
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatalf("restore gave up while the reader was busy: %v", err)
+	}
+	cs, _ := s.List(p, 1)
+	if len(cs) != 1 || cs[0].Origin != OriginRestore {
+		t.Fatalf("restore row missing: %+v", cs)
+	}
+}
+
+// If COMMIT never succeeds, the transaction must be ended and the connection
+// must not go back to the pool holding the lock: the same store keeps
+// working and other connections can write.
+func TestFailedCommitLeavesNoOpenTransaction(t *testing.T) {
+	shortBusyTimeout(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	var release func()
+	testHookAfterRestoreWrite = func() { release = holdReadLock(t) }
+	defer func() { testHookAfterRestoreWrite = nil }()
+
+	_, _, err := s.Restore(good.ID)
+	release()
+	if err == nil || !strings.Contains(err.Error(), "file restored but not recorded") {
+		t.Fatalf("got %v", err)
+	}
+	cs, _ := s.List(p, 0)
+	for _, c := range cs {
+		if c.Origin == OriginRestore {
+			t.Fatalf("uncommitted restore row visible: %+v", cs)
+		}
+	}
+	q := filepath.Join(dir, "other")
+	write(t, q, "x\n", 0o644)
+	if _, _, err := s.Snapshot(q, OriginManual, ""); err != nil {
+		t.Fatalf("store unusable after a failed commit: %v", err)
+	}
+	other, err := Open(Home())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	write(t, q, "y\n", 0o644)
+	if _, _, err := other.Snapshot(q, OriginManual, ""); err != nil {
+		t.Fatalf("another connection cannot write after a failed commit: %v", err)
+	}
+}
