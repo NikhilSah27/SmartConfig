@@ -13,9 +13,13 @@ code until the plan is approved.
 - [x] M1 follow-up fix 2 (restore order). `ec15ece`
 - [x] Full check after both fixes: gofmt, vet, tests as user and as root,
       static build, root smoke PASS.
-- [ ] Independent review of the two fixes.
-- [ ] Draft the M2 plan from the research and the decisions below; review it;
-      publish as `docs/M2_PLAN.md` for approval.
+- [ ] Independent review of the two fixes (running: three reviewers
+      (concurrency, security, regressions), each finding re-checked by two
+      skeptics).
+- [ ] Draft the M2 plan (running: three independent drafts from different
+      angles, two judges, a synthesis, a critic against the research, the
+      decisions and CLAUDE.md). Then publish as `docs/M2_PLAN.md` for
+      approval.
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
