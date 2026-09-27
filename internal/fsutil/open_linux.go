@@ -14,7 +14,11 @@ import (
 func openNoFollow(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, syscall.ELOOP) {
-		return nil, fmt.Errorf("%s is a symlink, refusing", path)
+		// O_NOFOLLOW reports a symlink as the last component with ELOOP, but
+		// so is a loop in a directory component. Only the first is "a symlink".
+		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%s is a symlink, refusing", path)
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)

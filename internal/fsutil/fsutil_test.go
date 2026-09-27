@@ -210,3 +210,18 @@ func TestSyncDirDoesNotBlockOnFIFO(t *testing.T) {
 		t.Fatal("syncDir blocked on a FIFO")
 	}
 }
+
+// A symlink loop in a directory component is not "a symlink": the real error
+// must be reported.
+func TestReadCheckedLoopInDirectory(t *testing.T) {
+	dir := t.TempDir()
+	orig := filepath.Join(dir, "orig")
+	os.WriteFile(orig, []byte("x\n"), 0o644)
+	want, _ := os.Lstat(orig)
+	os.Symlink(filepath.Join(dir, "loop2"), filepath.Join(dir, "loop1"))
+	os.Symlink(filepath.Join(dir, "loop1"), filepath.Join(dir, "loop2"))
+	_, _, err := readChecked(filepath.Join(dir, "loop1", "file"), want)
+	if err == nil || strings.Contains(err.Error(), "is a symlink") || !strings.Contains(err.Error(), "too many levels of symbolic links") {
+		t.Fatalf("got %v", err)
+	}
+}
