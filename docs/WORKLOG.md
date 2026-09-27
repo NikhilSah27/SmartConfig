@@ -23,8 +23,8 @@ approval.
 - [x] R2-4 store: snapshot's unchanged check inside the write transaction. `09a7dbd`
 - [x] R2-2 fsutil/store: temp file written before the lock; directory opened
       without blocking. `1e6e91a`
-- [ ] R2-3 store: restore in one transaction with its pre-restore row;
-      clearer errors.
+- [x] R2-3 store: restore in one transaction with its pre-restore row;
+      clearer errors. `c0d3839`
 - [ ] R2-5 fsutil: precise ELOOP message.
 - [ ] Full check, then tag `m1`, backups, and your `m1-frozen` snapshot.
 
@@ -101,3 +101,8 @@ approval.
   database lock and holds the lock only for the rename; the directory sync
   can no longer hang on a FIFO. Three new tests; the FIFO test hangs with the
   old code. `1e6e91a`.
+- **R2-3:** a restore now records the previous state, inserts its own row
+  and renames the file under one lock; a failure records nothing, a
+  concurrent restore can no longer make "previous state" stale, and errors
+  say whether the file changed. Three new tests, all failing on the old
+  code. `c0d3839`.
