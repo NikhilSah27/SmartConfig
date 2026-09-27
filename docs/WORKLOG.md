@@ -25,7 +25,7 @@ approval.
       without blocking. `1e6e91a`
 - [x] R2-3 store: restore in one transaction with its pre-restore row;
       clearer errors. `c0d3839`
-- [ ] R2-5 fsutil: precise ELOOP message.
+- [x] R2-5 fsutil: precise ELOOP message. `a517893`
 - [ ] Full check, then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -106,3 +106,6 @@ approval.
   concurrent restore can no longer make "previous state" stale, and errors
   say whether the file changed. Three new tests, all failing on the old
   code. `c0d3839`.
+- **R2-5:** "is a symlink, refusing" is now reported only when the path
+  itself is a symlink; a loop further up the path keeps its real error.
+  `a517893`.
