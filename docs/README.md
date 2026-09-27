@@ -1,5 +1,7 @@
 # SmartConfig docs
 
+What we are doing right now and what is done: [WORKLOG.md](WORKLOG.md).
+
 For the history of the project, its decisions, and a recovery guide, see
 [PROJECT_LOG.md](PROJECT_LOG.md).
 For the milestone 2 watcher research (what to watch and what not), see

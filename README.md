@@ -55,6 +55,8 @@ docs/              visual explainers: system map and narrated films
 
 ## Docs
 
+Current work and progress: [docs/WORKLOG.md](docs/WORKLOG.md).
+
 Start with [docs/PROJECT_LOG.md](docs/PROJECT_LOG.md): what has been done,
 why, the state of the dev VM, and how to recover or resume after a crash.
 
