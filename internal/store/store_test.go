@@ -736,3 +736,48 @@ func TestRestoreLockedErrorSaysFileUnchanged(t *testing.T) {
 		t.Fatalf("temp files left: %v", tmps)
 	}
 }
+
+// A panic inside a write transaction must not leave the connection pooled
+// with the transaction open.
+func TestWriteTxPanicLeavesNoOpenTransaction(t *testing.T) {
+	s, dir := setup(t)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("panic was swallowed")
+			}
+		}()
+		s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
+			conn.ExecContext(ctx, `INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin)
+				VALUES ('dead00', 0, '/x', 'b', 0, 0, 0, 0, 'manual')`)
+			panic("boom")
+		})
+	}()
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	if _, _, err := s.Snapshot(p, OriginManual, ""); err != nil {
+		t.Fatalf("store unusable after a panic: %v", err)
+	}
+	if _, err := s.Get("dead00"); err == nil {
+		t.Fatal("the panicking transaction's row was committed")
+	}
+}
+
+// A snapshot has changed nothing on disk, so it gives up after one busy
+// timeout instead of holding SQLite's lock through many COMMIT retries.
+func TestSnapshotDoesNotRetryCommit(t *testing.T) {
+	shortBusyTimeout(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	release := holdReadLock(t)
+	defer release()
+	start := time.Now()
+	_, _, err := s.Snapshot(p, OriginManual, "")
+	if err == nil || !isBusy(err) {
+		t.Fatalf("got %v", err)
+	}
+	if d := time.Since(start); d > time.Duration(3*busyTimeoutMS)*time.Millisecond {
+		t.Fatalf("snapshot kept retrying for %v", d)
+	}
+}

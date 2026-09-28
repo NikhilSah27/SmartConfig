@@ -69,7 +69,8 @@ type Change struct {
 var busyTimeoutMS = 5000
 
 // commitAttempts is how many times writeTx tries COMMIT while other
-// connections are busy. Each attempt waits up to busyTimeoutMS.
+// connections are busy, when the caller has already changed a file on disk
+// and so must not give up easily. Each attempt waits up to busyTimeoutMS.
 const commitAttempts = 6
 
 // testHookBeforeRestoreLock, if set by a test, runs in Restore after the new
@@ -165,7 +166,7 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	// The unchanged check runs under the write lock: a snapshot taken while
 	// a restore is committing waits for it and compares against the restore
 	// row, instead of recording the restored content as a new change.
-	err = s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
+	err = s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
 		if origin == OriginManual {
 			last, err := latestTx(ctx, conn, path)
 			if err != nil {
@@ -212,12 +213,14 @@ func makeID(path string, ts int64, blob string, attempt int) string {
 
 // writeTx runs fn inside one write transaction (BEGIN IMMEDIATE, so the
 // database write lock is held from the start) on a connection of its own.
-// If fn fails, the transaction is rolled back and fn's error is returned as
-// is. COMMIT is retried while other connections keep it busy, because fn may
-// already have changed files on disk. A connection whose transaction cannot
-// be ended is discarded, never handed back to the pool still holding the
-// lock (database/sql's Tx does not guarantee that after a failed COMMIT).
-func (s *Store) writeTx(fn func(ctx context.Context, conn *sql.Conn) error) error {
+// If fn fails or panics, the transaction is rolled back and fn's error is
+// returned as is. With retryCommit (for callers whose fn has already changed
+// a file on disk), COMMIT is retried while other connections keep it busy;
+// otherwise one busy timeout is enough to give up. A connection whose
+// transaction cannot be ended is discarded, never handed back to the pool
+// still holding the lock (database/sql's Tx does not guarantee that after a
+// failed COMMIT).
+func (s *Store) writeTx(retryCommit bool, fn func(ctx context.Context, conn *sql.Conn) error) (err error) {
 	ctx := context.Background()
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -227,16 +230,26 @@ func (s *Store) writeTx(fn func(ctx context.Context, conn *sql.Conn) error) erro
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			rollback(ctx, conn)
+			panic(p)
+		}
+	}()
 	if err := fn(ctx, conn); err != nil {
 		rollback(ctx, conn)
 		return err
+	}
+	attempts := 1
+	if retryCommit {
+		attempts = commitAttempts
 	}
 	for attempt := 1; ; attempt++ {
 		_, err = conn.ExecContext(ctx, "COMMIT")
 		if err == nil {
 			return nil
 		}
-		if !isBusy(err) || attempt == commitAttempts {
+		if !isBusy(err) || attempt >= attempts {
 			break
 		}
 	}
@@ -430,7 +443,7 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	// rename and takes the write lock to record it (the M2 watcher) waits
 	// for this commit and finds the restore row.
 	wrote := false
-	err = s.writeTx(func(ctx context.Context, conn *sql.Conn) error {
+	err = s.writeTx(true, func(ctx context.Context, conn *sql.Conn) error {
 		cur, meta, err := fsutil.ReadWithMeta(src.Path)
 		switch {
 		case err == nil:
