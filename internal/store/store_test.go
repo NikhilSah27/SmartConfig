@@ -503,7 +503,7 @@ func TestFailedCommitLeavesNoOpenTransaction(t *testing.T) {
 	testHookAfterRestoreWrite = func() { release = holdReadLock(t) }
 	defer func() { testHookAfterRestoreWrite = nil }()
 
-	_, _, err := s.Restore(good.ID)
+	_, prev, err := s.Restore(good.ID)
 	release()
 	if err == nil || !strings.Contains(err.Error(), "file restored but not recorded") {
 		t.Fatalf("got %v", err)
@@ -513,6 +513,18 @@ func TestFailedCommitLeavesNoOpenTransaction(t *testing.T) {
 		if c.Origin == OriginRestore {
 			t.Fatalf("uncommitted restore row visible: %+v", cs)
 		}
+	}
+	// The overwritten content must still be reachable by the id the error
+	// names, so the user can undo the restore.
+	if prev == nil || !strings.Contains(err.Error(), "previous content saved as "+prev.ID) {
+		t.Fatalf("error does not name the saved previous content: %v (prev %+v)", err, prev)
+	}
+	saved, err := s.Get(prev.ID)
+	if err != nil {
+		t.Fatalf("previous content not in history: %v", err)
+	}
+	if data, _ := s.Blob(saved.Blob); string(data) != "bad\n" {
+		t.Fatalf("saved previous content: %q", data)
 	}
 	q := filepath.Join(dir, "other")
 	write(t, q, "x\n", 0o644)
@@ -609,6 +621,10 @@ func TestRestorePreparesBeforeTakingLock(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer conn.Close()
+		var pre int
+		if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM changes WHERE origin = 'pre-restore'`).Scan(&pre); err != nil || pre != 1 {
+			t.Errorf("pre-restore row not committed before the restore lock: %d %v", pre, err)
+		}
 		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 			t.Errorf("write lock already held while the temp file is prepared: %v", err)
 			return
@@ -631,9 +647,10 @@ func TestRestorePreparesBeforeTakingLock(t *testing.T) {
 	}
 }
 
-// If the restore fails after the current file was read, the pre-restore row
-// must be rolled back with everything else: a failed restore records nothing.
-func TestFailedRestoreRecordsNoPreRestore(t *testing.T) {
+// A restore that fails after the current file was saved keeps that saved
+// state (it is the undo point), records no restore row and leaves the file
+// unchanged.
+func TestFailedRestoreKeepsPreviousContent(t *testing.T) {
 	s, dir := setup(t)
 	p := filepath.Join(dir, "conf")
 	write(t, p, "good\n", 0o644)
@@ -653,15 +670,18 @@ func TestFailedRestoreRecordsNoPreRestore(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "file not changed") {
 		t.Fatalf("got %v", err)
 	}
-	if prev != nil {
-		t.Fatalf("failed restore returned a pre-restore row: %+v", prev)
-	}
 	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
 		t.Fatalf("file changed by a failed restore: %q", b)
 	}
 	cs, _ := s.List(p, 0)
-	if len(cs) != 1 || cs[0].ID != good.ID {
-		t.Fatalf("history changed by a failed restore: %+v", cs)
+	if len(cs) != 2 || cs[0].Origin != OriginPreRestore || cs[1].ID != good.ID {
+		t.Fatalf("history after a failed restore: %+v", cs)
+	}
+	if prev == nil || prev.ID != cs[0].ID {
+		t.Fatalf("prev: %+v", prev)
+	}
+	if data, _ := s.Blob(cs[0].Blob); string(data) != "bad\n" {
+		t.Fatalf("pre-restore content: %q", data)
 	}
 }
 
@@ -779,5 +799,44 @@ func TestSnapshotDoesNotRetryCommit(t *testing.T) {
 	}
 	if d := time.Since(start); d > time.Duration(3*busyTimeoutMS)*time.Millisecond {
 		t.Fatalf("snapshot kept retrying for %v", d)
+	}
+}
+
+// lockCheckingClock returns a clock that records an error whenever it is
+// read while the database write lock is not held. Timestamps must be taken
+// under the lock, so that rows are logged in the order they commit.
+func lockCheckingClock(t *testing.T) func() time.Time {
+	t.Helper()
+	probe, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { probe.Close() })
+	tick := time.Unix(1_700_000_000, 0)
+	return func() time.Time {
+		ctx := context.Background()
+		conn, err := probe.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err == nil {
+			conn.ExecContext(ctx, "ROLLBACK")
+			t.Error("timestamp taken without holding the write lock")
+		}
+		tick = tick.Add(time.Second)
+		return tick
+	}
+}
+
+func TestRestoreTimestampsTakenUnderLock(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+	s.now = lockCheckingClock(t)
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatal(err)
 	}
 }

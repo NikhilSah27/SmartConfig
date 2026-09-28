@@ -13,11 +13,34 @@ import (
 // MaxSize is the largest file SmartConfig will snapshot or restore.
 const MaxSize = 8 << 20
 
-// Meta is the ownership and permission information recorded for a file.
+// Meta is the ownership and permission information recorded for a file,
+// plus the stamp of the exact version that was read.
 type Meta struct {
-	Mode os.FileMode
-	UID  int
-	GID  int
+	Mode  os.FileMode
+	UID   int
+	GID   int
+	Stamp Stamp
+}
+
+// Stamp identifies one version of a file cheaply: if any field differs
+// between two stats, the file was replaced or changed in between (a rename
+// over it gives a new inode; a write changes size, mtime or ctime; chmod and
+// chown change ctime).
+type Stamp struct {
+	Dev, Ino     uint64
+	Size         int64
+	Mtime, Ctime int64 // nanoseconds
+	Mode         os.FileMode
+	UID, GID     int
+}
+
+// LstatStamp returns the stamp of path without following a symlink.
+func LstatStamp(path string) (Stamp, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return Stamp{}, err
+	}
+	return stampOf(fi), nil
 }
 
 // CheckRegular refuses anything that is not a regular file of at most MaxSize
@@ -75,7 +98,7 @@ func readChecked(path string, want os.FileInfo) ([]byte, Meta, error) {
 		return nil, Meta{}, fmt.Errorf("%s grew past the 8 MB limit while reading", path)
 	}
 	uid, gid := owner(fi)
-	return data, Meta{Mode: fi.Mode(), UID: uid, GID: gid}, nil
+	return data, Meta{Mode: fi.Mode(), UID: uid, GID: gid, Stamp: stampOf(fi)}, nil
 }
 
 // WriteAtomic replaces path with data: it writes a temp file in the same
