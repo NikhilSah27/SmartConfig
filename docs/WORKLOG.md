@@ -6,8 +6,8 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** round 3 of M1 follow-up fixes (R3-1 to R3-5), from the
-independent review of round 2. Then the M2 plan waits for your approval.
+**Current task:** round 4 (R4-1 to R4-4), the last before the `m1` tag,
+from the final gate review. Then the M2 plan waits for your approval.
 
 - [x] Review of `c720f22` and `ec15ece`: 14 findings, 13 confirmed, 1 split.
       None breaks M1 as used today; most matter once the watcher runs next
@@ -47,9 +47,16 @@ independent review of round 2. Then the M2 plan waits for your approval.
       detector, static build, root smoke PASS, `/etc/hosts` unchanged.
       Stress (12 writers, 2 runs): 1 snapshot and 0 restore failures in 360
       each, the best so far.
-- [ ] Final gate (running): independent review of round 3, plus a check of
-      all of M1 against its original spec. If only low-severity issues
-      remain, they are recorded as known issues and M1 is tagged.
+- [x] Final gate review: 18 findings, all confirmed, rated low by the
+      skeptics except one missing test; no data loss. Some break CLAUDE.md
+      rules (every feature has a test; no stack traces), so a small round 4
+      comes first. [reviews/2026-09-28-m1-gate.md](reviews/2026-09-28-m1-gate.md)
+- [ ] R4-1 sc: signal handling reworked (stop at a safe point, truthful
+      message, no stack trace, ignored signals stay ignored).
+- [ ] R4-2 tests for spec clauses without one (setuid/sticky, guards, id
+      formula, output formats).
+- [ ] R4-3 fsutil/store: "replaced while being read" retried.
+- [ ] R4-4 MILESTONES.md: deliberate deviations and known limits.
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -160,3 +167,7 @@ independent review of round 2. Then the M2 plan waits for your approval.
   directory on purpose) and a test pins it. `41dd177`.
 - **Full check after round 3:** everything clean; stress 1/360 snapshot and
   0/360 restore failures under 12 simultaneous writers.
+- **Final gate review** (round 3 fixes plus all of M1 against its spec):
+  18 findings, all low except one missing test; no data loss. Round 4 fixes
+  the ones that break CLAUDE.md rules.
+  [reviews/2026-09-28-m1-gate.md](reviews/2026-09-28-m1-gate.md)
