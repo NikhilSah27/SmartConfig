@@ -40,7 +40,7 @@ independent review of round 2. Then the M2 plan waits for your approval.
       `e7420bb`
 - [x] R3-2 store: timestamps under the lock; snapshot stamp re-check. `f944a1c`
 - [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
-- [ ] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM.
+- [x] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM. `f4a0948`
 - [ ] R3-5 small: prepare errors say "file not changed"; doc fix; syncDir
       test.
 - [ ] Then a final check, tag `m1`, backups, and your `m1-frozen` snapshot.
@@ -147,3 +147,5 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - **R3-2:** `sc snapshot` records what is on disk when it commits (re-reads
   if the file changed meanwhile) and takes its timestamp under the lock.
   `f944a1c`.
+- **R3-4:** Ctrl-C or SIGTERM during `sc` now removes prepared temp files,
+  prints one line and exits 1; tested with the real binary. `f4a0948`.
