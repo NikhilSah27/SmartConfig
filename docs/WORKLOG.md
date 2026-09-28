@@ -28,6 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
+**Now (23:00 UTC):** setup from the roadmap answers: secret hooks,
+CLAUDE.md, `make race`, Go 1.26.8 with govulncheck, CI.
+
 **Still waiting for you:**
 
 - [ ] Take the VirtualBox snapshot `m1-frozen` (Snapshots tab above the
