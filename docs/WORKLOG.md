@@ -55,7 +55,7 @@ from the final gate review. Then the M2 plan waits for your approval.
       message, no stack trace, ignored signals stay ignored). `4be4bb7`
 - [ ] R4-2 tests for spec clauses without one (setuid/sticky, guards, id
       formula, output formats).
-- [ ] R4-3 fsutil/store: "replaced while being read" retried.
+- [x] R4-3 fsutil/store: "replaced while being read" retried. `423e9dc`
 - [ ] R4-4 MILESTONES.md: deliberate deviations and known limits.
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
@@ -175,3 +175,5 @@ from the final gate review. Then the M2 plan waits for your approval.
   one-line message; SIGHUP is handled, SIGQUIT prints no stack trace, and
   signals a script ignores stay ignored. Tested in-process and with the real
   binary; the binary tests fail on the round-3 handler. `4be4bb7`.
+- **R4-3:** a file replaced while being read is now retried instead of
+  failing the snapshot or restore. `423e9dc`.
