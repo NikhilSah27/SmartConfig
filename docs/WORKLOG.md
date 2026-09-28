@@ -43,7 +43,14 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - [x] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM. `f4a0948`
 - [x] R3-5 small: prepare errors say "file not changed" (in R3-1); doc
       fix; syncDir test. `41dd177`
-- [ ] Then a final check, tag `m1`, backups, and your `m1-frozen` snapshot.
+- [x] Full check after round 3: gofmt, vet, tests as user and root, race
+      detector, static build, root smoke PASS, `/etc/hosts` unchanged.
+      Stress (12 writers, 2 runs): 1 snapshot and 0 restore failures in 360
+      each, the best so far.
+- [ ] Final gate (running): independent review of round 3, plus a check of
+      all of M1 against its original spec. If only low-severity issues
+      remain, they are recorded as known issues and M1 is tagged.
+- [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
 ([M2_PLAN.md section 16](M2_PLAN.md)); answer the 13 roadmap questions
@@ -151,3 +158,5 @@ independent review of round 2. Then the M2 plan waits for your approval.
   prints one line and exits 1; tested with the real binary. `f4a0948`.
 - **R3-5:** review doc corrected (the directory sync follows a symlinked
   directory on purpose) and a test pins it. `41dd177`.
+- **Full check after round 3:** everything clean; stress 1/360 snapshot and
+  0/360 restore failures under 12 simultaneous writers.
