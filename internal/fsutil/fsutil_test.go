@@ -299,3 +299,16 @@ func TestReplacedIsErrReplaced(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// Chown before chmod: the setuid bit survives an atomic write.
+func TestWriteAtomicKeepsSetuid(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tool")
+	mode := os.FileMode(0o755) | os.ModeSetuid
+	if err := WriteAtomic(p, []byte("x"), mode, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(p)
+	if fi.Mode() != mode {
+		t.Fatalf("mode %v, want %v", fi.Mode(), mode)
+	}
+}

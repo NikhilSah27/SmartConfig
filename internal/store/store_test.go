@@ -3,7 +3,9 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -968,5 +970,133 @@ func TestRetryableErrors(t *testing.T) {
 	}
 	if retryable(errors.New("permission denied")) || retryable(ErrInterrupted) {
 		t.Fatal("other errors must not be retried")
+	}
+}
+
+// Restore puts back setuid, setgid and (where the kernel lets a non-root
+// owner set it) sticky bits exactly as recorded.
+func TestRestoreSpecialModeBits(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "tool")
+	write(t, p, "#!/bin/sh\n", 0o755)
+	want := os.FileMode(0o755) | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+	os.Chmod(p, want)
+	fi, _ := os.Stat(p)
+	if fi.Mode()&(os.ModeSetuid|os.ModeSetgid) != os.ModeSetuid|os.ModeSetgid {
+		t.Skipf("cannot set setuid/setgid here: %v", fi.Mode())
+	}
+	recorded := fi.Mode()
+	c, _ := snap(t, s, p)
+	if c.Mode != recorded {
+		t.Fatalf("recorded mode %v, file has %v", c.Mode, recorded)
+	}
+	os.Chmod(p, 0o644)
+	write(t, p, "changed\n", 0o644)
+	if _, _, err := s.Restore(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ = os.Stat(p)
+	if fi.Mode() != recorded {
+		t.Fatalf("restored mode %v, want %v", fi.Mode(), recorded)
+	}
+}
+
+// Ids follow the spec: the first 6 hex of sha256(path \n ts \n blob), with
+// "\n<n>" appended on a collision.
+func TestIDFormula(t *testing.T) {
+	path, blob := "/etc/hosts", strings.Repeat("ab", 32)
+	sum := sha256.Sum256([]byte(path + "\n1700000000\n" + blob))
+	if got, want := makeID(path, 1_700_000_000, blob, 0), hex.EncodeToString(sum[:])[:6]; got != want {
+		t.Fatalf("makeID = %s, want %s", got, want)
+	}
+	sum = sha256.Sum256([]byte(path + "\n1700000000\n" + blob + "\n1"))
+	if got, want := makeID(path, 1_700_000_000, blob, 1), hex.EncodeToString(sum[:])[:6]; got != want {
+		t.Fatalf("makeID attempt 1 = %s, want %s", got, want)
+	}
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	c, _ := snap(t, s, p)
+	if c.ID != makeID(c.Path, c.TS, c.Blob, 0) {
+		t.Fatalf("stored id %s does not follow the formula", c.ID)
+	}
+}
+
+// The file is deleted after its state was saved and before the restore
+// takes the lock: the restore starts over, finds no file, and creates it.
+func TestRestoreFileDeletedBeforeLock(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+	testHookBeforeRestoreLock = func() { testHookBeforeRestoreLock = nil; os.Remove(p) }
+	defer func() { testHookBeforeRestoreLock = nil }()
+	_, prev, err := s.Restore(good.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev != nil {
+		t.Fatalf("prev for a file that no longer existed: %+v", prev)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "good\n" {
+		t.Fatalf("content %q", b)
+	}
+	cs, _ := s.List(p, 0)
+	if len(cs) != 3 || cs[0].Origin != OriginRestore || cs[1].Origin != OriginPreRestore {
+		t.Fatalf("history: %+v", cs)
+	}
+	if data, _ := s.Blob(cs[1].Blob); string(data) != "bad\n" {
+		t.Fatalf("the deleted content was not kept: %q", data)
+	}
+}
+
+// The file appears after the restore found none and before it takes the
+// lock: the restore starts over and saves the new file first.
+func TestRestoreFileCreatedBeforeLock(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	os.Remove(p)
+	testHookBeforeRestoreLock = func() { testHookBeforeRestoreLock = nil; write(t, p, "new\n", 0o644) }
+	defer func() { testHookBeforeRestoreLock = nil }()
+	_, prev, err := s.Restore(good.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev == nil {
+		t.Fatal("the new file was overwritten without being saved")
+	}
+	if data, _ := s.Blob(prev.Blob); string(data) != "new\n" {
+		t.Fatalf("saved %q", data)
+	}
+}
+
+// A file that keeps changing makes the restore give up after 3 attempts,
+// without touching it.
+func TestRestoreGivesUpWhenFileKeepsChanging(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	n := 0
+	testHookBeforeRestoreLock = func() { n++; write(t, p, strings.Repeat("x", n)+"\n", 0o644) }
+	defer func() { testHookBeforeRestoreLock = nil }()
+	_, _, err := s.Restore(good.ID)
+	if err == nil || !strings.Contains(err.Error(), "kept changing") || !strings.Contains(err.Error(), "file not changed") {
+		t.Fatalf("got %v", err)
+	}
+	if n != maxAttempts {
+		t.Fatalf("attempts: %d, want %d", n, maxAttempts)
+	}
+	if b, _ := os.ReadFile(p); string(b) != strings.Repeat("x", n)+"\n" {
+		t.Fatalf("file touched: %q", b)
+	}
+	cs, _ := s.List(p, 0)
+	for _, c := range cs {
+		if c.Origin == OriginRestore {
+			t.Fatalf("restore row recorded: %+v", cs)
+		}
 	}
 }
