@@ -11,7 +11,7 @@ Read docs/WORKLOG.md first: its "Now" section says what is in progress and
 what is next.
 
 ## Rules
-- Go 1.22+. CGO_ENABLED=0 always: the binary must be static so it runs from a
+- Go 1.26.8+ (go.mod). CGO_ENABLED=0 always: the binary must be static so it runs from a
   broken system. SQLite is modernc.org/sqlite, never mattn/go-sqlite3.
   One exception: `make race` runs the tests with CGO_ENABLED=1 for the race
   detector. The shipped binary is never built that way.

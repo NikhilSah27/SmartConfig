@@ -76,8 +76,9 @@ placeholder. It still works as a GitHub repo because nothing imports it from
 outside.
 
 **D3. SQLite driver pinned to `modernc.org/sqlite v1.29.10`.** Newer versions
-require Go 1.25; the VM has Go 1.22.2. Build with `GOTOOLCHAIN=local` if Go
-tries to download a newer toolchain.
+require Go 1.25; the VM had Go 1.22.2. Since 2026-09-28 go.mod requires Go
+1.26.8 (roadmap question 9), which the `go` command downloads by itself, so
+do not set `GOTOOLCHAIN=local`. The SQLite pin is unchanged.
 
 **D4. `sc snapshot -q` prints the id even when unchanged,** so
 `id=$(sc snapshot -q …)` always gets something usable.
@@ -120,7 +121,7 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 | Item | Value |
 |------|-------|
 | OS | Ubuntu 24.04.5 LTS, kernel 7.0.0-34-generic, systemd 255, GRUB 2.12 |
-| Go | 1.22.2 |
+| Go | 1.22.2 from apt; builds use 1.26.8, which go.mod requires (cached in `~/go/pkg/mod`) |
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
@@ -139,10 +140,10 @@ Before a destructive test, say what is about to break.
 ### Fresh machine or lost checkout
 
 ```sh
-sudo apt install -y golang-go git make gh    # Go 1.22+ needed
+sudo apt install -y golang-go git make gh    # any Go 1.21+; it fetches 1.26.8
 git clone https://github.com/NikhilSah27/SmartConfig.git smartconfig
 cd smartconfig
-GOTOOLCHAIN=local make build test vet fmt
+make build test vet fmt                      # first run needs the network
 file bin/sc                                  # must say "statically linked"
 sudo ./scripts/smoke.sh                      # must end with PASS
 ```

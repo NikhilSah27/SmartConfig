@@ -17,7 +17,8 @@ package, incident factory, local model) are planned.
 
 ## Build
 
-Go 1.22+. The binary is always static (`CGO_ENABLED=0`) so it still runs on a
+Go 1.26.8 or newer (set in go.mod; an older `go` command downloads it).
+The binary is always static (`CGO_ENABLED=0`) so it still runs on a
 half-broken system.
 
 ```sh

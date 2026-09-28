@@ -1,6 +1,6 @@
 module smartconfig
 
-go 1.22.2
+go 1.26.8
 
 require (
 	github.com/pmezard/go-difflib v1.0.0
