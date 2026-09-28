@@ -14,7 +14,7 @@ Raw results with full evidence: `~/smartconfig-work/review-r2-results.json` on t
 | U4 | COMMIT is retried for up to about 30 s for every write, holding SQLite's PENDING lock, so meanwhile even `sc log` fails; a snapshot has nothing on disk to protect. | transactions, regressions | low | **R3-3:** retry COMMIT only when the caller has already changed a file on disk (a restore after its rename). |
 | U5 | `writeTx` is not panic-safe: a recovered panic would pool a connection with its transaction still open. | transactions | low | **R3-3:** roll back (or discard the connection) on panic, then re-panic. |
 | U6 | Interrupting `sc restore` (Ctrl-C, SIGTERM) while it waits for the lock leaves the prepared temp file, a full copy, in the config directory. | files, regressions | low | **R3-4:** on SIGINT/SIGTERM, `sc` removes its pending temp files and exits with one line. (kill -9 cannot be caught; M2's watcher cleans stale `.*.sc-tmp-*` at start.) |
-| U7 | Errors from the prepare step lack "(file not changed)". | files | low | **R3-5.** |
+| U7 | Errors from the prepare step lack "(file not changed)". | files | low | **Fixed in R3-1** (`e7420bb`; this row first said R3-5). |
 | U8 | The round-1 review doc says `syncDir` uses O_NOFOLLOW; the code rightly does not, and no test guards that. | files | low | **R3-5:** correct the doc; test `syncDir` through a symlinked directory. |
 
 ## Checked and fine (examples)

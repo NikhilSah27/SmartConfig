@@ -47,6 +47,10 @@ Deliberate choices and things left out:
 
 ### Hardening after acceptance (2026-09-27/28)
 
+(The `m1` tag message says "five independent review rounds". There were four
+review rounds, which led to five rounds of fixes; the tag is left as
+published.)
+
 Four independent review rounds (reviewers plus two skeptics per finding,
 see `docs/reviews/`) led to these behaviours. Each has a test.
 

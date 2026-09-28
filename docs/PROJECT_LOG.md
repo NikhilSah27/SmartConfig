@@ -4,7 +4,7 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-09-28, M1 tagged `m1` after five review rounds.
+Last updated: 2026-09-28, M1 tagged `m1` after four review rounds and five rounds of fixes.
 
 ---
 
@@ -20,8 +20,8 @@ Last updated: 2026-09-28, M1 tagged `m1` after five review rounds.
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
 
-Status: **M1 done and tagged `m1`** (store + CLI, hardened by five review
-rounds, see [reviews/](reviews/)). **M2 (watcher daemon) is next**; its plan
+Status: **M1 done and tagged `m1`** (store + CLI, hardened by four review
+rounds and five rounds of fixes, see [reviews/](reviews/)). **M2 (watcher daemon) is next**; its plan
 ([M2_PLAN.md](M2_PLAN.md)) waits for approval. Live progress:
 [WORKLOG.md](WORKLOG.md).
 
