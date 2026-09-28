@@ -51,8 +51,8 @@ from the final gate review. Then the M2 plan waits for your approval.
       skeptics except one missing test; no data loss. Some break CLAUDE.md
       rules (every feature has a test; no stack traces), so a small round 4
       comes first. [reviews/2026-09-28-m1-gate.md](reviews/2026-09-28-m1-gate.md)
-- [ ] R4-1 sc: signal handling reworked (stop at a safe point, truthful
-      message, no stack trace, ignored signals stay ignored).
+- [x] R4-1 sc: signal handling reworked (stop at a safe point, truthful
+      message, no stack trace, ignored signals stay ignored). `4be4bb7`
 - [ ] R4-2 tests for spec clauses without one (setuid/sticky, guards, id
       formula, output formats).
 - [ ] R4-3 fsutil/store: "replaced while being read" retried.
@@ -171,3 +171,7 @@ from the final gate review. Then the M2 plan waits for your approval.
   18 findings, all low except one missing test; no data loss. Round 4 fixes
   the ones that break CLAUDE.md rules.
   [reviews/2026-09-28-m1-gate.md](reviews/2026-09-28-m1-gate.md)
+- **R4-1:** Ctrl-C and friends now stop `sc` at a safe point with a truthful
+  one-line message; SIGHUP is handled, SIGQUIT prints no stack trace, and
+  signals a script ignores stay ignored. Tested in-process and with the real
+  binary; the binary tests fail on the round-3 handler. `4be4bb7`.
