@@ -35,8 +35,9 @@ independent review of round 2. Then the M2 plan waits for your approval.
       into 8 issues U1-U8. U1 is a regression from R2-3: a restore whose
       commit fails after the rename lost its pre-restore row.
       [reviews/2026-09-27-m1-fixes-round2.md](reviews/2026-09-27-m1-fixes-round2.md)
-- [ ] R3-1 store: pre-restore row committed before the rename again, with a
+- [x] R3-1 store: pre-restore row committed before the rename again, with a
       stamp re-check under the lock; reads and hashing outside the lock.
+      `e7420bb`
 - [ ] R3-2 store: timestamps under the lock; snapshot stamp re-check.
 - [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
 - [ ] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM.
@@ -138,3 +139,8 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - **R3-3:** a panic inside a write transaction now rolls it back; only a
   restore (whose rename comes before the commit) retries COMMIT, so other
   commands no longer hold SQLite's lock for 30 s. `3277111`.
+- **R3-1:** the undo point (pre-restore row) is committed before the file
+  is touched again, so a failed or interrupted restore can always be undone;
+  a stamp check under the lock keeps concurrent restores accurate; restore
+  timestamps are taken under the lock. The error after a failed commit names
+  the saved id. New tests fail on the round-2 code. `e7420bb`.
