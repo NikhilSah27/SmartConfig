@@ -68,12 +68,22 @@ see `docs/reviews/`) led to these behaviours. Each has a test.
   restore that starts over because the file kept changing can leave one
   pre-restore row per attempt. If recording fails after the rename, the
   error says so and names the saved id.
-- Signals: SIGINT, SIGTERM, SIGHUP and SIGQUIT stop a running snapshot or
-  restore at the next safe point (never between a rename and its report),
-  then sc exits 1 with one line that says whether the file changed. While
-  sc waits for the database lock this takes up to one busy timeout (5 s).
-  A second signal stops at once. Signals inherited as ignored stay ignored.
-  Prepared temp files are removed on every exit path except kill -9.
+- Signals (SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGABRT and the other stop
+  signals; ones inherited as ignored stay ignored):
+  - during `sc snapshot` or `sc restore` (including printing the result),
+    the first signal asks it to stop at the next safe point; the command
+    then prints its normal one line, which says whether the file changed
+    (and names the saved id if it did). While sc waits for the database
+    lock this takes up to one busy timeout (5 s);
+  - a second signal stops at once, unless a restore may already have
+    renamed its file: then sc waits for that restore's report (after the
+    first signal it makes at most one more COMMIT attempt);
+  - any other command stops at once;
+  - afterwards sc ends by the signal itself for SIGINT, SIGTERM and SIGHUP,
+    so a calling shell stops its loop; this is a deliberate exception to
+    "exit 1 on any error". The other signals end with exit status 1 and
+    never print a Go stack trace;
+  - prepared temp files are removed on every path except kill -9.
 - A panic inside a database transaction rolls it back.
 
 ### Known limits (deliberate for M1)

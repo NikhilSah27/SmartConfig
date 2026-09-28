@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -78,10 +79,7 @@ const commitAttempts = 6
 // reached a point of no return.
 var ErrInterrupted = errors.New("interrupted")
 
-var (
-	interrupted atomic.Bool
-	active      atomic.Int32
-)
+var interrupted atomic.Bool
 
 // Interrupt asks Snapshot and Restore calls in this process to stop at their
 // next safe point: they start no new work and stop retrying, but a restore
@@ -89,10 +87,24 @@ var (
 // call from a signal handler goroutine.
 func Interrupt() { interrupted.Store(true) }
 
-// Busy reports whether a Snapshot or Restore is running in this process.
-func Busy() bool { return active.Load() > 0 }
-
 func stopping() bool { return interrupted.Load() }
+
+var (
+	pointMu     sync.Mutex
+	forced      bool // ForceStop was called
+	passedPoint bool // a restore in this process went past its last safe point
+)
+
+// ForceStop is for a second signal. From now on no restore in this process
+// may pass its point of no return (the rename). It reports whether the
+// process may exit at once (true), or must let the running operation finish
+// and report (false), because a restore may already have renamed its file.
+func ForceStop() bool {
+	pointMu.Lock()
+	defer pointMu.Unlock()
+	forced = true
+	return !passedPoint
+}
 
 // testHookSnapshotBeforeLock, if set by a test, runs in Snapshot after the
 // file is read and before the write lock is taken.
@@ -172,8 +184,6 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	if err != nil {
 		return Change{}, false, fmt.Errorf("resolve path: %w", err)
 	}
-	active.Add(1)
-	defer active.Add(-1)
 	for attempt := 1; ; attempt++ {
 		if stopping() {
 			return Change{}, false, fmt.Errorf("snapshot %s: %w (nothing recorded)", path, ErrInterrupted)
@@ -485,8 +495,6 @@ func retryable(err error) bool {
 // pre-restore change, returned as prev (nil when the file did not exist), so
 // the restore can be undone even if recording the restore itself fails.
 func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
-	active.Add(1)
-	defer active.Add(-1)
 	src, err := s.Get(id)
 	if err != nil {
 		return Change{}, nil, err
@@ -596,10 +604,15 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 		case !existed && !fsutil.IsNotExist(err):
 			return errChanged
 		}
-		// Last point where stopping leaves the file untouched.
-		if stopping() {
+		// Last point where stopping leaves the file untouched. Past it, a
+		// forced stop (ForceStop) must wait for this restore to report.
+		pointMu.Lock()
+		if stopping() || forced {
+			pointMu.Unlock()
 			return ErrInterrupted
 		}
+		passedPoint = true
+		pointMu.Unlock()
 		restored.TS = s.now().Unix()
 		if err := insertTx(ctx, conn, &restored); err != nil {
 			return err

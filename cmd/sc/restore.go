@@ -15,6 +15,7 @@ func newRestoreCmd() *cobra.Command {
 		Short: "Write a snapshot back with its original mode and owner",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mutating.Store(true)
 			s, err := openStore()
 			if err != nil {
 				return err

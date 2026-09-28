@@ -16,6 +16,7 @@ func newSnapshotCmd() *cobra.Command {
 		Short: "Record the current content of a file",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mutating.Store(true)
 			s, err := openStore()
 			if err != nil {
 				return err

@@ -8,24 +8,51 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
 
-// restoreWaitingForLock builds sc, snapshots a file, changes it, holds the
-// database write lock and starts "sc restore" with the given command
-// prefix. It returns the running command, its stderr, the file path and a
-// function that releases the lock.
-func restoreWaitingForLock(t *testing.T, prefix ...string) (*exec.Cmd, *strings.Builder, string, func()) {
+var (
+	buildOnce sync.Once
+	scBin     string
+	buildErr  error
+)
+
+// scBinary builds sc once for all signal tests.
+func scBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "sc")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
+	buildOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "sc-signal-test-")
+		if err != nil {
+			buildErr = err
+			return
+		}
+		scBin = filepath.Join(dir, "sc")
+		if out, err := exec.Command("go", "build", "-o", scBin, ".").CombinedOutput(); err != nil {
+			buildErr = errors.New(string(out))
+		}
+	})
+	if buildErr != nil {
+		t.Fatalf("build: %v", buildErr)
 	}
+	return scBin
+}
+
+type restoreSetup struct {
+	bin, id, path, db string
+	env               []string
+}
+
+// newRestoreSetup makes a store with one snapshot of a file ("good"), then
+// changes the file ("bad"), ready for "sc restore id".
+func newRestoreSetup(t *testing.T) restoreSetup {
+	t.Helper()
+	bin := scBinary(t)
 	home := t.TempDir()
 	env := append(os.Environ(), "SC_HOME="+home)
-	sc := func(args ...string) string {
+	run := func(args ...string) string {
 		cmd := exec.Command(bin, args...)
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
@@ -34,14 +61,19 @@ func restoreWaitingForLock(t *testing.T, prefix ...string) (*exec.Cmd, *strings.
 		}
 		return strings.TrimSpace(string(out))
 	}
-	dir := t.TempDir()
-	p := filepath.Join(dir, "conf")
+	p := filepath.Join(t.TempDir(), "conf")
 	os.WriteFile(p, []byte("good\n"), 0o644)
-	sc("init")
-	id := sc("snapshot", "-q", p)
+	run("init")
+	id := run("snapshot", "-q", p)
 	os.WriteFile(p, []byte("bad\n"), 0o644)
+	return restoreSetup{bin: bin, id: id, path: p, db: filepath.Join(home, "changes.db"), env: env}
+}
 
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(home, "changes.db"))
+// holdWriteLock takes the database write lock until the returned function
+// is called (or the test ends).
+func holdWriteLock(t *testing.T, dbPath string) (release func()) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,86 +85,230 @@ func restoreWaitingForLock(t *testing.T, prefix ...string) (*exec.Cmd, *strings.
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		t.Fatal(err)
 	}
-	released := false
-	release := func() {
-		if !released {
-			released = true
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
 			conn.ExecContext(ctx, "ROLLBACK")
 			conn.Close()
 			db.Close()
-		}
+		})
 	}
 	t.Cleanup(release)
+	return release
+}
 
-	args := append(append([]string{}, prefix...), bin, "restore", id)
+// startRestore starts sc restore (optionally through a wrapper command) and
+// waits until it has prepared its temp file.
+func startRestore(t *testing.T, r restoreSetup, prefix ...string) (*exec.Cmd, *strings.Builder, *strings.Builder) {
+	t.Helper()
+	args := append(append([]string{}, prefix...), r.bin, "restore", r.id)
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Env = env
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	cmd.Env = r.env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { cmd.Process.Kill() })
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*")); len(tmps) == 1 {
-			break
+		if tmps, _ := filepath.Glob(filepath.Join(filepath.Dir(r.path), ".conf.sc-tmp-*")); len(tmps) == 1 {
+			return cmd, &stdout, &stderr
 		}
 		if time.Now().After(deadline) {
-			cmd.Process.Kill()
 			t.Fatal("restore never prepared its temp file")
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
-	return cmd, &stderr, p, release
 }
 
-func checkStoppedCleanly(t *testing.T, cmd *exec.Cmd, stderr *strings.Builder, p string) {
+// waitEnd waits for cmd and checks how it ended: by signal want, or with
+// exit status 1 if want is 0.
+func waitEnd(t *testing.T, cmd *exec.Cmd, stderr *strings.Builder, want syscall.Signal) {
 	t.Helper()
 	err := cmd.Wait()
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-		t.Fatalf("exit: %v, stderr %q", err, stderr.String())
+	if !errors.As(err, &exit) {
+		t.Fatalf("ended with %v, stderr %q", err, stderr.String())
 	}
-	msg := stderr.String()
-	if strings.Count(msg, "\n") != 1 || !strings.Contains(msg, "interrupted") || !strings.Contains(msg, "file not changed") {
-		t.Fatalf("stderr: %q", msg)
+	ws := exit.Sys().(syscall.WaitStatus)
+	switch {
+	case want != 0 && !(ws.Signaled() && ws.Signal() == want):
+		t.Fatalf("want death by %v, got %v, stderr %q", want, ws, stderr.String())
+	case want == 0 && ws.ExitStatus() != 1:
+		t.Fatalf("want exit status 1, got %v, stderr %q", ws, stderr.String())
 	}
-	if tmps, _ := filepath.Glob(filepath.Join(filepath.Dir(p), ".conf.sc-tmp-*")); len(tmps) != 0 {
-		t.Fatalf("temp file left after interrupt: %v", tmps)
-	}
-	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
-		t.Fatalf("target changed by an interrupted restore: %q", b)
+	if msg := stderr.String(); strings.Count(msg, "\n") != 1 || strings.Contains(msg, "goroutine") {
+		t.Fatalf("stderr must be one line, no stack trace: %q", msg)
 	}
 }
 
-// Ctrl-C while a restore waits for the database: it stops (within one busy
-// timeout), leaves no temp file, and says the file was not changed.
+func checkUnchanged(t *testing.T, r restoreSetup) {
+	t.Helper()
+	if tmps, _ := filepath.Glob(filepath.Join(filepath.Dir(r.path), ".conf.sc-tmp-*")); len(tmps) != 0 {
+		t.Fatalf("temp file left: %v", tmps)
+	}
+	if b, _ := os.ReadFile(r.path); string(b) != "bad\n" {
+		t.Fatalf("target changed: %q", b)
+	}
+}
+
+// One Ctrl-C while a restore waits for the database: it stops at the next
+// safe point (within one busy timeout), says the file was not changed,
+// leaves no temp file, and ends by SIGINT.
 func TestInterruptedRestoreRemovesTempFile(t *testing.T) {
-	cmd, stderr, p, _ := restoreWaitingForLock(t)
+	r := newRestoreSetup(t)
+	holdWriteLock(t, r.db)
+	cmd, _, stderr := startRestore(t, r)
 	cmd.Process.Signal(syscall.SIGINT)
-	checkStoppedCleanly(t, cmd, stderr, p)
+	waitEnd(t, cmd, stderr, syscall.SIGINT)
+	if !strings.Contains(stderr.String(), "interrupted (file not changed)") {
+		t.Fatalf("stderr %q", stderr.String())
+	}
+	checkUnchanged(t, r)
 }
 
-// SIGQUIT (Ctrl-\) is handled the same way: one line, no stack trace.
-func TestSIGQUITPrintsNoStackTrace(t *testing.T) {
-	cmd, stderr, p, _ := restoreWaitingForLock(t)
-	cmd.Process.Signal(syscall.SIGQUIT)
-	checkStoppedCleanly(t, cmd, stderr, p)
-	if strings.Contains(stderr.String(), "goroutine") {
-		t.Fatalf("stack trace printed: %q", stderr.String())
+// A second Ctrl-C before the rename stops at once.
+func TestSecondSignalBeforeRenameStopsAtOnce(t *testing.T) {
+	r := newRestoreSetup(t)
+	holdWriteLock(t, r.db)
+	cmd, _, stderr := startRestore(t, r)
+	cmd.Process.Signal(syscall.SIGINT)
+	time.Sleep(200 * time.Millisecond)
+	start := time.Now()
+	cmd.Process.Signal(syscall.SIGINT)
+	waitEnd(t, cmd, stderr, syscall.SIGINT)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("second signal took %v", d)
+	}
+	if !strings.Contains(stderr.String(), "(file not changed)") {
+		t.Fatalf("stderr %q", stderr.String())
+	}
+	checkUnchanged(t, r)
+}
+
+// SIGQUIT and SIGABRT would normally print a Go stack trace: sc prints one
+// line and exits 1 instead.
+func TestQuitAndAbortPrintNoStackTrace(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGQUIT, syscall.SIGABRT} {
+		t.Run(sig.String(), func(t *testing.T) {
+			r := newRestoreSetup(t)
+			holdWriteLock(t, r.db)
+			cmd, _, stderr := startRestore(t, r)
+			cmd.Process.Signal(sig)
+			waitEnd(t, cmd, stderr, 0)
+			checkUnchanged(t, r)
+		})
 	}
 }
 
 // A SIGINT the caller chose to ignore stays ignored: the restore finishes.
 func TestIgnoredSIGINTStaysIgnored(t *testing.T) {
-	cmd, stderr, p, release := restoreWaitingForLock(t, "sh", "-c", `trap "" INT; exec "$@"`, "sh")
+	r := newRestoreSetup(t)
+	release := holdWriteLock(t, r.db)
+	cmd, _, stderr := startRestore(t, r, "sh", "-c", `trap "" INT; exec "$@"`, "sh")
 	cmd.Process.Signal(syscall.SIGINT)
 	time.Sleep(300 * time.Millisecond)
 	release()
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("restore stopped by an ignored SIGINT: %v %q", err, stderr.String())
 	}
-	if b, _ := os.ReadFile(p); string(b) != "good\n" {
+	if b, _ := os.ReadFile(r.path); string(b) != "good\n" {
 		t.Fatalf("not restored: %q", b)
 	}
+}
+
+// Ctrl-C in a terminal goes to the whole foreground group: a shell loop
+// around sc must stop, not run its next step.
+func TestCtrlCStopsShellLoop(t *testing.T) {
+	r := newRestoreSetup(t)
+	holdWriteLock(t, r.db)
+	cmd, stdout, _ := startRestore(t, r, "bash", "-c", `for i in 1 2; do "$@"; echo NEXT; done`, "bash")
+	syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the shell loop kept running")
+	}
+	if strings.Contains(stdout.String(), "NEXT") {
+		t.Fatalf("the loop ran its next step after Ctrl-C: %q", stdout.String())
+	}
+}
+
+// Two Ctrl-C after the restore renamed its file, while its COMMIT is held up
+// by a reader: sc must still report that the file was replaced and name the
+// saved previous content, not just "interrupted".
+func TestSecondSignalAfterRenameStillReports(t *testing.T) {
+	for attempt := 1; attempt <= 5; attempt++ {
+		if secondSignalAfterRename(t) {
+			return
+		}
+		t.Logf("attempt %d: did not catch the restore between rename and commit, retrying", attempt)
+	}
+	t.Fatal("could not hold a restore between its rename and its commit in 5 attempts")
+}
+
+func secondSignalAfterRename(t *testing.T) (caught bool) {
+	r := newRestoreSetup(t)
+	db, err := sql.Open("sqlite", "file:"+r.db+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	cmd := exec.Command(r.bin, "restore", r.id)
+	cmd.Env = r.env
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	// Take a read lock as soon as the pre-restore row is committed, so the
+	// restore's own COMMIT, which comes after its rename, cannot finish.
+	deadline := time.Now().Add(5 * time.Second)
+	holding := false
+	for !holding && time.Now().Before(deadline) {
+		if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+			continue
+		}
+		var pre int
+		if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM changes WHERE origin = 'pre-restore'`).Scan(&pre); err == nil && pre == 1 {
+			holding = true
+			break
+		}
+		conn.ExecContext(ctx, "ROLLBACK")
+	}
+	if !holding {
+		return false
+	}
+	defer conn.ExecContext(ctx, "ROLLBACK")
+	for time.Now().Before(deadline) {
+		if b, _ := os.ReadFile(r.path); string(b) == "good\n" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	var restoreRows int
+	conn.QueryRowContext(ctx, `SELECT count(*) FROM changes WHERE origin = 'restore'`).Scan(&restoreRows)
+	if b, _ := os.ReadFile(r.path); string(b) != "good\n" || restoreRows != 0 {
+		return false // the restore finished before the read lock was taken
+	}
+	cmd.Process.Signal(syscall.SIGINT)
+	time.Sleep(150 * time.Millisecond)
+	cmd.Process.Signal(syscall.SIGINT)
+	waitEnd(t, cmd, &stderr, syscall.SIGINT)
+	if msg := stderr.String(); !strings.Contains(msg, "file restored but not recorded") || !strings.Contains(msg, "previous content saved as") {
+		t.Fatalf("after a rename, stderr must say so and name the saved id: %q", msg)
+	}
+	return true
 }

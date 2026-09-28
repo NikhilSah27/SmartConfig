@@ -892,7 +892,12 @@ func TestSnapshotGivesUpOnFileThatKeepsChanging(t *testing.T) {
 }
 
 func resetInterrupt(t *testing.T) {
-	t.Cleanup(func() { interrupted.Store(false) })
+	t.Cleanup(func() {
+		interrupted.Store(false)
+		pointMu.Lock()
+		forced, passedPoint = false, false
+		pointMu.Unlock()
+	})
 }
 
 // Interrupted before the rename: nothing on disk changes and the message
@@ -1098,5 +1103,44 @@ func TestRestoreGivesUpWhenFileKeepsChanging(t *testing.T) {
 		if c.Origin == OriginRestore {
 			t.Fatalf("restore row recorded: %+v", cs)
 		}
+	}
+}
+
+// ForceStop lets the process exit only while no restore has passed its point
+// of no return, and stops later restores before their rename.
+func TestForceStop(t *testing.T) {
+	resetInterrupt(t)
+	pointMu.Lock()
+	forced, passedPoint = false, false
+	pointMu.Unlock()
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+
+	if !ForceStop() {
+		t.Fatal("ForceStop refused with no restore running")
+	}
+	_, _, err := s.Restore(good.ID)
+	if err == nil || !strings.Contains(err.Error(), "file not changed") {
+		t.Fatalf("restore after ForceStop: %v", err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
+		t.Fatalf("file changed after ForceStop: %q", b)
+	}
+
+	// A restore that has passed its point of no return makes ForceStop wait.
+	pointMu.Lock()
+	forced = false
+	pointMu.Unlock()
+	var allowed bool
+	testHookAfterRestoreWrite = func() { allowed = ForceStop() }
+	defer func() { testHookAfterRestoreWrite = nil }()
+	if _, _, err := s.Restore(good.ID); err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("ForceStop allowed an exit right after a rename")
 	}
 }
