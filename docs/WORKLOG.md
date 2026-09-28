@@ -56,7 +56,7 @@ from the final gate review. Then the M2 plan waits for your approval.
 - [x] R4-2 tests for spec clauses without one (setuid/sticky, guards, id
       formula, output formats). `348ec67`
 - [x] R4-3 fsutil/store: "replaced while being read" retried. `423e9dc`
-- [ ] R4-4 MILESTONES.md: deliberate deviations and known limits.
+- [x] R4-4 MILESTONES.md: deliberate deviations and known limits. `2dee5bb`
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -180,3 +180,5 @@ from the final gate review. Then the M2 plan waits for your approval.
 - **R4-2:** tests for every M1 spec clause that had none (special mode
   bits, restore guards, id formula, output formats). Mutation checks now
   catch a dropped setuid bit and a removed guard. `348ec67`.
+- **R4-4:** MILESTONES.md now lists M1's hardened behaviour and its known
+  limits. `2dee5bb`.
