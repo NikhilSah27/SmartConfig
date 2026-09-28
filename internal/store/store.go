@@ -73,6 +73,10 @@ var busyTimeoutMS = 5000
 // and so must not give up easily. Each attempt waits up to busyTimeoutMS.
 const commitAttempts = 6
 
+// testHookSnapshotBeforeLock, if set by a test, runs in Snapshot after the
+// file is read and before the write lock is taken.
+var testHookSnapshotBeforeLock func()
+
 // testHookBeforeRestoreLock, if set by a test, runs in Restore after the new
 // content is prepared in a temp file and before the write lock is taken.
 var testHookBeforeRestoreLock func()
@@ -147,26 +151,45 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	if err != nil {
 		return Change{}, false, fmt.Errorf("resolve path: %w", err)
 	}
+	for attempt := 1; ; attempt++ {
+		c, unchanged, err = s.snapshotOnce(path, origin, intent)
+		if !errors.Is(err, errChanged) {
+			return c, unchanged, err
+		}
+		if attempt == maxAttempts {
+			return Change{}, false, fmt.Errorf("%s kept changing while being read, try again", path)
+		}
+	}
+}
+
+// snapshotOnce reads path, then records it under the write lock provided the
+// file is still the version that was read (else errChanged). Comparing with
+// the newest row and taking the timestamp under the lock means a snapshot
+// taken while a restore commits waits for it and sees its row, and rows are
+// logged in the order they commit.
+func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged bool, err error) {
 	data, meta, err := fsutil.ReadWithMeta(path)
 	if err != nil {
 		return Change{}, false, err
 	}
 	sum := sha256.Sum256(data)
 	blob := hex.EncodeToString(sum[:])
-
 	// The blob is content-addressed, so writing it before the check costs
 	// nothing when the content is unchanged (it is already stored).
 	if err := s.putBlob(blob, data); err != nil {
 		return Change{}, false, err
 	}
+	if testHookSnapshotBeforeLock != nil {
+		testHookSnapshotBeforeLock()
+	}
 	c = Change{
-		TS: s.now().Unix(), Path: path, Blob: blob, Size: int64(len(data)),
+		Path: path, Blob: blob, Size: int64(len(data)),
 		Mode: meta.Mode, UID: meta.UID, GID: meta.GID, Origin: origin, Intent: intent,
 	}
-	// The unchanged check runs under the write lock: a snapshot taken while
-	// a restore is committing waits for it and compares against the restore
-	// row, instead of recording the restored content as a new change.
 	err = s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
+		if st, err := fsutil.LstatStamp(path); err != nil || st != meta.Stamp {
+			return errChanged
+		}
 		if origin == OriginManual {
 			last, err := latestTx(ctx, conn, path)
 			if err != nil {
@@ -177,6 +200,7 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 				return nil
 			}
 		}
+		c.TS = s.now().Unix()
 		return insertTx(ctx, conn, &c)
 	})
 	if err != nil {

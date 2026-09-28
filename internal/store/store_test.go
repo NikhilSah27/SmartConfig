@@ -840,3 +840,49 @@ func TestRestoreTimestampsTakenUnderLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSnapshotTimestampTakenUnderLock(t *testing.T) {
+	s, dir := setup(t)
+	s.now = lockCheckingClock(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	snap(t, s, p)
+}
+
+// If the file changes between being read and the write lock being taken,
+// the snapshot reads it again and records what is on disk now.
+func TestSnapshotRereadsFileChangedBeforeLock(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "first\n", 0o644)
+	testHookSnapshotBeforeLock = func() {
+		testHookSnapshotBeforeLock = nil
+		write(t, p, "second, longer\n", 0o644)
+	}
+	defer func() { testHookSnapshotBeforeLock = nil }()
+	c, _ := snap(t, s, p)
+	if data, _ := s.Blob(c.Blob); string(data) != "second, longer\n" {
+		t.Fatalf("recorded %q, the file on disk is the second version", data)
+	}
+	cs, _ := s.List(p, 0)
+	if len(cs) != 1 {
+		t.Fatalf("rows: %+v", cs)
+	}
+}
+
+// A file that never stops changing gives one clear error, not a wrong row.
+func TestSnapshotGivesUpOnFileThatKeepsChanging(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "0\n", 0o644)
+	n := 0
+	testHookSnapshotBeforeLock = func() { n++; write(t, p, strings.Repeat("x", n)+"\n", 0o644) }
+	defer func() { testHookSnapshotBeforeLock = nil }()
+	_, _, err := s.Snapshot(p, OriginManual, "")
+	if err == nil || !strings.Contains(err.Error(), "kept changing") {
+		t.Fatalf("got %v", err)
+	}
+	if cs, _ := s.List(p, 0); len(cs) != 0 {
+		t.Fatalf("rows recorded for a file that kept changing: %+v", cs)
+	}
+}
