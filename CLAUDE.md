@@ -7,9 +7,14 @@ restore one file from the rescue shell.
 Target: Ubuntu 24.04. We build one milestone at a time; MILESTONES.md says which
 one is current. Do not build ahead of the current milestone, not even stubs.
 
+Read docs/WORKLOG.md first: its "Now" section says what is in progress and
+what is next.
+
 ## Rules
 - Go 1.22+. CGO_ENABLED=0 always: the binary must be static so it runs from a
   broken system. SQLite is modernc.org/sqlite, never mattn/go-sqlite3.
+  One exception: `make race` runs the tests with CGO_ENABLED=1 for the race
+  detector. The shipped binary is never built that way.
 - One binary, cmd/sc. Library code in internal/. No daemon until the milestone
   that asks for it.
 - Data lives under $SC_HOME (default /var/lib/smartconfig). Tests always set
@@ -23,9 +28,11 @@ one is current. Do not build ahead of the current milestone, not even stubs.
 - Every feature has a test. go test ./..., go vet ./... and gofmt are clean
   before a task is called done.
 - Small commits, one logical change each, clear messages.
+- After every step, update docs/WORKLOG.md and push to GitHub.
 
 ## Layout
 cmd/sc            the CLI (cobra); thin, calls into internal/
 internal/store    blobs + SQLite records: snapshot, list, get, restore
 internal/fsutil   atomic write, read mode/owner
 scripts/          smoke.sh and helpers a human runs in the VM
+docs/             WORKLOG (read first), plans, reviews, visual explainers
