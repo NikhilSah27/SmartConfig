@@ -4,7 +4,7 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-09-27, end of milestone 1.
+Last updated: 2026-09-28, M1 tagged `m1` after five review rounds.
 
 ---
 
@@ -20,7 +20,10 @@ Last updated: 2026-09-27, end of milestone 1.
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
 
-Status: **M1 done** (store + CLI). **M2 (watcher daemon) is next**, not started.
+Status: **M1 done and tagged `m1`** (store + CLI, hardened by five review
+rounds, see [reviews/](reviews/)). **M2 (watcher daemon) is next**; its plan
+([M2_PLAN.md](M2_PLAN.md)) waits for approval. Live progress:
+[WORKLOG.md](WORKLOG.md).
 
 M2 research: [M2_WATCHLIST.md](M2_WATCHLIST.md) lists what the watcher must watch,
 ignore and beware of, verified on this VM, plus two M1 fixes needed first and
@@ -180,11 +183,20 @@ original file of this VM.
 2. Press `e` on "Ubuntu", add ` init=/bin/bash` to the end of the `linux` line,
    press Ctrl-X.
 3. `mount -o remount,rw /`
-4. `/home/vboxuser/code/smartconfig/bin/sc restore <id>` (the binary is static,
-   so it works here), or fix the file with nano.
+4. `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1` build, static, so
+   it works here; the repo's `bin/sc` may be a half-built M2 binary), or fix
+   the file with nano.
 5. `sync`, then `exec /sbin/init` or `reboot -f`.
 
 If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
+
+### Backups made at the m1 tag (root only)
+
+`/var/backups/smartconfig/` (mode 0700): `sc-m1` (the tagged binary),
+`store-m1.tar` (the SmartConfig store; `2c6901` is this VM's original
+fstab), `etc-boot-m1.tar.zst` (`/etc` and `/boot/grub`), `manifest-m1.txt`
+and `sha256-m1.txt` (mode, owner, size and checksum of every file, to see
+exactly what changed after a risky test).
 
 ### VirtualBox snapshot
 

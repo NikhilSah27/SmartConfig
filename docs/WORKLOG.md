@@ -6,73 +6,18 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** round 5 (R5-1), the signal handling fixes from the
-last review, before the `m1` tag. Then the M2 plan waits for your approval.
+**M1 is finished and tagged `m1`.** Waiting for you:
 
-- [x] Review of `c720f22` and `ec15ece`: 14 findings, 13 confirmed, 1 split.
-      None breaks M1 as used today; most matter once the watcher runs next
-      to `sc`. Every finding has a decision:
-      [reviews/2026-09-27-m1-fixes.md](reviews/2026-09-27-m1-fixes.md).
-- [x] M2 plan written, judged and critiqued: [M2_PLAN.md](M2_PLAN.md)
-      (17 steps in 5 chunks, 14 questions for you). **Waiting for your
-      approval.**
-- [x] R2-1 store: dedicated connection for write transactions; COMMIT
-      retried on SQLITE_BUSY; never pool a connection with an open
-      transaction. `c5b693e`
-- [x] R2-4 store: snapshot's unchanged check inside the write transaction. `09a7dbd`
-- [x] R2-2 fsutil/store: temp file written before the lock; directory opened
-      without blocking. `1e6e91a`
-- [x] R2-3 store: restore in one transaction with its pre-restore row;
-      clearer errors. `c0d3839`
-- [x] R2-5 fsutil: precise ELOOP message. `a517893`
-- [x] Full check after round 2: gofmt, vet, tests as user and root, race
-      detector, static build, root smoke PASS, `/etc/hosts` unchanged.
-- [x] Stress, 12 parallel writers x 15 rounds, 2 runs per version:
-      failures before fix 2 3+3/360, after fix 2 2+4/360, now 1+1/360
-      (snapshot+restore). The rest wait more than 5 s for the lock under
-      that load.
-- [x] Independent review of round 2: 15 findings (all confirmed), grouped
-      into 8 issues U1-U8. U1 is a regression from R2-3: a restore whose
-      commit fails after the rename lost its pre-restore row.
-      [reviews/2026-09-27-m1-fixes-round2.md](reviews/2026-09-27-m1-fixes-round2.md)
-- [x] R3-1 store: pre-restore row committed before the rename again, with a
-      stamp re-check under the lock; reads and hashing outside the lock.
-      `e7420bb`
-- [x] R3-2 store: timestamps under the lock; snapshot stamp re-check. `f944a1c`
-- [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
-- [x] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM. `f4a0948`
-- [x] R3-5 small: prepare errors say "file not changed" (in R3-1); doc
-      fix; syncDir test. `41dd177`
-- [x] Full check after round 3: gofmt, vet, tests as user and root, race
-      detector, static build, root smoke PASS, `/etc/hosts` unchanged.
-      Stress (12 writers, 2 runs): 1 snapshot and 0 restore failures in 360
-      each, the best so far.
-- [x] Final gate review: 18 findings, all confirmed, rated low by the
-      skeptics except one missing test; no data loss. Some break CLAUDE.md
-      rules (every feature has a test; no stack traces), so a small round 4
-      comes first. [reviews/2026-09-28-m1-gate.md](reviews/2026-09-28-m1-gate.md)
-- [x] R4-1 sc: signal handling reworked (stop at a safe point, truthful
-      message, no stack trace, ignored signals stay ignored). `4be4bb7`
-- [x] R4-2 tests for spec clauses without one (setuid/sticky, guards, id
-      formula, output formats). `348ec67`
-- [x] R4-3 fsutil/store: "replaced while being read" retried. `423e9dc`
-- [x] R4-4 MILESTONES.md: deliberate deviations and known limits. `2dee5bb`
-- [x] Full check from a fresh GitHub clone at `5dc4041`: gofmt, vet, tests
-      as user and root, race detector, static build, root smoke PASS,
-      `/etc/hosts` unchanged; stress 2/360 snapshot and 0/360 restore
-      failures under 12 writers.
-- [x] Focused review of the new signal handling: 7 findings, all
-      confirmed, no data loss; three real behaviour issues (a second Ctrl-C
-      after the rename, shell loops not stopping, a signal right after the
-      result). [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
-- [x] R5-1 sc: signal handling, second version. `151b7fd`
-- [x] Re-ran the reviewers' reproduction scripts against the new binary:
-      every scenario now behaves as intended (table in the review doc).
-- [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
+- [ ] **You:** take the VirtualBox snapshot `m1-frozen` (Snapshots tab above
+      the right-hand panel, Take). Steps in [NEXT_STEPS.md](NEXT_STEPS.md).
+- [ ] **You:** approve or change the M2 plan ([M2_PLAN.md](M2_PLAN.md)) and
+      answer its 14 questions (section 16) and the 13 roadmap questions in
+      [NEXT_STEPS.md](NEXT_STEPS.md). "Yes to all recommendations" works.
+- [ ] Then M2 step 1.
 
-**Open for you:** approve the M2 plan and answer its 14 questions
-([M2_PLAN.md section 16](M2_PLAN.md)); answer the 13 roadmap questions
-([NEXT_STEPS.md](NEXT_STEPS.md)).
+Done at the tag: `m1` on `df1a378` (pushed); backups in
+`/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
+manifest and checksums), verified; recovery guide points to `sc-m1`.
 
 **Decisions already made for M2** (2026-09-27, "go with your picks"):
 
@@ -205,3 +150,11 @@ last review, before the `m1` tag. Then the M2 plan waits for your approval.
 - **Verified R5-1 with the reviewers' own scripts:** double Ctrl-C after
   the rename now reports the saved id (3/3), a late signal no longer hides
   the result, SIGABRT/SIGTRAP print one line and leave no temp file.
+- **Final check at the tag** from a fresh GitHub clone: all clean. Stress
+  under 12 writers: failures are rare and only the safe "database is
+  locked (file not changed)", the same as round 4 (noise between runs).
+- **Tagged `m1`** on `df1a378` and pushed the tag.
+- **Backups** in `/var/backups/smartconfig` (root only): `sc-m1`, the
+  store, `/etc` and `/boot/grub`, manifest and checksums. Verified: the
+  archive has 3145 entries including fstab and grub.cfg; `sc-m1` reads the
+  real store.
