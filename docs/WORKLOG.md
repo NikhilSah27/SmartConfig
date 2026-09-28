@@ -38,7 +38,7 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - [ ] R3-1 store: pre-restore row committed before the rename again, with a
       stamp re-check under the lock; reads and hashing outside the lock.
 - [ ] R3-2 store: timestamps under the lock; snapshot stamp re-check.
-- [ ] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename.
+- [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
 - [ ] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM.
 - [ ] R3-5 small: prepare errors say "file not changed"; doc fix; syncDir
       test.
@@ -135,3 +135,6 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - **Review of round 2:** 15 findings, all confirmed, grouped into 8 issues.
   The main one (U1) is a regression from R2-3 and is fixed first in round 3.
   [reviews/2026-09-27-m1-fixes-round2.md](reviews/2026-09-27-m1-fixes-round2.md)
+- **R3-3:** a panic inside a write transaction now rolls it back; only a
+  restore (whose rename comes before the commit) retries COMMIT, so other
+  commands no longer hold SQLite's lock for 30 s. `3277111`.
