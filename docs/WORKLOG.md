@@ -6,6 +6,17 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
+**Current task:** a visual progress page (charts of the build, the review
+rounds and the tests), fact-checked against the repo, then published to
+claude.ai and GitHub Pages as `docs/visuals/progress.html`.
+
+- [x] Facts gathered from git, the reviews, the tests and the docs (4 agents).
+- [x] Two doc mistakes found and fixed: four review rounds, not five; U7 was
+      fixed in R3-1. `ec9a58a`
+- [x] Page built; renders without errors at desktop and phone width.
+- [ ] Independent fact check of every number, chart value and link (running).
+- [ ] Publish and push.
+
 **M1 is finished and tagged `m1`.** Waiting for you:
 
 - [ ] **You:** take the VirtualBox snapshot `m1-frozen` (Snapshots tab above
@@ -158,3 +169,5 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   store, `/etc` and `/boot/grub`, manifest and checksums. Verified: the
   archive has 3145 entries including fstab and grub.cfg; `sc-m1` reads the
   real store.
+- **Progress page facts** gathered by 4 agents from git, the reviews, the
+  tests and the docs; two doc mistakes fixed (`ec9a58a`).
