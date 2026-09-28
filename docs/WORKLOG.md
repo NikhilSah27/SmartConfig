@@ -6,16 +6,8 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** a visual progress page (charts of the build, the review
-rounds and the tests), fact-checked against the repo, then published to
-claude.ai and GitHub Pages as `docs/visuals/progress.html`.
-
-- [x] Facts gathered from git, the reviews, the tests and the docs (4 agents).
-- [x] Two doc mistakes found and fixed: four review rounds, not five; U7 was
-      fixed in R3-1. `ec9a58a`
-- [x] Page built; renders without errors at desktop and phone width.
-- [ ] Independent fact check of every number, chart value and link (running).
-- [ ] Publish and push.
+**Progress at a glance:** [visuals/progress.html](visuals/progress.html),
+live at https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
 
 **M1 is finished and tagged `m1`.** Waiting for you:
 
@@ -121,7 +113,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   restore (whose rename comes before the commit) retries COMMIT, so other
   commands no longer hold SQLite's lock for 30 s. `3277111`.
 - **R3-1:** the undo point (pre-restore row) is committed before the file
-  is touched again, so a failed or interrupted restore can always be undone;
+  is touched again, so a failed or interrupted restore can be undone;
   a stamp check under the lock keeps concurrent restores accurate; restore
   timestamps are taken under the lock. The error after a failed commit names
   the saved id. New tests fail on the round-2 code. `e7420bb`.
@@ -144,7 +136,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   binary; the binary tests fail on the round-3 handler. `4be4bb7`.
 - **R4-3:** a file replaced while being read is now retried instead of
   failing the snapshot or restore. `423e9dc`.
-- **R4-2:** tests for every M1 spec clause that had none (special mode
+- **R4-2:** tests for the M1 spec clauses the gate review found untested (special mode
   bits, restore guards, id formula, output formats). Mutation checks now
   catch a dropped setuid bit and a removed guard. `348ec67`.
 - **R4-4:** MILESTONES.md now lists M1's hardened behaviour and its known
@@ -171,3 +163,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   real store.
 - **Progress page facts** gathered by 4 agents from git, the reviews, the
   tests and the docs; two doc mistakes fixed (`ec9a58a`).
+
+### 2026-09-28
+
+- **Independent fact check of the progress page** (3 agents: text, charts,
+  links; 356 checks, every link opened). They raised 30 notes (some the same
+  problem seen by two agents, one needing no change); every real problem was
+  fixed before publishing. The main ones: the page said "severity falling"
+  (medium findings per round were 1, 2, 0, 2), "no finding was rated high" (a
+  reviewer rated one high; only the skeptics did not), "each fix came with a
+  failing test" (R4-2 and R4-4 did not), "exact permissions" (sc restores mode
+  and owner, not ACLs or xattrs), "symlinks are never followed" (only the file
+  itself; symlinked parent directories are left to M2), and it did not say the
+  reviewers were AI agents. Two similar overclaims in this log (R3-1, R4-2)
+  are corrected too.
+- **Progress page published:** [visuals/progress.html](visuals/progress.html),
+  live at https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
+  Renders without errors at desktop and phone width; all three charts'
+  tooltips work.
