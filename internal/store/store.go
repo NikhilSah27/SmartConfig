@@ -182,7 +182,7 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 		if errors.Is(err, ErrInterrupted) {
 			return Change{}, false, fmt.Errorf("snapshot %s: %w (nothing recorded)", path, ErrInterrupted)
 		}
-		if !errors.Is(err, errChanged) {
+		if !retryable(err) {
 			return c, unchanged, err
 		}
 		if attempt == maxAttempts {
@@ -474,6 +474,12 @@ var errChanged = errors.New("changed while being recorded")
 // file kept changing under them.
 const maxAttempts = 3
 
+// retryable reports whether an operation should start over because the file
+// changed under it: after the read (errChanged) or during it (ErrReplaced).
+func retryable(err error) bool {
+	return errors.Is(err, errChanged) || errors.Is(err, fsutil.ErrReplaced)
+}
+
 // Restore writes snapshot id back to its path with its recorded mode and
 // owner. The file on disk, if any, is first saved and committed as a
 // pre-restore change, returned as prev (nil when the file did not exist), so
@@ -508,21 +514,27 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 		}
 		var stamp fsutil.Stamp
 		prev, stamp, err = s.savePreRestore(src)
+		if retryable(err) && attempt < maxAttempts {
+			continue
+		}
 		if err != nil {
+			if retryable(err) {
+				break
+			}
 			return Change{}, nil, fmt.Errorf("restore %s: save current state: %w (file not changed)", src.Path, err)
 		}
 		if testHookBeforeRestoreLock != nil {
 			testHookBeforeRestoreLock()
 		}
 		restored, wrote, err = s.commitRestore(src, prev != nil, stamp, pending)
-		if !errors.Is(err, errChanged) || attempt == maxAttempts {
+		if !retryable(err) || attempt == maxAttempts {
 			break
 		}
 	}
 	switch {
 	case err == nil:
 		return restored, prev, nil
-	case errors.Is(err, errChanged):
+	case retryable(err):
 		return Change{}, prev, fmt.Errorf("restore %s: the file kept changing, try again (file not changed)", src.Path)
 	case wrote && prev != nil:
 		return Change{}, prev, fmt.Errorf("file restored but not recorded: %w; previous content saved as %s (run: sc snapshot %s)", err, prev.ID, src.Path)

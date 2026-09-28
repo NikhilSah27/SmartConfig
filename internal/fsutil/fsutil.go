@@ -14,6 +14,10 @@ import (
 // MaxSize is the largest file SmartConfig will snapshot or restore.
 const MaxSize = 8 << 20
 
+// ErrReplaced means the file at a path was replaced between being checked
+// and being opened; reading it again is safe.
+var ErrReplaced = errors.New("was replaced while being read, try again")
+
 // Meta is the ownership and permission information recorded for a file,
 // plus the stamp of the exact version that was read.
 type Meta struct {
@@ -86,7 +90,7 @@ func readChecked(path string, want os.FileInfo) ([]byte, Meta, error) {
 		return nil, Meta{}, fmt.Errorf("stat %s: %w", path, err)
 	}
 	if !os.SameFile(want, fi) {
-		return nil, Meta{}, fmt.Errorf("%s was replaced while being read, try again", path)
+		return nil, Meta{}, fmt.Errorf("%s %w", path, ErrReplaced)
 	}
 	if err := CheckRegular(path, fi); err != nil {
 		return nil, Meta{}, err

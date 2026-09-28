@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,5 +286,16 @@ func TestSyncDirFollowsSymlinkedDirectory(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(real, "conf")); string(b) != "x\n" {
 		t.Fatalf("content: %q", b)
+	}
+}
+
+func TestReplacedIsErrReplaced(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	os.WriteFile(a, []byte("a"), 0o644)
+	os.WriteFile(b, []byte("b"), 0o644)
+	want, _ := os.Lstat(a)
+	if _, _, err := readChecked(b, want); !errors.Is(err, ErrReplaced) {
+		t.Fatalf("got %v", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -956,5 +957,16 @@ func TestInterruptedSnapshotRecordsNothing(t *testing.T) {
 	}
 	if cs, _ := s.List(p, 0); len(cs) != 0 {
 		t.Fatalf("rows: %+v", cs)
+	}
+}
+
+// A file replaced while it is being read is retried like one that changed
+// after the read.
+func TestRetryableErrors(t *testing.T) {
+	if !retryable(errChanged) || !retryable(fmt.Errorf("x: %w", fsutil.ErrReplaced)) {
+		t.Fatal("changed or replaced files must be retried")
+	}
+	if retryable(errors.New("permission denied")) || retryable(ErrInterrupted) {
+		t.Fatal("other errors must not be retried")
 	}
 }
