@@ -225,3 +225,31 @@ func TestReadCheckedLoopInDirectory(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// RemovePending removes prepared temp files that were neither committed nor
+// discarded, and never touches a committed target.
+func TestRemovePending(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a")
+	b := filepath.Join(dir, "b")
+	os.WriteFile(a, []byte("old a\n"), 0o644)
+	os.WriteFile(b, []byte("old b\n"), 0o644)
+	pa, err := PrepareAtomic(a, []byte("new a\n"), 0o644, os.Getuid(), os.Getgid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pa.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareAtomic(b, []byte("new b\n"), 0o644, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	RemovePending()
+	noTemps(t, dir)
+	if got, _ := os.ReadFile(a); string(got) != "new a\n" {
+		t.Fatalf("committed file touched: %q", got)
+	}
+	if got, _ := os.ReadFile(b); string(got) != "old b\n" {
+		t.Fatalf("uncommitted target changed: %q", got)
+	}
+}

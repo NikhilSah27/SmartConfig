@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // MaxSize is the largest file SmartConfig will snapshot or restore.
@@ -124,6 +125,37 @@ type Pending struct {
 	done      bool
 }
 
+// pendingTemps holds the temp files PrepareAtomic created that are not yet
+// committed or discarded, so an interrupted sc can remove them.
+var pendingTemps = struct {
+	sync.Mutex
+	names map[string]bool
+}{names: map[string]bool{}}
+
+func trackTemp(name string) {
+	pendingTemps.Lock()
+	pendingTemps.names[name] = true
+	pendingTemps.Unlock()
+}
+
+func untrackTemp(name string) {
+	pendingTemps.Lock()
+	delete(pendingTemps.names, name)
+	pendingTemps.Unlock()
+}
+
+// RemovePending deletes every temp file of this process that was prepared
+// but not yet committed or discarded. It is meant for signal handlers, which
+// exit without running deferred cleanups. It never touches a target file.
+func RemovePending() {
+	pendingTemps.Lock()
+	defer pendingTemps.Unlock()
+	for name := range pendingTemps.names {
+		os.Remove(name)
+		delete(pendingTemps.names, name)
+	}
+}
+
 // PrepareAtomic does the slow part of WriteAtomic (write, chown, chmod,
 // fsync) and returns the temp file for Commit or Discard. Callers that must
 // hold a lock across the replacement can prepare first and lock only around
@@ -135,10 +167,12 @@ func PrepareAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (p 
 		return nil, fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
+	trackTemp(tmpName)
 	defer func() {
 		if err != nil {
 			tmp.Close()
 			os.Remove(tmpName)
+			untrackTemp(tmpName)
 		}
 	}()
 
@@ -168,6 +202,7 @@ func (p *Pending) Commit() error {
 	if err := os.Rename(p.tmp, p.path); err != nil {
 		return fmt.Errorf("rename over %s: %w", p.path, err)
 	}
+	untrackTemp(p.tmp)
 	p.done = true
 	syncDir(filepath.Dir(p.path))
 	return nil
@@ -178,6 +213,7 @@ func (p *Pending) Commit() error {
 func (p *Pending) Discard() {
 	if !p.done {
 		os.Remove(p.tmp)
+		untrackTemp(p.tmp)
 		p.done = true
 	}
 }

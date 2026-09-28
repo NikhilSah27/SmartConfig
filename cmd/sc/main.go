@@ -5,14 +5,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
+	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
 )
 
 func main() {
+	// On Ctrl-C or SIGTERM, remove temp files that were prepared but not yet
+	// renamed into place (deferred cleanups do not run on a signal), then
+	// exit with one line. The database rolls back any open transaction by
+	// itself the next time it is opened.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		fsutil.RemovePending()
+		fmt.Fprintf(os.Stderr, "sc: interrupted by %s\n", sig)
+		os.Exit(1)
+	}()
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
