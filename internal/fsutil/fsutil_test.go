@@ -253,3 +253,25 @@ func TestRemovePending(t *testing.T) {
 		t.Fatalf("uncommitted target changed: %q", got)
 	}
 }
+
+// syncDir deliberately follows a symlinked directory: the fsync has to reach
+// the real directory that holds the renamed file.
+func TestSyncDirFollowsSymlinkedDirectory(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	os.Mkdir(real, 0o755)
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncDir(link); err != nil {
+		t.Fatalf("syncDir through a symlinked directory: %v", err)
+	}
+	p := filepath.Join(link, "conf")
+	if err := WriteAtomic(p, []byte("x\n"), 0o644, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(real, "conf")); string(b) != "x\n" {
+		t.Fatalf("content: %q", b)
+	}
+}
