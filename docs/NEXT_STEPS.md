@@ -266,6 +266,9 @@ measurement.
 
 ## Open questions, with our recommendation
 
+**Answered 2026-09-28:** yes to every recommendation below. Question 7 (the
+ruleset) and question 13 (host details) still need you.
+
 1. **Build the rescue path (M4) before the checkers (M3)?** Decide at M2
    sign-off; nothing changes before then. We lean yes, if the feasibility
    check in section 3 holds. The worst failures leave root locked with no

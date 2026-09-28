@@ -1,6 +1,6 @@
 # M2 plan: `scd`, the watcher
 
-**Status:** plan for approval, revised after the critic's review. Appendix B lists what changed. No M2 code will be written until you approve it. While writing and revising this plan, nothing in the repo, `/etc`, `/boot` or `/var/lib/smartconfig` was changed. All experiments ran in `scratchpad/m2plan/synth/` and `scratchpad/m2plan/final/` (Appendix A).
+**Status:** approved by the owner on 2026-09-28, with every recommendation in section 16 (and the 13 in NEXT_STEPS). Revised after the critic's review; Appendix B lists what changed. While writing and revising this plan, nothing in the repo, `/etc`, `/boot` or `/var/lib/smartconfig` was changed. All experiments ran in `scratchpad/m2plan/synth/` and `scratchpad/m2plan/final/` (Appendix A).
 
 > **Before step 1 (added 2026-09-27):** the independent review of the M1
 > follow-up fixes confirmed 13 findings ([reviews/2026-09-27-m1-fixes.md](reviews/2026-09-27-m1-fixes.md)).

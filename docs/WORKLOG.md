@@ -9,14 +9,31 @@ after every step. For the full history, decisions and recovery guide see
 **Progress at a glance:** [visuals/progress.html](visuals/progress.html),
 live at https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
 
-**M1 is finished and tagged `m1`.** Waiting for you:
+**M2 plan approved** (2026-09-28, "start M2, all my picks"): every
+recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
+[NEXT_STEPS.md](NEXT_STEPS.md) holds.
 
-- [ ] **You:** take the VirtualBox snapshot `m1-frozen` (Snapshots tab above
-      the right-hand panel, Take). Steps in [NEXT_STEPS.md](NEXT_STEPS.md).
-- [ ] **You:** approve or change the M2 plan ([M2_PLAN.md](M2_PLAN.md)) and
-      answer its 14 questions (section 16) and the 13 roadmap questions in
-      [NEXT_STEPS.md](NEXT_STEPS.md). "Yes to all recommendations" works.
-- [ ] Then M2 step 1.
+**Overnight run, starting 04:30 IST (23:00 UTC) on 28 Sep, unattended:**
+
+1. Setup from the roadmap answers: CLAUDE.md edits (question 8), local git
+   hooks against secrets (6), CI (5), a supported Go checked with govulncheck
+   (9), `make race` (4).
+2. M2 steps 1 to 16 in plan order, one step at a time, each with its tests,
+   checks, commit, worklog line and push; chunk reviews as the plan says.
+3. Only in the repo and in throwaway `SC_HOME`s. No install of the watcher,
+   no reboot, nothing written to `/etc`, `/boot` or the real store.
+4. It stops, and writes why here, at the acceptance run and the sign-off
+   runs (they need the VM snapshot and your OK), or when the plan says
+   "stop and ask".
+5. Planning and design agents run on Fable; work that needs several agents
+   (chunk reviews, checks) runs as ultracode workflows.
+
+**Still waiting for you:**
+
+- [ ] Take the VirtualBox snapshot `m1-frozen` (Snapshots tab above the
+      right-hand panel, Take). Needed before any step that touches the
+      real system.
+- [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
@@ -181,3 +198,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   live at https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
   Renders without errors at desktop and phone width; all three charts'
   tooltips work.
+- **M2 plan approved** with all recommendations; the answers are recorded
+  in M2_PLAN.md and NEXT_STEPS.md. Overnight work scheduled for 04:30 IST
+  (23:00 UTC).
