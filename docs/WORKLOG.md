@@ -6,9 +6,8 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** round 2 of M1 follow-up fixes (R2-1 to R2-5), from the
-independent review of the first two fixes. Then the M2 plan waits for your
-approval.
+**Current task:** round 3 of M1 follow-up fixes (R3-1 to R3-5), from the
+independent review of round 2. Then the M2 plan waits for your approval.
 
 - [x] Review of `c720f22` and `ec15ece`: 14 findings, 13 confirmed, 1 split.
       None breaks M1 as used today; most matter once the watcher runs next
@@ -32,9 +31,18 @@ approval.
       failures before fix 2 3+3/360, after fix 2 2+4/360, now 1+1/360
       (snapshot+restore). The rest wait more than 5 s for the lock under
       that load.
-- [ ] Independent review of round 2 (running: three reviewers,
-      two skeptics per finding).
-- [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
+- [x] Independent review of round 2: 15 findings (all confirmed), grouped
+      into 8 issues U1-U8. U1 is a regression from R2-3: a restore whose
+      commit fails after the rename lost its pre-restore row.
+      [reviews/2026-09-27-m1-fixes-round2.md](reviews/2026-09-27-m1-fixes-round2.md)
+- [ ] R3-1 store: pre-restore row committed before the rename again, with a
+      stamp re-check under the lock; reads and hashing outside the lock.
+- [ ] R3-2 store: timestamps under the lock; snapshot stamp re-check.
+- [ ] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename.
+- [ ] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM.
+- [ ] R3-5 small: prepare errors say "file not changed"; doc fix; syncDir
+      test.
+- [ ] Then a final check, tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
 ([M2_PLAN.md section 16](M2_PLAN.md)); answer the 13 roadmap questions
@@ -124,3 +132,6 @@ approval.
   each, fewer than before fix 2 (3 and 3). A script bug in the first run
   (a missing id after a failed first snapshot) was found and fixed before
   these numbers.
+- **Review of round 2:** 15 findings, all confirmed, grouped into 8 issues.
+  The main one (U1) is a regression from R2-3 and is fixed first in round 3.
+  [reviews/2026-09-27-m1-fixes-round2.md](reviews/2026-09-27-m1-fixes-round2.md)
