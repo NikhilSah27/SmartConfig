@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"modernc.org/sqlite"
@@ -72,6 +73,26 @@ var busyTimeoutMS = 5000
 // connections are busy, when the caller has already changed a file on disk
 // and so must not give up easily. Each attempt waits up to busyTimeoutMS.
 const commitAttempts = 6
+
+// ErrInterrupted is returned when Interrupt was called before an operation
+// reached a point of no return.
+var ErrInterrupted = errors.New("interrupted")
+
+var (
+	interrupted atomic.Bool
+	active      atomic.Int32
+)
+
+// Interrupt asks Snapshot and Restore calls in this process to stop at their
+// next safe point: they start no new work and stop retrying, but a restore
+// that has already renamed its file still reports that it did. It is safe to
+// call from a signal handler goroutine.
+func Interrupt() { interrupted.Store(true) }
+
+// Busy reports whether a Snapshot or Restore is running in this process.
+func Busy() bool { return active.Load() > 0 }
+
+func stopping() bool { return interrupted.Load() }
 
 // testHookSnapshotBeforeLock, if set by a test, runs in Snapshot after the
 // file is read and before the write lock is taken.
@@ -151,8 +172,16 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	if err != nil {
 		return Change{}, false, fmt.Errorf("resolve path: %w", err)
 	}
+	active.Add(1)
+	defer active.Add(-1)
 	for attempt := 1; ; attempt++ {
+		if stopping() {
+			return Change{}, false, fmt.Errorf("snapshot %s: %w (nothing recorded)", path, ErrInterrupted)
+		}
 		c, unchanged, err = s.snapshotOnce(path, origin, intent)
+		if errors.Is(err, ErrInterrupted) {
+			return Change{}, false, fmt.Errorf("snapshot %s: %w (nothing recorded)", path, ErrInterrupted)
+		}
 		if !errors.Is(err, errChanged) {
 			return c, unchanged, err
 		}
@@ -187,6 +216,9 @@ func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged b
 		Mode: meta.Mode, UID: meta.UID, GID: meta.GID, Origin: origin, Intent: intent,
 	}
 	err = s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
+		if stopping() {
+			return ErrInterrupted
+		}
 		if st, err := fsutil.LstatStamp(path); err != nil || st != meta.Stamp {
 			return errChanged
 		}
@@ -252,6 +284,9 @@ func (s *Store) writeTx(retryCommit bool, fn func(ctx context.Context, conn *sql
 	}
 	defer conn.Close()
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		if stopping() {
+			return ErrInterrupted
+		}
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() {
@@ -273,7 +308,7 @@ func (s *Store) writeTx(retryCommit bool, fn func(ctx context.Context, conn *sql
 		if err == nil {
 			return nil
 		}
-		if !isBusy(err) || attempt >= attempts {
+		if !isBusy(err) || attempt >= attempts || stopping() {
 			break
 		}
 	}
@@ -444,6 +479,8 @@ const maxAttempts = 3
 // pre-restore change, returned as prev (nil when the file did not exist), so
 // the restore can be undone even if recording the restore itself fails.
 func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
+	active.Add(1)
+	defer active.Add(-1)
 	src, err := s.Get(id)
 	if err != nil {
 		return Change{}, nil, err
@@ -451,6 +488,9 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	data, err := s.Blob(src.Blob)
 	if err != nil {
 		return Change{}, nil, err
+	}
+	if stopping() {
+		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.Path, ErrInterrupted)
 	}
 	// The slow part of the write (temp file, fsync) happens before any lock,
 	// so a slow disk does not hold up other sc commands.
@@ -462,6 +502,10 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 
 	wrote := false
 	for attempt := 1; ; attempt++ {
+		if stopping() {
+			err = ErrInterrupted
+			break
+		}
 		var stamp fsutil.Stamp
 		prev, stamp, err = s.savePreRestore(src)
 		if err != nil {
@@ -509,6 +553,9 @@ func (s *Store) savePreRestore(src Change) (*Change, fsutil.Stamp, error) {
 		return nil, fsutil.Stamp{}, err
 	}
 	err = s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
+		if stopping() {
+			return ErrInterrupted
+		}
 		pre.TS = s.now().Unix()
 		return insertTx(ctx, conn, &pre)
 	})
@@ -536,6 +583,10 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 			return errChanged
 		case !existed && !fsutil.IsNotExist(err):
 			return errChanged
+		}
+		// Last point where stopping leaves the file untouched.
+		if stopping() {
+			return ErrInterrupted
 		}
 		restored.TS = s.now().Unix()
 		if err := insertTx(ctx, conn, &restored); err != nil {

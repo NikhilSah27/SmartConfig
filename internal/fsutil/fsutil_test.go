@@ -229,6 +229,13 @@ func TestReadCheckedLoopInDirectory(t *testing.T) {
 // RemovePending removes prepared temp files that were neither committed nor
 // discarded, and never touches a committed target.
 func TestRemovePending(t *testing.T) {
+	// RemovePending closes the process-wide registry (the process is meant
+	// to exit); reopen it for the other tests.
+	t.Cleanup(func() {
+		pendingTemps.Lock()
+		pendingTemps.closed = false
+		pendingTemps.Unlock()
+	})
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a")
 	b := filepath.Join(dir, "b")
@@ -245,6 +252,11 @@ func TestRemovePending(t *testing.T) {
 		t.Fatal(err)
 	}
 	RemovePending()
+	noTemps(t, dir)
+	// Once RemovePending has run, nothing new may be left behind.
+	if _, err := PrepareAtomic(b, []byte("late\n"), 0o644, os.Getuid(), os.Getgid()); err == nil {
+		t.Fatal("PrepareAtomic succeeded after RemovePending")
+	}
 	noTemps(t, dir)
 	if got, _ := os.ReadFile(a); string(got) != "new a\n" {
 		t.Fatalf("committed file touched: %q", got)

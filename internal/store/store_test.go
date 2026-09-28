@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -884,5 +885,76 @@ func TestSnapshotGivesUpOnFileThatKeepsChanging(t *testing.T) {
 	}
 	if cs, _ := s.List(p, 0); len(cs) != 0 {
 		t.Fatalf("rows recorded for a file that kept changing: %+v", cs)
+	}
+}
+
+func resetInterrupt(t *testing.T) {
+	t.Cleanup(func() { interrupted.Store(false) })
+}
+
+// Interrupted before the rename: nothing on disk changes and the message
+// says so.
+func TestInterruptBeforeRenameChangesNothing(t *testing.T) {
+	resetInterrupt(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+	testHookBeforeRestoreLock = func() { Interrupt() }
+	defer func() { testHookBeforeRestoreLock = nil }()
+	_, _, err := s.Restore(good.ID)
+	if err == nil || !errors.Is(err, ErrInterrupted) && !strings.Contains(err.Error(), "interrupted") || !strings.Contains(err.Error(), "file not changed") {
+		t.Fatalf("got %v", err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "bad\n" {
+		t.Fatalf("file changed: %q", b)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*")); len(tmps) != 0 {
+		t.Fatalf("temp files left: %v", tmps)
+	}
+}
+
+// Interrupted after the rename, while COMMIT is being retried: it stops
+// retrying at once and reports that the file was replaced and where the
+// previous content is.
+func TestInterruptAfterRenameStopsRetries(t *testing.T) {
+	resetInterrupt(t)
+	old := busyTimeoutMS
+	busyTimeoutMS = 300
+	t.Cleanup(func() { busyTimeoutMS = old })
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "good\n", 0o644)
+	good, _ := snap(t, s, p)
+	write(t, p, "bad\n", 0o644)
+	var release func()
+	testHookAfterRestoreWrite = func() { release = holdReadLock(t); Interrupt() }
+	defer func() { testHookAfterRestoreWrite = nil }()
+	start := time.Now()
+	_, prev, err := s.Restore(good.ID)
+	elapsed := time.Since(start)
+	release()
+	if err == nil || !strings.Contains(err.Error(), "file restored but not recorded") || prev == nil || !strings.Contains(err.Error(), prev.ID) {
+		t.Fatalf("got %v (prev %+v)", err, prev)
+	}
+	if elapsed > time.Duration(3*busyTimeoutMS)*time.Millisecond {
+		t.Fatalf("kept retrying COMMIT for %v after the interrupt", elapsed)
+	}
+}
+
+func TestInterruptedSnapshotRecordsNothing(t *testing.T) {
+	resetInterrupt(t)
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	testHookSnapshotBeforeLock = func() { Interrupt() }
+	defer func() { testHookSnapshotBeforeLock = nil }()
+	_, _, err := s.Snapshot(p, OriginManual, "")
+	if err == nil || !errors.Is(err, ErrInterrupted) || !strings.Contains(err.Error(), "nothing recorded") {
+		t.Fatalf("got %v", err)
+	}
+	if cs, _ := s.List(p, 0); len(cs) != 0 {
+		t.Fatalf("rows: %+v", cs)
 	}
 }

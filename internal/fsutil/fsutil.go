@@ -129,13 +129,21 @@ type Pending struct {
 // committed or discarded, so an interrupted sc can remove them.
 var pendingTemps = struct {
 	sync.Mutex
-	names map[string]bool
+	names  map[string]bool
+	closed bool
 }{names: map[string]bool{}}
 
-func trackTemp(name string) {
+// trackTemp records a new temp file. After RemovePending has run, the
+// process is exiting: the file is removed at once and false is returned.
+func trackTemp(name string) bool {
 	pendingTemps.Lock()
+	defer pendingTemps.Unlock()
+	if pendingTemps.closed {
+		os.Remove(name)
+		return false
+	}
 	pendingTemps.names[name] = true
-	pendingTemps.Unlock()
+	return true
 }
 
 func untrackTemp(name string) {
@@ -145,11 +153,14 @@ func untrackTemp(name string) {
 }
 
 // RemovePending deletes every temp file of this process that was prepared
-// but not yet committed or discarded. It is meant for signal handlers, which
-// exit without running deferred cleanups. It never touches a target file.
+// but not yet committed or discarded, and makes later PrepareAtomic calls
+// fail, so nothing new is left behind while the process exits. It is meant
+// for signal handlers, which exit without running deferred cleanups. It
+// never touches a target file.
 func RemovePending() {
 	pendingTemps.Lock()
 	defer pendingTemps.Unlock()
+	pendingTemps.closed = true
 	for name := range pendingTemps.names {
 		os.Remove(name)
 		delete(pendingTemps.names, name)
@@ -167,7 +178,10 @@ func PrepareAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (p 
 		return nil, fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
-	trackTemp(tmpName)
+	if !trackTemp(tmpName) {
+		tmp.Close()
+		return nil, fmt.Errorf("create temp file in %s: interrupted", dir)
+	}
 	defer func() {
 		if err != nil {
 			tmp.Close()
