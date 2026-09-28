@@ -41,8 +41,8 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - [x] R3-2 store: timestamps under the lock; snapshot stamp re-check. `f944a1c`
 - [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
 - [x] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM. `f4a0948`
-- [ ] R3-5 small: prepare errors say "file not changed"; doc fix; syncDir
-      test.
+- [x] R3-5 small: prepare errors say "file not changed" (in R3-1); doc
+      fix; syncDir test. `41dd177`
 - [ ] Then a final check, tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -149,3 +149,5 @@ independent review of round 2. Then the M2 plan waits for your approval.
   `f944a1c`.
 - **R3-4:** Ctrl-C or SIGTERM during `sc` now removes prepared temp files,
   prints one line and exits 1; tested with the real binary. `f4a0948`.
+- **R3-5:** review doc corrected (the directory sync follows a symlinked
+  directory on purpose) and a test pins it. `41dd177`.
