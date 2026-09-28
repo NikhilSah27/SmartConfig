@@ -50,12 +50,13 @@ cmd/sc/            the CLI (cobra), one file per command
 internal/store/    blobs + SQLite records: snapshot, list, get, restore, diff
 internal/fsutil/   read with mode/owner, atomic write-back
 scripts/smoke.sh   acceptance run (sudo)
-docs/              visual explainers: system map and narrated films
+docs/              worklog, plans, reviews, visual explainers
 ```
 
 ## Docs
 
-Current work and progress: [docs/WORKLOG.md](docs/WORKLOG.md).
+Current work and progress: [docs/WORKLOG.md](docs/WORKLOG.md). Progress at a
+glance, with charts: https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
 
 Start with [docs/PROJECT_LOG.md](docs/PROJECT_LOG.md): what has been done,
 why, the state of the dev VM, and how to recover or resume after a crash.

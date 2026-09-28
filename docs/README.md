@@ -1,6 +1,7 @@
 # SmartConfig docs
 
 What we are doing right now and what is done: [WORKLOG.md](WORKLOG.md).
+Progress at a glance, with charts: [visuals/progress.html](visuals/progress.html).
 What comes next and in what order: [NEXT_STEPS.md](NEXT_STEPS.md).
 The M2 plan (waiting for approval): [M2_PLAN.md](M2_PLAN.md). Reviews: [reviews/](reviews/).
 
@@ -19,6 +20,7 @@ differ, the published one is newer.
 
 | Page | What it shows | Real or concept |
 |------|---------------|-----------------|
+| [visuals/progress.html](visuals/progress.html) · [online](https://claude.ai/artifact/2Paa7FUJfrYTZAq1hYFPRP) | Progress dashboard: how the code and tests grew commit by commit, the four review rounds and their findings, what `sc` does today, the VM's state, and what is waiting before M2 | Real: numbers from git, the saved review results and the VM, checked by an independent fact check |
 | [visuals/system-map.html](visuals/system-map.html) · [online](https://claude.ai/artifact/WcpR823C8pcvG2WmJEMsck) | Roadmap, how M1 was built commit by commit, the full architecture with playable scenarios, step-by-step snapshot and restore flows, and a working in-browser copy of `sc` | M1 real; later milestones marked as planned |
 | [visuals/film-fstab-restore.html](visuals/film-fstab-restore.html) · [online](https://claude.ai/artifact/BXPUipny6hAzdM5QNrTZu8) | Narrated film: open the laptop, snapshot `/etc/fstab`, a one-character typo, diff, restore, with an X-ray of the system calls, files and database rows | Real run on this VM (2026-09-27 08:26), syscalls from `strace` |
 | [visuals/films-journey-after-without.html](visuals/films-journey-after-without.html) · [online](https://claude.ai/artifact/XgbShorWnZbd8zk1qbvHS7) | Three narrated films: the whole journey M1 to M7; the finished product rescuing a broken boot; the same typo without SmartConfig | M1 real; M2 to M7 are mock-ups of the design; boot failure checked with systemd's fstab generator |

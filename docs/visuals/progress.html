@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<title>SmartConfig Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --page: #f4f6f7;
+  --surface: #fcfcfb;
+  --ink: #14181c;
+  --ink-2: #4c5560;
+  --muted: #7a838d;
+  --line: #dfe3e6;
+  --grid: #e7eaec;
+  --axis: #c3c2b7;
+  --band: #eef2f6;
+  --accent: #1c5cab;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --sev-low: #86b6ef;
+  --sev-med: #3987e5;
+  --sev-split: #c3c2b7;
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warn-ink: #8a5a00;
+  --warn-bg: #fff4d6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0f1215; --surface: #1a1a19; --ink: #f2f4f5; --ink-2: #c3c2b7; --muted: #8f969d;
+    --line: #2e3338; --grid: #2c2c2a; --axis: #383835; --band: #20262d; --accent: #86b6ef;
+    --s1: #3987e5; --s2: #d95926; --sev-low: #1c5cab; --sev-med: #3987e5; --sev-split: #52514e;
+    --good: #0ca30c; --good-ink: #0ca30c; --warn-ink: #fab219; --warn-bg: #2e2612;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0f1215; --surface: #1a1a19; --ink: #f2f4f5; --ink-2: #c3c2b7; --muted: #8f969d;
+  --line: #2e3338; --grid: #2c2c2a; --axis: #383835; --band: #20262d; --accent: #86b6ef;
+  --s1: #3987e5; --s2: #d95926; --sev-low: #1c5cab; --sev-med: #3987e5; --sev-split: #52514e;
+  --good: #0ca30c; --good-ink: #0ca30c; --warn-ink: #fab219; --warn-bg: #2e2612;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 32px 64px; margin: 0; }
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.015em; }
+h2 { font-size: 24px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+.kicker { font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 16px; }
+.sub { color: var(--ink-2); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.lede { font-size: 18px; color: var(--ink-2); max-width: 64ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 5px 11px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); }
+.chip svg { width: 15px; height: 15px; flex: none; }
+.chip.ok svg { color: var(--good); }
+.chip.wait { background: var(--warn-bg); border-color: transparent; color: var(--warn-ink); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .tiles { grid-template-columns: 1fr; } }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-size: 34px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; }
+.tile .value small { font-size: 16px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.tile .note { font-size: 13px; color: var(--muted); }
+
+/* milestones */
+.ms { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 860px) { .ms { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ms li { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 3px; align-content: start; }
+.ms li.done { border: 1.5px solid var(--good); }
+.ms li.next { border: 1.5px solid var(--accent); }
+.ms .id { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+.ms li.done .id b { color: var(--good-ink); font-weight: 500; }
+.ms li.next .id b { color: var(--accent); font-weight: 500; }
+.ms .nm { font-weight: 600; font-size: 14.5px; line-height: 1.25; }
+.ms .ds { font-size: 12.5px; color: var(--ink-2); line-height: 1.35; }
+
+/* charts */
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; position: relative; }
+figcaption { font-size: 14px; color: var(--ink-2); max-width: 80ch; }
+.chart-title { display: grid; gap: 2px; }
+.chart-title h3 { font-size: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.key-line { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.key-box { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.plot { overflow-x: auto; }
+.plot svg { display: block; width: 100%; min-width: 560px; height: auto; }
+svg text { font-family: var(--sans); }
+.tick { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.dlabel { font-size: 12px; fill: var(--ink); font-weight: 600; }
+.dlabel2 { font-size: 11.5px; fill: var(--ink-2); }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 6px 20px rgba(0,0,0,.12); max-width: 300px; z-index: 5; display: grid; gap: 3px; }
+.tip .t-h { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.tip .t-s { color: var(--ink-2); }
+.tip .row { display: flex; align-items: center; gap: 8px; }
+.tip .row b { font-variant-numeric: tabular-nums; }
+details.data { font-size: 13.5px; }
+details.data summary { cursor: pointer; color: var(--accent); }
+.tbl { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 500; color: var(--ink-2); font-size: 12px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+td .mono { white-space: nowrap; }
+
+/* rounds */
+.rounds { display: grid; gap: 10px; }
+.round { display: grid; grid-template-columns: 150px 1fr; gap: 6px 18px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+@media (max-width: 640px) { .round { grid-template-columns: 1fr; } }
+.round .rn { display: grid; gap: 2px; align-content: start; }
+.round .rn b { font-size: 15px; }
+.round .rn span { font-size: 12.5px; color: var(--muted); }
+.round p { font-size: 14px; }
+.fixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.fix { font-size: 12.5px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--page); text-decoration: none; color: var(--ink); display: inline-flex; gap: 6px; align-items: baseline; }
+.fix:hover { border-color: var(--accent); }
+.fix .mono { color: var(--accent); }
+
+/* two column blocks */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+.list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.list li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; font-size: 14px; }
+.list svg { width: 16px; height: 16px; margin-top: 3px; color: var(--good); }
+.list li.wait svg { color: var(--warn-ink); }
+.cmds { display: grid; gap: 8px; }
+.cmd { display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 12px; font-size: 14px; align-items: baseline; }
+.cmd code { background: var(--page); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+@media (max-width: 520px) { .cmd { grid-template-columns: 1fr; gap: 2px; } }
+.nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 600px) { .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.num { display: grid; gap: 1px; }
+.num b { font-size: 22px; font-weight: 600; }
+.num span { font-size: 12.5px; color: var(--ink-2); }
+.todo { display: grid; gap: 10px; }
+.todo li { list-style: none; display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); font-size: 14.5px; }
+.todo ol { margin: 0; padding: 0; display: grid; gap: 10px; }
+.todo .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--surface); font-weight: 600; font-size: 13px; }
+footer { font-size: 13px; color: var(--muted); }
+/* grid tracks may shrink below their content, so charts and tables scroll
+   inside their own boxes instead of widening the page */
+.wrap, section, figure, header, .card { grid-template-columns: minmax(0, 1fr); }
+.plot, .tbl, details.data { min-width: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-ok" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5" stroke-width="1.8"/><path d="M7.5 12.5l3 3 6-6.5"/></g></symbol>
+  <symbol id="i-wait" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5" stroke-width="1.8"/><path d="M12 7v5l3 2"/></g></symbol>
+</defs></svg>
+
+<div class="wrap">
+
+<header>
+  <span class="kicker">SmartConfig · progress as of 28 Sep 2026</span>
+  <h1>Milestone 1 is finished and tagged</h1>
+  <p class="lede">The first piece of the config-file safety net works: one static binary, <code>sc</code>, that saves versions of a file, shows what changed, and puts a version back with its mode and owner. Its code was written in seven minutes just after midnight on 27 September. That evening and night, four rounds of review by independent AI agents (Claude subagents) took it apart, and five rounds of fixes hardened it.</p>
+  <div class="chips">
+    <span class="chip ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>Tag <code>m1</code> on GitHub</span>
+    <span class="chip ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>63 tests pass as root</span>
+    <span class="chip ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>Acceptance run passed as root</span>
+    <span class="chip ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>Backups made; fstab and hosts match their originals</span>
+    <span class="chip wait"><svg aria-hidden="true"><use href="#i-wait"/></svg>M2 plan waiting for your approval</span>
+  </div>
+</header>
+
+<section aria-label="Key numbers">
+  <div class="tiles">
+    <div class="tile"><span class="label">Tests</span><span class="value">63</span><span class="note">20 when M1 was first accepted</span></div>
+    <div class="tile"><span class="label">Lines of Go</span><span class="value">1,408 <small>+ 1,983 test</small></span><span class="note">875 + 588 test at first acceptance</span></div>
+    <div class="tile"><span class="label">Review findings</span><span class="value">54</span><span class="note">53 confirmed by two skeptics; 48 addressed in M1 (43 by code or test changes, 5 written down as known limits); 6 deferred</span></div>
+    <div class="tile"><span class="label">Commits</span><span class="value">59</span><span class="note">first line to tag and backups, 25 h 40 min</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="ms-h">
+  <span class="kicker">Roadmap</span>
+  <h2 id="ms-h">Seven milestones, one done</h2>
+  <ol class="ms" id="ms"></ol>
+</section>
+
+<section aria-labelledby="growth-h">
+  <span class="kicker">How it was built</span>
+  <h2 id="growth-h">Built in seven minutes, then hardened for almost five hours</h2>
+  <p class="sub">The code for M1 went in between 00:04 and 00:11. In the evening, M2 research found two weak spots, and four review rounds followed. Most of the growth after that is tests: almost every code fix came with a new test, most of them shown to fail on the old code.</p>
+  <figure id="fig-growth">
+    <div class="chart-title">
+      <h3>Lines of Go, per commit</h3>
+      <span class="sub" style="font-size:13px">27 Sep 00:04 to 28 Sep 01:44 UTC · hover for each commit</span>
+    </div>
+    <div class="legend">
+      <span><i class="key-line" style="border-color:var(--s1)"></i>Code</span>
+      <span><i class="key-line" style="border-color:var(--s2)"></i>Tests</span>
+      <span><i class="key-box" style="background:var(--band)"></i>Code-changing phases</span>
+    </div>
+    <div class="plot" id="plot-growth"></div>
+    <details class="data"><summary>Show the data as a table</summary><div class="tbl" id="tbl-growth"></div></details>
+  </figure>
+</section>
+
+<section aria-labelledby="rev-h">
+  <span class="kicker">How it was checked</span>
+  <h2 id="rev-h">Four review rounds, 54 findings, none rated high by the skeptics</h2>
+  <p class="sub">Each round: reviewer agents ran the real code and tried to break it; two skeptic agents per finding tried to prove the reviewer wrong. A finding is confirmed when both skeptics agree it is real: 53 of the 54 were, and one was a split vote. No skeptic rated any finding high (one reviewer rated the symlinked-parent-directory finding high; it is deferred to M2). Rounds 3 and 4 found no data loss on this VM; round 3 found one narrow case on filesystems with coarse timestamps (vfat, ext4 with 128-byte inodes), left as a known limit.</p>
+  <figure id="fig-rev">
+    <div class="chart-title">
+      <h3>Findings per review round, by the skeptics' severity</h3>
+      <span class="sub" style="font-size:13px">severity: the lower of the two skeptics' ratings</span>
+    </div>
+    <div class="legend">
+      <span><i class="key-box" style="background:var(--sev-med)"></i>Medium</span>
+      <span><i class="key-box" style="background:var(--sev-low)"></i>Low</span>
+      <span><i class="key-box" style="background:var(--sev-split)"></i>Split vote</span>
+    </div>
+    <div class="plot" id="plot-rev"></div>
+    <details class="data"><summary>Show the data as a table</summary><div class="tbl" id="tbl-rev"></div></details>
+  </figure>
+  <div class="rounds" id="rounds"></div>
+</section>
+
+<section aria-labelledby="does-h">
+  <span class="kicker">What exists today</span>
+  <h2 id="does-h">What <code>sc</code> does, and what makes it safe</h2>
+  <div class="cols">
+    <div class="card" style="display:grid;gap:12px">
+      <h3>Commands</h3>
+      <div class="cmds">
+        <div class="cmd"><code>sc init</code><span>Create the private store (<code>$SC_HOME</code>, default /var/lib/smartconfig)</span></div>
+        <div class="cmd"><code>sc snapshot &lt;path&gt;</code><span>Save a file's content, mode and owner, with an optional reason (<code>-m</code>); an unchanged file is not saved twice</span></div>
+        <div class="cmd"><code>sc log [path]</code><span>List the saved versions, newest first (50 by default; <code>-n 0</code> for all)</span></div>
+        <div class="cmd"><code>sc cat &lt;id&gt;</code><span>Print a saved version exactly</span></div>
+        <div class="cmd"><code>sc diff &lt;id&gt; [id2]</code><span>Show what changed against the file on disk, or between two versions</span></div>
+        <div class="cmd"><code>sc restore &lt;id&gt;</code><span>Put a version back with its mode (including setuid, setgid and sticky) and owner; the current state is saved first</span></div>
+      </div>
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <h3>Guarantees, checked by the tests and the release check</h3>
+      <ul class="list">
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>A restore can be undone: the file's current content, mode and owner are saved and committed before it is replaced (limits in MILESTONES.md)</span></li>
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>The new version is written and fsynced to a temp file first, then renamed over the file in one step; the file is never written in place</span></li>
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>A file swapped for a symlink or FIFO is refused, never followed or blocked on (symlinked parent directories are left to M2)</span></li>
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>A corrupted saved copy is detected and never restored</span></li>
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>Ctrl-C stops at a safe point and says whether the file changed</span></li>
+        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>One static binary with no shared libraries (release check with <code>file</code> and <code>ldd</code>, not a test), so a broken libc or loader cannot stop it</span></li>
+      </ul>
+    </div>
+  </div>
+  <figure id="fig-tests">
+    <div class="chart-title">
+      <h3>The 63 tests, by what they protect</h3>
+      <span class="sub" style="font-size:13px">hover a bar for example test names</span>
+    </div>
+    <div class="plot" id="plot-tests"></div>
+    <details class="data"><summary>Show the data as a table</summary><div class="tbl" id="tbl-tests"></div></details>
+  </figure>
+</section>
+
+<section aria-labelledby="next-h">
+  <span class="kicker">Research and plans</span>
+  <h2 id="next-h">M2, the watcher, is researched and planned</h2>
+  <div class="cols">
+    <div class="card" style="display:grid;gap:12px">
+      <h3>What the watcher must watch (research on this VM)</h3>
+      <div class="nums">
+        <div class="num"><b>91</b><span>files and folders to watch, in 4 tiers</span></div>
+        <div class="num"><b>31</b><span>patterns to ignore</span></div>
+        <div class="num"><b>15</b><span>special cases (secrets, generated files)</span></div>
+        <div class="num"><b>23 + 9</b><span>design rules, plus 9 the critic added</span></div>
+        <div class="num"><b>467</b><span>items surveyed by 6 research agents</span></div>
+        <div class="num"><b>8</b><span>key claims re-tested (2 held, 6 partly)</span></div>
+      </div>
+      <p style="font-size:14px"><a href="https://nikhilsah27.github.io/SmartConfig/M2_WATCHLIST.html">Read the watch list</a></p>
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <h3>The M2 plan and the roadmap</h3>
+      <div class="nums">
+        <div class="num"><b>17</b><span>build steps, one commit each</span></div>
+        <div class="num"><b>5</b><span>reviewed chunks</span></div>
+        <div class="num"><b>14</b><span>questions for you in the plan</span></div>
+        <div class="num"><b>13</b><span>questions in the roadmap</span></div>
+        <div class="num"><b>~1,145</b><span>files under /etc it will cover here</span></div>
+        <div class="num"><b>24 h</b><span>soak test before M2 counts as done</span></div>
+      </div>
+      <p style="font-size:14px"><a href="https://nikhilsah27.github.io/SmartConfig/M2_PLAN.html">Read the M2 plan</a> · <a href="https://nikhilsah27.github.io/SmartConfig/NEXT_STEPS.html">Read the roadmap</a></p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="docs-h">
+  <span class="kicker">Everything written down</span>
+  <h2 id="docs-h">Docs and pages, all on GitHub</h2>
+  <div class="card tbl" style="padding:6px 8px">
+    <table>
+      <thead><tr><th>Document</th><th>What it is</th></tr></thead>
+      <tbody id="docs"></tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="vm-h">
+  <span class="kicker">State of the VM</span>
+  <h2 id="vm-h">Safe to start breaking things</h2>
+  <ul class="list card" style="padding:16px 18px">
+    <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span><code>/etc/fstab</code> and <code>/etc/hosts</code> match their originals after every test run</span></li>
+    <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>Root-only backups in <code>/var/backups/smartconfig</code>: the tagged binary <code>sc-m1</code>, the store, <code>/etc</code> and <code>/boot/grub</code>, and a checksum of every file</span></li>
+    <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>The store holds the original fstab as snapshot <code>2c6901</code>; <code>sc-m1</code> reads it</span></li>
+    <li class="wait"><svg aria-hidden="true"><use href="#i-wait"/></svg><span>13 system updates (from noble-updates) are pending. Please don't install them until the M2 soak test. Nothing pins them, and security updates still install automatically.</span></li>
+  </ul>
+</section>
+
+<section aria-labelledby="todo-h">
+  <span class="kicker">Waiting for you</span>
+  <h2 id="todo-h">Three things before M2 starts</h2>
+  <div class="todo"><ol>
+    <li><span class="n">1</span><span><b>Take the VirtualBox snapshot</b> <code>m1-frozen</code>: in VirtualBox Manager select the VM, open the Snapshots tab above the right-hand panel, click Take.</span></li>
+    <li><span class="n">2</span><span><b>Approve or change the M2 plan</b> and answer its 14 questions (<a href="https://nikhilsah27.github.io/SmartConfig/M2_PLAN.html#16-questions-for-you">section 16</a>).</span></li>
+    <li><span class="n">3</span><span><b>Answer the 13 roadmap questions</b> (<a href="https://nikhilsah27.github.io/SmartConfig/NEXT_STEPS.html">NEXT_STEPS</a>). "Yes to all recommendations" covers 2 and 3.</span></li>
+  </ol></div>
+</section>
+
+<footer>
+  Every number on this page comes from the repository (<a href="https://github.com/NikhilSah27/SmartConfig">NikhilSah27/SmartConfig</a>), its git history, the saved review and research results, and this VM, and was checked against them by an independent fact check. Times are UTC. Live progress: <a href="https://nikhilsah27.github.io/SmartConfig/WORKLOG.html">WORKLOG</a>.
+</footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var GH = "https://github.com/NikhilSah27/SmartConfig/commit/";
+  var PAGES = "https://nikhilsah27.github.io/SmartConfig/";
+  var COMMITS = [{"h":"690ab95","t":"2026-09-27T00:04:55+00:00","s":"Add CLAUDE.md, go.mod and .gitignore","p":0,"x":0,"n":0,"ph":"M1 build"},{"h":"481aa99","t":"2026-09-27T00:05:42+00:00","s":"fsutil: read file with mode/owner, atomic write-back","p":132,"x":109,"n":4,"ph":"M1 build"},{"h":"93394d1","t":"2026-09-27T00:09:10+00:00","s":"store: blobs + SQLite change records with snapshot, list, get, restore","p":522,"x":459,"n":18,"ph":"M1 build"},{"h":"9dbe3f9","t":"2026-09-27T00:10:41+00:00","s":"cli: sc init, snapshot, log, cat, diff, restore","p":875,"x":588,"n":20,"ph":"M1 build"},{"h":"394dfcc","t":"2026-09-27T00:11:23+00:00","s":"Makefile: static build, test, vet, fmt, smoke","p":875,"x":588,"n":20,"ph":"M1 build"},{"h":"ef200fe","t":"2026-09-27T00:11:23+00:00","s":"scripts/smoke.sh: M1 acceptance run against /etc/hosts","p":875,"x":588,"n":20,"ph":"M1 build"},{"h":"020c205","t":"2026-09-27T00:11:23+00:00","s":"MILESTONES.md: list M1-M7, mark M1 done","p":875,"x":588,"n":20,"ph":"M1 build"},{"h":"847e14a","t":"2026-09-27T09:56:30+00:00","s":"docs: visual explainers (system map and narrated films)","p":875,"x":588,"n":20,"ph":"Docs and films"},{"h":"994f16c","t":"2026-09-27T13:35:11+00:00","s":"docs: fix films not playing","p":875,"x":588,"n":20,"ph":"Docs and films"},{"h":"f5d81bc","t":"2026-09-27T16:06:30+00:00","s":"Add README","p":875,"x":588,"n":20,"ph":"Publish"},{"h":"2980474","t":"2026-09-27T18:08:06+00:00","s":"docs: project log and recovery guide","p":875,"x":588,"n":20,"ph":"Publish"},{"h":"004b153","t":"2026-09-27T18:08:19+00:00","s":"docs: add gh auth setup-git to the recovery guide","p":875,"x":588,"n":20,"ph":"Publish"},{"h":"9df9dd3","t":"2026-09-27T20:25:16+00:00","s":"docs: M2 watch list research","p":875,"x":588,"n":20,"ph":"Research"},{"h":"c720f22","t":"2026-09-27T20:55:27+00:00","s":"fsutil: refuse files swapped between lstat and open","p":909,"x":639,"n":21,"ph":"Fix round 1"},{"h":"d3b0347","t":"2026-09-27T20:56:00+00:00","s":"docs: add WORKLOG.md (now doing / done), updated after every step","p":909,"x":639,"n":21,"ph":"Fix round 1"},{"h":"ec15ece","t":"2026-09-27T20:58:37+00:00","s":"store: record the restore row under the same lock as the rename","p":937,"x":718,"n":23,"ph":"Fix round 1"},{"h":"71a068a","t":"2026-09-27T20:58:52+00:00","s":"docs: worklog and watch list after the M1 follow-up fixes","p":937,"x":718,"n":23,"ph":"Fix round 1"},{"h":"16ba957","t":"2026-09-27T21:00:37+00:00","s":"docs: worklog: fix review and M2 plan in progress","p":937,"x":718,"n":23,"ph":"Fix round 1"},{"h":"2784d36","t":"2026-09-27T21:30:57+00:00","s":"docs: worklog: next-steps roadmap in progress","p":937,"x":718,"n":23,"ph":"Research"},{"h":"0676e1c","t":"2026-09-27T22:16:58+00:00","s":"docs: next-steps roadmap (NEXT_STEPS.md)","p":937,"x":718,"n":23,"ph":"Research"},{"h":"3fe5d30","t":"2026-09-27T23:00:07+00:00","s":"docs: M2 plan for approval and review of the M1 fixes","p":937,"x":718,"n":23,"ph":"Fix round 1"},{"h":"c5b693e","t":"2026-09-27T23:02:59+00:00","s":"store: end every write transaction, retry COMMIT while readers are busy","p":997,"x":820,"n":25,"ph":"Fix round 2"},{"h":"b7f30fb","t":"2026-09-27T23:03:08+00:00","s":"docs: worklog: R2-1 done","p":997,"x":820,"n":25,"ph":"Fix round 2"},{"h":"09a7dbd","t":"2026-09-27T23:04:13+00:00","s":"store: check 'unchanged' under the write lock in Snapshot","p":1013,"x":865,"n":26,"ph":"Fix round 2"},{"h":"755e558","t":"2026-09-27T23:04:13+00:00","s":"docs: worklog: R2-4 done","p":1013,"x":865,"n":26,"ph":"Fix round 2"},{"h":"1e6e91a","t":"2026-09-27T23:05:53+00:00","s":"fsutil, store: prepare the restore's temp file before taking the lock","p":1076,"x":973,"n":29,"ph":"Fix round 2"},{"h":"d95ebb4","t":"2026-09-27T23:05:53+00:00","s":"docs: worklog: R2-2 done","p":1076,"x":973,"n":29,"ph":"Fix round 2"},{"h":"c0d3839","t":"2026-09-27T23:07:36+00:00","s":"store: restore in one transaction with its pre-restore row","p":1077,"x":1079,"n":32,"ph":"Fix round 2"},{"h":"d82a1bf","t":"2026-09-27T23:07:36+00:00","s":"docs: worklog: R2-3 done","p":1077,"x":1079,"n":32,"ph":"Fix round 2"},{"h":"a517893","t":"2026-09-27T23:08:13+00:00","s":"fsutil: say 'symlink' only when the last component is one","p":1081,"x":1094,"n":33,"ph":"Fix round 2"},{"h":"762edcb","t":"2026-09-27T23:08:13+00:00","s":"docs: worklog: R2-5 done","p":1081,"x":1094,"n":33,"ph":"Fix round 2"},{"h":"45b117d","t":"2026-09-27T23:15:40+00:00","s":"docs: worklog: round 2 checked and stress-tested; review running","p":1081,"x":1094,"n":33,"ph":"Fix round 2"},{"h":"ac6237e","t":"2026-09-28T00:00:18+00:00","s":"docs: review of the round-2 fixes, round-3 plan","p":1081,"x":1094,"n":33,"ph":"Fix round 2"},{"h":"3277111","t":"2026-09-28T00:01:48+00:00","s":"store: make writeTx panic-safe; retry COMMIT only after a rename","p":1094,"x":1139,"n":35,"ph":"Fix round 3"},{"h":"382cfa8","t":"2026-09-28T00:01:56+00:00","s":"docs: worklog: R3-3 done","p":1094,"x":1139,"n":35,"ph":"Fix round 3"},{"h":"e7420bb","t":"2026-09-28T00:04:27+00:00","s":"store: commit the pre-restore row before the rename again","p":1171,"x":1198,"n":36,"ph":"Fix round 3"},{"h":"8bf8d7a","t":"2026-09-28T00:04:27+00:00","s":"docs: worklog: R3-1 done","p":1171,"x":1198,"n":36,"ph":"Fix round 3"},{"h":"f944a1c","t":"2026-09-28T00:05:19+00:00","s":"store: snapshot re-checks the file and takes its timestamp under the lock","p":1195,"x":1244,"n":39,"ph":"Fix round 3"},{"h":"d26b072","t":"2026-09-28T00:05:19+00:00","s":"docs: worklog: R3-2 done","p":1195,"x":1244,"n":39,"ph":"Fix round 3"},{"h":"f4a0948","t":"2026-09-28T00:06:33+00:00","s":"sc: remove prepared temp files on Ctrl-C or SIGTERM","p":1246,"x":1363,"n":41,"ph":"Fix round 3"},{"h":"c5b7a82","t":"2026-09-28T00:06:33+00:00","s":"docs: worklog: R3-4 done","p":1246,"x":1363,"n":41,"ph":"Fix round 3"},{"h":"41dd177","t":"2026-09-28T00:07:18+00:00","s":"fsutil: test that syncDir follows a symlinked directory; fix review doc","p":1246,"x":1385,"n":42,"ph":"Fix round 3"},{"h":"9f55472","t":"2026-09-28T00:07:18+00:00","s":"docs: worklog: R3-5 done","p":1246,"x":1385,"n":42,"ph":"Fix round 3"},{"h":"32fffbc","t":"2026-09-28T00:09:59+00:00","s":"docs: worklog: round 3 checked; final gate review running","p":1246,"x":1385,"n":42,"ph":"Fix round 3"},{"h":"1f96433","t":"2026-09-28T00:50:11+00:00","s":"docs: final gate review before the m1 tag, round-4 plan","p":1246,"x":1385,"n":42,"ph":"Fix round 3"},{"h":"4be4bb7","t":"2026-09-28T00:54:11+00:00","s":"sc, store: stop at a safe point on a signal and report the truth","p":1327,"x":1516,"n":47,"ph":"Fix round 4"},{"h":"1c8c38f","t":"2026-09-28T00:54:11+00:00","s":"docs: worklog: R4-1 done","p":1327,"x":1516,"n":47,"ph":"Fix round 4"},{"h":"423e9dc","t":"2026-09-28T00:55:17+00:00","s":"fsutil, store: retry a file replaced while it was being read","p":1343,"x":1540,"n":49,"ph":"Fix round 4"},{"h":"0f61a60","t":"2026-09-28T00:55:17+00:00","s":"docs: worklog: R4-3 done","p":1343,"x":1540,"n":49,"ph":"Fix round 4"},{"h":"348ec67","t":"2026-09-28T00:58:03+00:00","s":"tests: cover the M1 spec clauses that had no test","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"5d13114","t":"2026-09-28T00:58:03+00:00","s":"docs: worklog: R4-2 done","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"2dee5bb","t":"2026-09-28T00:58:31+00:00","s":"MILESTONES: M1 hardening, known limits","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"5dc4041","t":"2026-09-28T00:58:31+00:00","s":"docs: worklog: R4-4 done","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"7b68613","t":"2026-09-28T01:01:37+00:00","s":"docs: worklog: round 4 checked from a fresh clone; signal review running","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"da89c0f","t":"2026-09-28T01:30:46+00:00","s":"docs: review of the round-4 signal handling, round-5 plan","p":1343,"x":1763,"n":59,"ph":"Fix round 4"},{"h":"151b7fd","t":"2026-09-28T01:35:56+00:00","s":"sc: second version of signal handling","p":1408,"x":1983,"n":63,"ph":"Fix round 5"},{"h":"c846296","t":"2026-09-28T01:35:56+00:00","s":"docs: worklog: R5-1 done","p":1408,"x":1983,"n":63,"ph":"Fix round 5"},{"h":"df1a378","t":"2026-09-28T01:37:50+00:00","s":"docs: verify R5-1 with the reviewers' reproduction scripts","p":1408,"x":1983,"n":63,"ph":"Fix round 5"},{"h":"5e6acaa","t":"2026-09-28T01:44:33+00:00","s":"docs: M1 tagged; backups; recovery guide uses sc-m1","p":1408,"x":1983,"n":63,"ph":"Tag and backups"}];
+  var ROUNDS = [
+    { name: "Round 1", sub: "reviewed c720f22, ec15ece", low: 12, med: 1, split: 1, led: "Fix round 2",
+      head: "A failed database commit could leave the database locked for the rest of a long-running process; a watcher would have locked every sc command out.",
+      fixes: [["R2-1", "c5b693e", "every write transaction ends"], ["R2-2", "1e6e91a", "temp file prepared before the lock"], ["R2-3", "c0d3839", "restore in one transaction"], ["R2-4", "09a7dbd", "unchanged check under the lock"], ["R2-5", "a517893", "precise symlink message"]] },
+    { name: "Round 2", sub: "reviewed the round-2 fixes", low: 13, med: 2, split: 0, led: "Fix round 3",
+      head: "A regression from R2-3: if recording a restore failed after the file was replaced, the previous content was lost from history.",
+      fixes: [["R3-1", "e7420bb", "undo point saved before the rename"], ["R3-2", "f944a1c", "snapshot re-checks the file"], ["R3-3", "3277111", "panic-safe transactions"], ["R3-4", "f4a0948", "Ctrl-C removes temp files"], ["R3-5", "41dd177", "doc fix and test"]] },
+    { name: "Round 3", sub: "final gate: fixes and the M1 spec", low: 18, med: 0, split: 0, led: "Fix round 4",
+      head: "Ctrl-C after the file was replaced printed only “interrupted”; some spec rules had no test.",
+      fixes: [["R4-1", "4be4bb7", "stop at a safe point on a signal"], ["R4-2", "348ec67", "tests for spec rules that had none"], ["R4-3", "423e9dc", "retry a file replaced mid-read"], ["R4-4", "2dee5bb", "known limits written down"]] },
+    { name: "Round 4", sub: "reviewed the signal handling", low: 5, med: 2, split: 0, led: "Fix round 5",
+      head: "A second Ctrl-C could still hide a replaced file, and Ctrl-C no longer stopped a shell loop.",
+      fixes: [["R5-1", "151b7fd", "second version of signal handling"]] }
+  ];
+  var TESTS = [
+    ["Concurrency and locking", 16, "TestRestoreHoldsLockAcrossRename, TestRestoreCommitRetriedWhileReaderBusy, TestSnapshotRereadsFileChangedBeforeLock"],
+    ["Signals and Ctrl-C", 10, "TestCtrlCStopsShellLoop, TestSecondSignalAfterRenameStillReports, TestInterruptBeforeRenameChangesNothing"],
+    ["Reading files safely", 7, "TestReadCheckedRefusesSwap, TestReadWithMetaRefuses, TestSnapshotRefuses"],
+    ["Atomic writes", 7, "TestWriteAtomicFailureLeavesNoTemp, TestPrepareCommitDiscard, TestWriteAtomicKeepsSetuid"],
+    ["Restore", 6, "TestRestoreOwner, TestRestoreSpecialModeBits, TestFailedRestoreKeepsPreviousContent"],
+    ["Command output and errors", 6, "TestCLI, TestCLIErrorsAreOneLine, TestLogColumnsAndLocalTime"],
+    ["Snapshot and log", 3, "TestSnapshotUnchanged, TestSnapshotModifyLog, TestSnapshotRelativePath"],
+    ["Snapshot ids", 3, "TestIDFormula, TestGetPrefix, TestRestoreSameSecondSameContent"],
+    ["Store setup and integrity", 3, "TestOpenUninitialised, TestInitMode, TestBlobCorrupt"],
+    ["Diff", 2, "TestDiff, TestDiffMissingNewline"]
+  ];
+  var MS = [
+    ["M1", "done", "Store + CLI", "snapshot, log, cat, diff, restore"],
+    ["M2", "next", "Watcher", "scd records every edit automatically"],
+    ["M3", "planned", "Checkers", "warn before a bad edit lands"],
+    ["M4", "planned", "Rescue path", "restore from the boot menu"],
+    ["M5", "planned", "Package", "one .deb for a clean machine"],
+    ["M6", "planned", "Incident factory", "broken configs to test against"],
+    ["M7", "planned", "sc why", "a local model explains what broke"]
+  ];
+  var DOCS = [
+    ["Worklog", "WORKLOG.html", "What is happening now, and a dated log of everything done"],
+    ["Project log", "PROJECT_LOG.html", "History, decisions, the state of the VM, and the recovery guide"],
+    ["M2 plan", "M2_PLAN.html", "The watcher plan, waiting for approval"],
+    ["M2 watch list", "M2_WATCHLIST.html", "What the watcher must watch, ignore and beware of"],
+    ["Next steps", "NEXT_STEPS.html", "The roadmap to M2 done and after, with 13 questions"],
+    ["Review, round 1", "reviews/2026-09-27-m1-fixes.html", "14 findings on the first two fixes"],
+    ["Review, round 2", "reviews/2026-09-27-m1-fixes-round2.html", "15 findings on the round-2 fixes"],
+    ["Review, round 3 (gate)", "reviews/2026-09-28-m1-gate.html", "18 findings: round-3 fixes and the M1 spec"],
+    ["Review, round 4", "reviews/2026-09-28-m1-signals.html", "7 findings on the signal handling, with verification"],
+    ["System map", "visuals/system-map.html", "Interactive architecture, flows and an in-browser sc"],
+    ["Film: one typo, undone", "visuals/film-fstab-restore.html", "Narrated film of a real fstab break and restore"],
+    ["Three films", "visuals/films-journey-after-without.html", "The journey, the finished product (a mock-up of M2 to M7), and life without it"],
+    ["This page", "visuals/progress.html", "Progress at a glance"]
+  ];
+
+  function el(tag, attrs, text) {
+    var e = document.createElementNS(tag === "div" || tag === "span" || tag === "b" ? "http://www.w3.org/1999/xhtml" : "http://www.w3.org/2000/svg", tag);
+    for (var k in attrs || {}) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function h(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function fmt(n) { return n.toLocaleString("en-US"); }
+  function hhmm(d) { return d.toISOString().slice(11, 16); }
+  function day(d) { return d.getUTCDate() + " Sep"; }
+
+  /* milestones */
+  var msEl = document.getElementById("ms");
+  MS.forEach(function (m) {
+    var li = h("li", m[1]);
+    var id = h("span", "id"); id.appendChild(h("span", "", m[0]));
+    id.appendChild(h("b", "", m[1] === "done" ? "done" : m[1] === "next" ? "next" : "planned"));
+    li.appendChild(id); li.appendChild(h("span", "nm", m[2])); li.appendChild(h("span", "ds", m[3]));
+    msEl.appendChild(li);
+  });
+
+  /* docs */
+  var docsEl = document.getElementById("docs");
+  DOCS.forEach(function (d) {
+    var tr = document.createElement("tr");
+    var td1 = document.createElement("td"); var a = document.createElement("a");
+    a.href = PAGES + d[1]; a.textContent = d[0]; td1.appendChild(a);
+    var td2 = h("td", "", d[2]);
+    tr.appendChild(td1); tr.appendChild(td2); docsEl.appendChild(tr);
+  });
+
+  /* tooltip helper */
+  function makeTip(fig) {
+    var tip = h("div", "tip"); tip.hidden = true; fig.appendChild(tip);
+    return {
+      show: function (nodes, x, y) {
+        tip.textContent = "";
+        nodes.forEach(function (n) { tip.appendChild(n); });
+        tip.hidden = false;
+        var fr = fig.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+        var left = Math.min(Math.max(8, x - fr.left + 14), fr.width - tw - 8);
+        var top = Math.max(8, y - fr.top - th - 12);
+        tip.style.left = left + "px"; tip.style.top = top + "px";
+      },
+      hide: function () { tip.hidden = true; }
+    };
+  }
+  function tipRow(color, value, label, isLine) {
+    var r = h("div", "row");
+    var k = h("i", isLine ? "key-line" : "key-box");
+    if (isLine) k.style.borderColor = color; else k.style.background = color;
+    r.appendChild(k); r.appendChild(h("b", "", value)); r.appendChild(h("span", "t-s", label));
+    return r;
+  }
+  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  /* ---------- chart 1: code and tests over time ---------- */
+  (function () {
+    var W = 760, H = 300, L = 52, R = 118, T = 26, B = 34;
+    var data = COMMITS.map(function (c) { return { d: new Date(c.t), c: c }; });
+    var t0 = data[0].d.getTime(), t1 = data[data.length - 1].d.getTime();
+    var x = function (t) { return L + (t - t0) / (t1 - t0) * (W - L - R); };
+    var ymax = 2000, y = function (v) { return T + (1 - v / ymax) * (H - T - B); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Line chart: Go code grew from 875 to 1,408 lines and tests from 588 to 1,983 lines between M1 acceptance and the m1 tag; the code was written between 00:04 and 00:11 on 27 September and the hardening ran from 20:55 to 01:37." });
+    // phase bands
+    [["M1 built", "2026-09-27T00:04:55Z", "2026-09-27T00:11:23Z"], ["Hardening: 4 reviews, 5 fix rounds", "2026-09-27T20:55:27Z", "2026-09-28T01:37:50Z"]].forEach(function (b) {
+      var a = x(new Date(b[1]).getTime()), e = x(new Date(b[2]).getTime());
+      svg.appendChild(el("rect", { x: a - 3, y: T, width: Math.max(6, e - a + 6), height: H - T - B, fill: "var(--band)" }));
+      var lx = b[0] === "M1 built" ? a + 6 : (a + e) / 2;
+      svg.appendChild(el("text", { x: lx, y: T - 8, "text-anchor": b[0] === "M1 built" ? "start" : "middle", class: "dlabel2" }, b[0]));
+    });
+    svg.appendChild(el("text", { x: x(new Date("2026-09-27T14:30:00Z").getTime()), y: T - 8, "text-anchor": "middle", class: "dlabel2" }, "docs, films, GitHub, research (no code)"));
+    // grid + y ticks
+    for (var v = 0; v <= ymax; v += 500) {
+      svg.appendChild(el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, fmt(v)));
+    }
+    // x ticks every 6 h
+    for (var t = Date.parse("2026-09-27T00:00:00Z"); t <= t1; t += 6 * 3600e3) {
+      if (t < t0 - 1) continue;
+      var dd = new Date(t);
+      svg.appendChild(el("text", { x: x(t), y: H - B + 18, "text-anchor": "middle", class: "tick" }, (dd.getUTCHours() === 0 ? day(dd) + " " : "") + hhmm(dd)));
+    }
+    // tag marker
+    var tagT = Date.parse("2026-09-28T01:37:50Z");
+    svg.appendChild(el("line", { x1: x(tagT), x2: x(tagT), y1: T, y2: H - B, stroke: "var(--axis)", "stroke-width": 1 }));
+    // step paths
+    function path(key) {
+      var d = "";
+      data.forEach(function (p, i) {
+        var px = x(p.d.getTime()), py = y(p.c[key]);
+        if (i === 0) d += "M" + px + "," + py;
+        else d += "H" + px + "V" + py;
+      });
+      return d;
+    }
+    svg.appendChild(el("path", { d: path("p"), fill: "none", stroke: "var(--s1)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    svg.appendChild(el("path", { d: path("x"), fill: "none", stroke: "var(--s2)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    var last = data[data.length - 1];
+    [["p", "var(--s1)", "code"], ["x", "var(--s2)", "tests"]].forEach(function (s) {
+      var px = x(last.d.getTime()), py = y(last.c[s[0]]);
+      svg.appendChild(el("circle", { cx: px, cy: py, r: 4.5, fill: s[1], stroke: "var(--surface)", "stroke-width": 2 }));
+      svg.appendChild(el("text", { x: px + 10, y: py + 4, class: "dlabel" }, fmt(last.c[s[0]]) + " " + s[2]));
+    });
+    svg.appendChild(el("text", { x: x(tagT) - 4, y: H - B - 6, "text-anchor": "end", class: "dlabel2" }, "m1"));
+    // hover
+    var cross = el("line", { x1: 0, x2: 0, y1: T, y2: H - B, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
+    var dotP = el("circle", { r: 4.5, fill: "var(--s1)", stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" });
+    var dotX = el("circle", { r: 4.5, fill: "var(--s2)", stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" });
+    svg.appendChild(cross); svg.appendChild(dotP); svg.appendChild(dotX);
+    var hit = el("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent", tabindex: 0, "aria-label": "Commits; use left and right arrows" });
+    svg.appendChild(hit);
+    var fig = document.getElementById("fig-growth"), tip = makeTip(fig), cur = data.length - 1;
+    function showAt(i, cx, cy) {
+      cur = i; var p = data[i], px = x(p.d.getTime());
+      cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+      dotP.setAttribute("cx", px); dotP.setAttribute("cy", y(p.c.p)); dotP.setAttribute("visibility", "visible");
+      dotX.setAttribute("cx", px); dotX.setAttribute("cy", y(p.c.x)); dotX.setAttribute("visibility", "visible");
+      var head = h("div", "t-h", p.c.h + " · " + day(p.d) + " " + hhmm(p.d) + " UTC");
+      var subj = h("div", "t-s", p.c.s);
+      if (cx === undefined) { var r = svg.getBoundingClientRect(); cx = r.left + px / W * r.width; cy = r.top + y(p.c.x) / H * r.height; }
+      tip.show([head, subj, tipRow(css("--s1"), fmt(p.c.p), "lines of code", true), tipRow(css("--s2"), fmt(p.c.x), "lines of tests", true), tipRow(css("--muted"), String(p.c.n), "tests", true)], cx, cy);
+    }
+    function nearest(clientX) {
+      var r = svg.getBoundingClientRect(), vx = (clientX - r.left) / r.width * W, best = 0, bd = Infinity;
+      data.forEach(function (p, i) { var dx = Math.abs(x(p.d.getTime()) - vx); if (dx < bd) { bd = dx; best = i; } });
+      return best;
+    }
+    hit.addEventListener("pointermove", function (e) { showAt(nearest(e.clientX), e.clientX, e.clientY); });
+    hit.addEventListener("pointerleave", function () { tip.hide(); cross.setAttribute("visibility", "hidden"); dotP.setAttribute("visibility", "hidden"); dotX.setAttribute("visibility", "hidden"); });
+    hit.addEventListener("focus", function () { showAt(cur); });
+    hit.addEventListener("blur", function () { tip.hide(); cross.setAttribute("visibility", "hidden"); });
+    hit.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft" && cur > 0) { e.preventDefault(); showAt(cur - 1); }
+      if (e.key === "ArrowRight" && cur < data.length - 1) { e.preventDefault(); showAt(cur + 1); }
+    });
+    document.getElementById("plot-growth").appendChild(svg);
+    // table
+    var tb = "<table><thead><tr><th>Commit</th><th>Time (UTC)</th><th>Subject</th><th class=n>Code lines</th><th class=n>Test lines</th><th class=n>Tests</th></tr></thead><tbody></tbody></table>";
+    var host = document.getElementById("tbl-growth"); host.innerHTML = tb;
+    var body = host.querySelector("tbody");
+    data.forEach(function (p) {
+      var tr = document.createElement("tr");
+      var a = document.createElement("a"); a.href = GH + p.c.h; a.className = "mono"; a.textContent = p.c.h;
+      var td = document.createElement("td"); td.appendChild(a); tr.appendChild(td);
+      [day(p.d) + " " + hhmm(p.d), p.c.s].forEach(function (v) { tr.appendChild(h("td", "", v)); });
+      [fmt(p.c.p), fmt(p.c.x), String(p.c.n)].forEach(function (v) { tr.appendChild(h("td", "n", v)); });
+      body.appendChild(tr);
+    });
+  })();
+
+  /* ---------- chart 2: review findings per round ---------- */
+  (function () {
+    var W = 760, H = 280, L = 44, R = 16, T = 24, B = 54;
+    var ymax = 20, y = function (v) { return T + (1 - v / ymax) * (H - T - B); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Stacked columns: round 1 had 14 findings (12 low, 1 medium, 1 split), round 2 had 15 (13 low, 2 medium), round 3 had 18 (all low), round 4 had 7 (5 low, 2 medium). No skeptic rated any finding high." });
+    for (var v = 0; v <= ymax; v += 5) {
+      svg.appendChild(el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, String(v)));
+    }
+    var fig = document.getElementById("fig-rev"), tip = makeTip(fig);
+    var slot = (W - L - R) / ROUNDS.length, bw = 24;
+    ROUNDS.forEach(function (r, i) {
+      var cx = L + slot * i + slot / 2, base = 0;
+      var segs = [["low", r.low, "--sev-low", "Low"], ["med", r.med, "--sev-med", "Medium"], ["split", r.split, "--sev-split", "Split vote"]].filter(function (s) { return s[1] > 0; });
+      var total = r.low + r.med + r.split;
+      segs.forEach(function (s, k) {
+        var y0 = y(base), y1 = y(base + s[1]), top = k === segs.length - 1;
+        var gap = k > 0 ? 2 : 0;
+        var hgt = y0 - y1 - gap;
+        var g;
+        if (top) {
+          var rr = Math.min(4, hgt);
+          var d = "M" + (cx - bw / 2) + "," + (y0 - gap) + "V" + (y1 + rr) + "Q" + (cx - bw / 2) + "," + y1 + " " + (cx - bw / 2 + rr) + "," + y1 +
+            "H" + (cx + bw / 2 - rr) + "Q" + (cx + bw / 2) + "," + y1 + " " + (cx + bw / 2) + "," + (y1 + rr) + "V" + (y0 - gap) + "Z";
+          g = el("path", { d: d, fill: "var(" + s[2] + ")" });
+        } else {
+          g = el("rect", { x: cx - bw / 2, y: y1, width: bw, height: hgt, fill: "var(" + s[2] + ")" });
+        }
+        svg.appendChild(g);
+        base += s[1];
+      });
+      svg.appendChild(el("text", { x: cx, y: y(total) - 8, "text-anchor": "middle", class: "dlabel" }, String(total)));
+      svg.appendChild(el("text", { x: cx, y: H - B + 18, "text-anchor": "middle", class: "dlabel" }, r.name));
+      svg.appendChild(el("text", { x: cx, y: H - B + 34, "text-anchor": "middle", class: "tick" }, "led to " + r.led.toLowerCase()));
+      var hit = el("rect", { x: cx - slot / 2 + 8, y: T, width: slot - 16, height: H - T - B, fill: "transparent", tabindex: 0, "aria-label": r.name + ": " + total + " findings" });
+      function show(e) {
+        var rows = [h("div", "t-h", r.name + " · " + r.sub), tipRow(css("--sev-low"), String(r.low), "low", false)];
+        if (r.med) rows.push(tipRow(css("--sev-med"), String(r.med), "medium", false));
+        if (r.split) rows.push(tipRow(css("--sev-split"), String(r.split), "split vote", false));
+        rows.push(h("div", "t-s", "Led to " + r.led.toLowerCase()));
+        var b = svg.getBoundingClientRect();
+        tip.show(rows, e && e.clientX !== undefined ? e.clientX : b.left + cx / W * b.width, e && e.clientY !== undefined ? e.clientY : b.top + y(total) / H * b.height);
+      }
+      hit.addEventListener("pointermove", show);
+      hit.addEventListener("focus", function () { show(); });
+      hit.addEventListener("pointerleave", tip.hide);
+      hit.addEventListener("blur", tip.hide);
+      svg.appendChild(hit);
+    });
+    document.getElementById("plot-rev").appendChild(svg);
+    var host = document.getElementById("tbl-rev");
+    host.innerHTML = "<table><thead><tr><th>Round</th><th>Reviewed</th><th class=n>Low</th><th class=n>Medium</th><th class=n>Split</th><th class=n>Total</th></tr></thead><tbody></tbody></table>";
+    var body = host.querySelector("tbody");
+    ROUNDS.forEach(function (r) {
+      var tr = document.createElement("tr");
+      [r.name, r.sub].forEach(function (v) { tr.appendChild(h("td", "", v)); });
+      [r.low, r.med, r.split, r.low + r.med + r.split].forEach(function (v) { tr.appendChild(h("td", "n", String(v))); });
+      body.appendChild(tr);
+    });
+    // round cards
+    var rEl = document.getElementById("rounds");
+    ROUNDS.forEach(function (r) {
+      var card = h("div", "round");
+      var rn = h("div", "rn"); rn.appendChild(h("b", "", r.name + " → " + r.led.toLowerCase())); rn.appendChild(h("span", "", (r.low + r.med + r.split) + " findings · " + r.sub));
+      var body = document.createElement("div");
+      body.appendChild(h("p", "", r.head));
+      var fx = h("div", "fixes");
+      r.fixes.forEach(function (f) {
+        var a = document.createElement("a"); a.className = "fix"; a.href = GH + f[1];
+        a.appendChild(h("b", "", f[0])); a.appendChild(h("span", "mono", f[1])); a.appendChild(h("span", "", f[2]));
+        fx.appendChild(a);
+      });
+      body.appendChild(fx);
+      card.appendChild(rn); card.appendChild(body); rEl.appendChild(card);
+    });
+  })();
+
+  /* ---------- chart 3: tests by area ---------- */
+  (function () {
+    var rowH = 30, W = 760, L = 190, R = 40, T = 8, B = 26, H = T + B + rowH * TESTS.length;
+    var xmax = 20, x = function (v) { return L + v / xmax * (W - L - R); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Bar chart of the 63 tests by area: concurrency and locking 16, signals 10, reading files safely 7, atomic writes 7, restore 6, command output 6, snapshot and log 3, ids 3, store setup 3, diff 2." });
+    for (var v = 0; v <= xmax; v += 5) {
+      svg.appendChild(el("line", { x1: x(v), x2: x(v), y1: T, y2: H - B, stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: x(v), y: H - B + 16, "text-anchor": "middle", class: "tick" }, String(v)));
+    }
+    var fig = document.getElementById("fig-tests"), tip = makeTip(fig);
+    TESTS.forEach(function (t, i) {
+      var cy = T + rowH * i + rowH / 2, bh = 16, x1 = x(t[1]);
+      var rr = 4;
+      var d = "M" + x(0) + "," + (cy - bh / 2) + "H" + (x1 - rr) + "Q" + x1 + "," + (cy - bh / 2) + " " + x1 + "," + (cy - bh / 2 + rr) + "V" + (cy + bh / 2 - rr) + "Q" + x1 + "," + (cy + bh / 2) + " " + (x1 - rr) + "," + (cy + bh / 2) + "H" + x(0) + "Z";
+      svg.appendChild(el("path", { d: d, fill: "var(--s1)" }));
+      svg.appendChild(el("text", { x: L - 10, y: cy + 4, "text-anchor": "end", class: "dlabel2" }, t[0]));
+      svg.appendChild(el("text", { x: x1 + 6, y: cy + 4, class: "dlabel" }, String(t[1])));
+      var hit = el("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: "transparent", tabindex: 0, "aria-label": t[0] + ": " + t[1] + " tests" });
+      function show(e) {
+        var b = svg.getBoundingClientRect();
+        tip.show([h("div", "t-h", t[0]), tipRow(css("--s1"), String(t[1]), "tests", false), h("div", "t-s", "e.g. " + t[2])],
+          e && e.clientX !== undefined ? e.clientX : b.left + x1 / W * b.width, e && e.clientY !== undefined ? e.clientY : b.top + cy / H * b.height);
+      }
+      hit.addEventListener("pointermove", show);
+      hit.addEventListener("focus", function () { show(); });
+      hit.addEventListener("pointerleave", tip.hide);
+      hit.addEventListener("blur", tip.hide);
+      svg.appendChild(hit);
+    });
+    document.getElementById("plot-tests").appendChild(svg);
+    var host = document.getElementById("tbl-tests");
+    host.innerHTML = "<table><thead><tr><th>Area</th><th class=n>Tests</th><th>Examples</th></tr></thead><tbody></tbody></table>";
+    var body = host.querySelector("tbody");
+    TESTS.forEach(function (t) {
+      var tr = document.createElement("tr");
+      tr.appendChild(h("td", "", t[0])); tr.appendChild(h("td", "n", String(t[1]))); tr.appendChild(h("td", "", t[2]));
+      body.appendChild(tr);
+    });
+  })();
+})();
+</script>
