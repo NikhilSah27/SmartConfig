@@ -66,7 +66,8 @@ last review, before the `m1` tag. Then the M2 plan waits for your approval.
       after the rename, shell loops not stopping, a signal right after the
       result). [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
 - [x] R5-1 sc: signal handling, second version. `151b7fd`
-- [ ] Re-run the reviewers' reproduction scripts against the new binary.
+- [x] Re-ran the reviewers' reproduction scripts against the new binary:
+      every scenario now behaves as intended (table in the review doc).
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -201,3 +202,6 @@ last review, before the `m1` tag. Then the M2 plan waits for your approval.
   replaced file, Ctrl-C stops shell loops again (sc ends by the signal), no
   line can contradict a finished result, and no stop signal prints a stack
   trace. Six real-binary tests, two mutation checks. `151b7fd`.
+- **Verified R5-1 with the reviewers' own scripts:** double Ctrl-C after
+  the rename now reports the saved id (3/3), a late signal no longer hides
+  the result, SIGABRT/SIGTRAP print one line and leave no temp file.
