@@ -65,7 +65,7 @@ last review, before the `m1` tag. Then the M2 plan waits for your approval.
       confirmed, no data loss; three real behaviour issues (a second Ctrl-C
       after the rename, shell loops not stopping, a signal right after the
       result). [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
-- [ ] R5-1 sc: signal handling, second version.
+- [x] R5-1 sc: signal handling, second version. `151b7fd`
 - [ ] Re-run the reviewers' reproduction scripts against the new binary.
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
@@ -197,3 +197,7 @@ last review, before the `m1` tag. Then the M2 plan waits for your approval.
 - **Review of the round-4 signal handling:** 7 findings, all confirmed, no
   data loss. Round 5 fixes them.
   [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
+- **R5-1:** signals, second version. A second Ctrl-C can no longer hide a
+  replaced file, Ctrl-C stops shell loops again (sc ends by the signal), no
+  line can contradict a finished result, and no stop signal prints a stack
+  trace. Six real-binary tests, two mutation checks. `151b7fd`.
