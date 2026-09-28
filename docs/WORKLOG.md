@@ -57,6 +57,11 @@ from the final gate review. Then the M2 plan waits for your approval.
       formula, output formats). `348ec67`
 - [x] R4-3 fsutil/store: "replaced while being read" retried. `423e9dc`
 - [x] R4-4 MILESTONES.md: deliberate deviations and known limits. `2dee5bb`
+- [x] Full check from a fresh GitHub clone at `5dc4041`: gofmt, vet, tests
+      as user and root, race detector, static build, root smoke PASS,
+      `/etc/hosts` unchanged; stress 2/360 snapshot and 0/360 restore
+      failures under 12 writers.
+- [ ] Focused review of the new signal handling (R4-1, R4-3), running.
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -182,3 +187,5 @@ from the final gate review. Then the M2 plan waits for your approval.
   catch a dropped setuid bit and a removed guard. `348ec67`.
 - **R4-4:** MILESTONES.md now lists M1's hardened behaviour and its known
   limits. `2dee5bb`.
+- **Full check from a fresh GitHub clone after round 4:** all clean; stress
+  2/360 snapshot, 0/360 restore failures.
