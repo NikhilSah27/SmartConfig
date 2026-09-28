@@ -6,8 +6,8 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Current task:** round 4 (R4-1 to R4-4), the last before the `m1` tag,
-from the final gate review. Then the M2 plan waits for your approval.
+**Current task:** round 5 (R5-1), the signal handling fixes from the
+last review, before the `m1` tag. Then the M2 plan waits for your approval.
 
 - [x] Review of `c720f22` and `ec15ece`: 14 findings, 13 confirmed, 1 split.
       None breaks M1 as used today; most matter once the watcher runs next
@@ -61,7 +61,12 @@ from the final gate review. Then the M2 plan waits for your approval.
       as user and root, race detector, static build, root smoke PASS,
       `/etc/hosts` unchanged; stress 2/360 snapshot and 0/360 restore
       failures under 12 writers.
-- [ ] Focused review of the new signal handling (R4-1, R4-3), running.
+- [x] Focused review of the new signal handling: 7 findings, all
+      confirmed, no data loss; three real behaviour issues (a second Ctrl-C
+      after the rename, shell loops not stopping, a signal right after the
+      result). [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
+- [ ] R5-1 sc: signal handling, second version.
+- [ ] Re-run the reviewers' reproduction scripts against the new binary.
 - [ ] Then tag `m1`, backups, and your `m1-frozen` snapshot.
 
 **Open for you:** approve the M2 plan and answer its 14 questions
@@ -189,3 +194,6 @@ from the final gate review. Then the M2 plan waits for your approval.
   limits. `2dee5bb`.
 - **Full check from a fresh GitHub clone after round 4:** all clean; stress
   2/360 snapshot, 0/360 restore failures.
+- **Review of the round-4 signal handling:** 7 findings, all confirmed, no
+  data loss. Round 5 fixes them.
+  [reviews/2026-09-28-m1-signals.md](reviews/2026-09-28-m1-signals.md)
