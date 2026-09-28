@@ -38,7 +38,7 @@ independent review of round 2. Then the M2 plan waits for your approval.
 - [x] R3-1 store: pre-restore row committed before the rename again, with a
       stamp re-check under the lock; reads and hashing outside the lock.
       `e7420bb`
-- [ ] R3-2 store: timestamps under the lock; snapshot stamp re-check.
+- [x] R3-2 store: timestamps under the lock; snapshot stamp re-check. `f944a1c`
 - [x] R3-3 store: writeTx panic-safe; COMMIT retried only after a rename. `3277111`
 - [ ] R3-4 sc: remove pending temp files on Ctrl-C/SIGTERM.
 - [ ] R3-5 small: prepare errors say "file not changed"; doc fix; syncDir
@@ -144,3 +144,6 @@ independent review of round 2. Then the M2 plan waits for your approval.
   a stamp check under the lock keeps concurrent restores accurate; restore
   timestamps are taken under the lock. The error after a failed commit names
   the saved id. New tests fail on the round-2 code. `e7420bb`.
+- **R3-2:** `sc snapshot` records what is on disk when it commits (re-reads
+  if the file changed meanwhile) and takes its timestamp under the lock.
+  `f944a1c`.
