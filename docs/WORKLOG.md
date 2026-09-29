@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 2** (chunk A): the store's database is created mode 0600,
-and an existing 0644 one is tightened. Checks running.
+**Now: M2 step 3** (chunk A): schema version 1 (row kinds), migrated in
+one transaction, with a backup of an M1 database.
 
 **Still waiting for you:**
 
@@ -241,3 +241,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   the wall-clock timestamp, so a clock stepping back cannot make an older row
   the newest. Two new tests (store and `sc log`) fail on the old queries.
   Checks clean as user, race and root.
+- **After-rename signal test made deterministic** `cb7a635`: it missed its
+  window 5 of 5 times on tmpfs (so probably on a CI runner's fast disk too); a
+  pause built only into the signal tests' binary now makes it catch the window
+  on the first try.
+- **M2 step 2** `34da00e`: `sc init` creates `changes.db` mode 0600 and
+  tightens an existing 0644 one; the journal gets the same mode.
+  Mutation-checked. Checks clean as user, race and root.
