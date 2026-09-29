@@ -1153,3 +1153,32 @@ func TestForceStop(t *testing.T) {
 		t.Fatal("ForceStop allowed an exit right after a rename")
 	}
 }
+
+// History is in insert order, not wall-clock order: after the clock steps
+// back an hour, the later snapshot is still the newest.
+func TestHistoryOrderIgnoresClock(t *testing.T) {
+	s, dir := setup(t)
+	now := time.Unix(1_700_000_000, 0)
+	s.now = func() time.Time { return now }
+	p := filepath.Join(dir, "conf")
+	write(t, p, "first\n", 0o644)
+	first, _ := snap(t, s, p)
+	now = now.Add(-time.Hour)
+	write(t, p, "second\n", 0o644)
+	second, _ := snap(t, s, p)
+	for _, path := range []string{p, ""} {
+		cs, err := s.List(path, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cs) != 2 || cs[0].ID != second.ID || cs[1].ID != first.ID {
+			t.Fatalf("List(%q) = %v, want [%s %s]", path, cs, second.ID, first.ID)
+		}
+	}
+	if cs, _ := s.List(p, 1); len(cs) != 1 || cs[0].ID != second.ID {
+		t.Fatalf("List(p, 1) = %v, want %s", cs, second.ID)
+	}
+	if c, unchanged := snap(t, s, p); !unchanged || c.ID != second.ID {
+		t.Fatalf("same content again: unchanged=%v id %s, want unchanged since %s", unchanged, c.ID, second.ID)
+	}
+}

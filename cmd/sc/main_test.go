@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,30 @@ func TestCLIErrorsAreOneLine(t *testing.T) {
 			strings.Count(r.stderr, "\n") != 1 {
 			t.Errorf("sc %v: %+v", args, r)
 		}
+	}
+}
+
+// sc log lists rows in the order they were recorded, even when the clock
+// stepped back between them.
+func TestLogOrderIgnoresClock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SC_HOME", home)
+	mustSC(t, "init")
+	p := filepath.Join(t.TempDir(), "conf")
+	os.WriteFile(p, []byte("one\n"), 0o644)
+	id1 := strings.TrimSpace(mustSC(t, "snapshot", "-q", p))
+	os.WriteFile(p, []byte("two\n"), 0o644)
+	id2 := strings.TrimSpace(mustSC(t, "snapshot", "-q", p))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(home, "changes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE changes SET ts = ts - 3600 WHERE id = ?`, id2); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	lines := strings.Split(strings.TrimSpace(mustSC(t, "log", p)), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[1], id2+" ") || !strings.HasPrefix(lines[2], id1+" ") {
+		t.Fatalf("log, want %s then %s:\n%s", id2, id1, strings.Join(lines, "\n"))
 	}
 }

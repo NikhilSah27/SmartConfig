@@ -256,10 +256,13 @@ func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged b
 }
 
 // latestTx returns the newest change of path within the caller's
-// transaction, or nil if there is none.
+// transaction, or nil if there is none. Newest means last inserted: ts is
+// wall-clock time, which can step back (NTP, a paused VM), so it only
+// labels a row. Rows are never deleted and the store is never vacuumed, so
+// rowid order is insert order.
 func latestTx(ctx context.Context, conn *sql.Conn, path string) (*Change, error) {
 	rows, err := conn.QueryContext(ctx, `SELECT `+cols+` FROM changes WHERE path = ?
-		ORDER BY ts DESC, rowid DESC LIMIT 1`, path)
+		ORDER BY rowid DESC LIMIT 1`, path)
 	if err != nil {
 		return nil, fmt.Errorf("read latest change: %w", err)
 	}
@@ -427,8 +430,9 @@ func scanChanges(rows *sql.Rows) ([]Change, error) {
 	return out, nil
 }
 
-// List returns up to n changes, newest first. An empty path lists all files;
-// n <= 0 means no limit.
+// List returns up to n changes, newest (last inserted) first, whatever their
+// timestamps say (see latestTx). An empty path lists all files; n <= 0 means
+// no limit.
 func (s *Store) List(path string, n int) ([]Change, error) {
 	q := `SELECT ` + cols + ` FROM changes`
 	var args []any
@@ -440,7 +444,7 @@ func (s *Store) List(path string, n int) ([]Change, error) {
 		q += ` WHERE path = ?`
 		args = append(args, abs)
 	}
-	q += ` ORDER BY ts DESC, rowid DESC`
+	q += ` ORDER BY rowid DESC`
 	if n > 0 {
 		q += ` LIMIT ?`
 		args = append(args, n)
