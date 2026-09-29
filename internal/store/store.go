@@ -118,6 +118,10 @@ var testHookBeforeRestoreLock func()
 // is in place and before the restore row is committed.
 var testHookAfterRestoreWrite func()
 
+// testHookBeforeCommit, if set by a test, runs in writeTx before every
+// COMMIT attempt.
+var testHookBeforeCommit func()
+
 // Store is an open SmartConfig data directory.
 type Store struct {
 	dir string
@@ -314,6 +318,9 @@ func (s *Store) writeTx(retryCommit bool, fn func(ctx context.Context, conn *sql
 		attempts = commitAttempts
 	}
 	for attempt := 1; ; attempt++ {
+		if testHookBeforeCommit != nil {
+			testHookBeforeCommit()
+		}
 		_, err = conn.ExecContext(ctx, "COMMIT")
 		if err == nil {
 			return nil

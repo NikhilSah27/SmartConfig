@@ -796,14 +796,24 @@ func TestSnapshotDoesNotRetryCommit(t *testing.T) {
 	write(t, p, "x\n", 0o644)
 	release := holdReadLock(t)
 	defer release()
-	start := time.Now()
+	commits := countCommits(t)
 	_, _, err := s.Snapshot(p, OriginManual, "")
 	if err == nil || !isBusy(err) {
 		t.Fatalf("got %v", err)
 	}
-	if d := time.Since(start); d > time.Duration(3*busyTimeoutMS)*time.Millisecond {
-		t.Fatalf("snapshot kept retrying for %v", d)
+	if *commits != 1 {
+		t.Fatalf("snapshot tried COMMIT %d times, want 1", *commits)
 	}
+}
+
+// countCommits counts writeTx's COMMIT attempts until the test ends. The
+// tests count attempts rather than time them: on a slow disk (a VM with
+// fsync at 25-340 ms) a timing bound fails without any retry.
+func countCommits(t *testing.T) *int {
+	n := 0
+	testHookBeforeCommit = func() { n++ }
+	t.Cleanup(func() { testHookBeforeCommit = nil })
+	return &n
 }
 
 // lockCheckingClock returns a clock that records an error whenever it is
@@ -937,17 +947,16 @@ func TestInterruptAfterRenameStopsRetries(t *testing.T) {
 	good, _ := snap(t, s, p)
 	write(t, p, "bad\n", 0o644)
 	var release func()
-	testHookAfterRestoreWrite = func() { release = holdReadLock(t); Interrupt() }
+	commits := countCommits(t)
+	testHookAfterRestoreWrite = func() { release = holdReadLock(t); Interrupt(); *commits = 0 }
 	defer func() { testHookAfterRestoreWrite = nil }()
-	start := time.Now()
 	_, prev, err := s.Restore(good.ID)
-	elapsed := time.Since(start)
 	release()
 	if err == nil || !strings.Contains(err.Error(), "file restored but not recorded") || prev == nil || !strings.Contains(err.Error(), prev.ID) {
 		t.Fatalf("got %v (prev %+v)", err, prev)
 	}
-	if elapsed > time.Duration(3*busyTimeoutMS)*time.Millisecond {
-		t.Fatalf("kept retrying COMMIT for %v after the interrupt", elapsed)
+	if *commits != 1 {
+		t.Fatalf("tried COMMIT %d times after the interrupt, want 1", *commits)
 	}
 }
 
