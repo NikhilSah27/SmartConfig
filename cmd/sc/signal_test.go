@@ -322,7 +322,10 @@ func secondSignalAfterRename(t *testing.T) (caught bool) {
 	defer conn.Close()
 
 	cmd := exec.Command(r.bin, "restore", r.id)
-	cmd.Env = r.env
+	// The pause gives the loop below time to take its read lock between the
+	// pre-restore commit and the restore's own transaction, however fast
+	// the disk is.
+	cmd.Env = append(r.env, "SC_TEST_BEFORE_RESTORE_LOCK=1s")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
