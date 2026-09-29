@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 1** (chunk A): order history by insert order (rowid), not
-by the wall clock. Setup is done except CI, which needs you (below).
+**Now:** make the after-rename signal test deterministic (it can miss
+its window on a fast disk, such as a CI runner), then M2 step 2 (store
+file mode 0600).
 
 **Still waiting for you:**
 
@@ -237,3 +238,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   other stays silent, and a finished command also claims it. A new real-binary
   test holds sc open after its line (a hook built only with `-tags sctest`,
   absent from the shipped binary) and fails with two lines without the fix.
+- **M2 step 1** `a1a6419`: history is ordered by insert order (rowid), not by
+  the wall-clock timestamp, so a clock stepping back cannot make an older row
+  the newest. Two new tests (store and `sc log`) fail on the old queries.
+  Checks clean as user, race and root.
