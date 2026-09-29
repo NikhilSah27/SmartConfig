@@ -145,6 +145,19 @@ func Init(dir string) error {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("chmod %s: %w", dir, err)
 	}
+	// The database holds every path and change, so only root may read it.
+	// Creating the file before SQLite does sets its mode (SQLite gives the
+	// journal the database's mode), and the chmod fixes a store made by M1,
+	// whose database was 0644.
+	db := filepath.Join(dir, "changes.db")
+	f, err := os.OpenFile(db, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", db, err)
+	}
+	f.Close()
+	if err := os.Chmod(db, 0o600); err != nil {
+		return fmt.Errorf("chmod %s: %w", db, err)
+	}
 	s, err := open(dir)
 	if err != nil {
 		return err

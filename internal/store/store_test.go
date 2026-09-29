@@ -82,13 +82,74 @@ func TestOpenUninitialised(t *testing.T) {
 }
 
 func TestInitMode(t *testing.T) {
-	setup(t)
-	fi, err := os.Stat(Home())
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("SC_HOME", home)
+	if err := Init(home); err != nil { // once: setup's second Init would hide a bad first one
+		t.Fatal(err)
+	}
+	db := filepath.Join(home, "changes.db")
+	checkMode := func(when string) {
+		t.Helper()
+		for p, want := range map[string]os.FileMode{home: 0o700, db: 0o600} {
+			fi, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode().Perm() != want {
+				t.Fatalf("%s: %s is %v, want %v", when, p, fi.Mode().Perm(), want)
+			}
+		}
+	}
+	checkMode("new store")
+	// A store made by M1 has a 0644 database; init fixes it.
+	if err := os.Chmod(db, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Init(home); err != nil {
+		t.Fatal(err)
+	}
+	checkMode("store with a 0644 database")
+
+	// SQLite creates the journal with the database's mode.
+	s, err := Open(home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o700 {
-		t.Fatalf("mode %v", fi.Mode())
+	defer s.Close()
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.ExecContext(ctx, "ROLLBACK")
+	if _, err := conn.ExecContext(ctx, `INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin)
+		VALUES ('0000aa', 0, '/x', 'b', 0, 0, 0, 0, 'manual')`); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(db + "-journal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("journal is %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// Init on an existing store keeps its history.
+func TestInitKeepsHistory(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	c, _ := snap(t, s, p)
+	if err := Init(Home()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(c.ID); err != nil {
+		t.Fatalf("after init: %v", err)
 	}
 }
 

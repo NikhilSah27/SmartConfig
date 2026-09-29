@@ -104,8 +104,10 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 
 ## 4. Known issues and follow-ups
 
-- `changes.db` is created mode **0644** (its directory is 0700, so it is not
-  readable by others). Tighten to 0600 in M2.
+- `changes.db` was created mode **0644** by M1 (its directory is 0700, so it
+  was not readable by others). Since M2 step 2, `sc init` creates it 0600
+  and tightens an existing one; the real store stays 0644 until M2's
+  `sc init` runs on it (sign-off S2).
 - The ownership part of the restore test only runs as root
   (`sudo -E go test ./internal/store`).
 - Film narration uses the browser's speech engine. On Linux it may be silent
