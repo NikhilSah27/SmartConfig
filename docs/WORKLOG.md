@@ -28,9 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now:** make the after-rename signal test deterministic (it can miss
-its window on a fast disk, such as a CI runner), then M2 step 2 (store
-file mode 0600).
+**Now: M2 step 2** (chunk A): the store's database is created mode 0600,
+and an existing 0644 one is tightened. Checks running.
 
 **Still waiting for you:**
 
