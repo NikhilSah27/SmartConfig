@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +31,7 @@ func scBinary(t *testing.T) string {
 			return
 		}
 		scBin = filepath.Join(dir, "sc")
-		if out, err := exec.Command("go", "build", "-o", scBin, ".").CombinedOutput(); err != nil {
+		if out, err := exec.Command("go", "build", "-tags", "sctest", "-o", scBin, ".").CombinedOutput(); err != nil {
 			buildErr = errors.New(string(out))
 		}
 	})
@@ -99,13 +100,13 @@ func holdWriteLock(t *testing.T, dbPath string) (release func()) {
 
 // startRestore starts sc restore (optionally through a wrapper command) and
 // waits until it has prepared its temp file.
-func startRestore(t *testing.T, r restoreSetup, prefix ...string) (*exec.Cmd, *strings.Builder, *strings.Builder) {
+func startRestore(t *testing.T, r restoreSetup, prefix ...string) (*exec.Cmd, *lockedBuffer, *lockedBuffer) {
 	t.Helper()
 	args := append(append([]string{}, prefix...), r.bin, "restore", r.id)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Env = r.env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	var stdout, stderr strings.Builder
+	var stdout, stderr lockedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -125,7 +126,7 @@ func startRestore(t *testing.T, r restoreSetup, prefix ...string) (*exec.Cmd, *s
 
 // waitEnd waits for cmd and checks how it ended: by signal want, or with
 // exit status 1 if want is 0.
-func waitEnd(t *testing.T, cmd *exec.Cmd, stderr *strings.Builder, want syscall.Signal) {
+func waitEnd(t *testing.T, cmd *exec.Cmd, stderr fmt.Stringer, want syscall.Signal) {
 	t.Helper()
 	err := cmd.Wait()
 	var exit *exec.ExitError
@@ -186,6 +187,61 @@ func TestSecondSignalBeforeRenameStopsAtOnce(t *testing.T) {
 		t.Fatalf("stderr %q", stderr.String())
 	}
 	checkUnchanged(t, r)
+}
+
+// A second Ctrl-C that arrives after the command has printed its line, while
+// sc is about to end by the first one, prints nothing more.
+func TestSecondSignalAfterReportPrintsNothing(t *testing.T) {
+	r := newRestoreSetup(t)
+	r.env = append(r.env, "SC_TEST_AFTER_RUN=3s")
+	release := holdWriteLock(t, r.db)
+	cmd, _, stderr := startRestore(t, r)
+	cmd.Process.Signal(syscall.SIGINT)
+	release() // the restore gets the lock and stops at its next safe point
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(stderr.String(), "(file not changed)") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the restore never reported; stderr %q", stderr.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cmd.Process.Signal(syscall.SIGINT)
+	err := cmd.Wait()
+	ws, ok := exitStatus(err)
+	if !ok || !ws.Signaled() || ws.Signal() != syscall.SIGINT {
+		t.Fatalf("ended with %v, stderr %q", err, stderr.String())
+	}
+	if msg := stderr.String(); strings.Count(msg, "\n") != 1 {
+		t.Fatalf("stderr must be one line: %q", msg)
+	}
+	checkUnchanged(t, r)
+}
+
+// lockedBuffer is a strings.Builder that a test may read while the command
+// is still writing to it.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func exitStatus(err error) (syscall.WaitStatus, bool) {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return 0, false
+	}
+	return exit.Sys().(syscall.WaitStatus), true
 }
 
 // SIGQUIT and SIGABRT would normally print a Go stack trace: sc prints one

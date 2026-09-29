@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,6 +34,28 @@ var mutating atomic.Bool
 // received is the number of the first stop signal, or 0.
 var received atomic.Int32
 
+// The command and a second stop signal can race to say how sc ended. The
+// first to claim the end prints its line and the other stays silent, so sc
+// prints one line. A command that succeeded claims it too, so no line after
+// its result can contradict it.
+var (
+	endMu sync.Mutex
+	ended bool
+)
+
+// claimEnd reports whether the caller is the first to say how sc ended.
+func claimEnd() bool {
+	endMu.Lock()
+	defer endMu.Unlock()
+	first := !ended
+	ended = true
+	return first
+}
+
+// testHookAfterRun runs in main after the command has returned; the signal
+// tests' build (-tags sctest) sets it.
+var testHookAfterRun = func() {}
+
 func main() {
 	sigs := make(chan os.Signal, len(stopSignals))
 	for _, sig := range stopSignals {
@@ -44,6 +67,7 @@ func main() {
 	}
 	go handleSignals(sigs)
 	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	testHookAfterRun()
 	if n := received.Load(); n != 0 {
 		endBy(syscall.Signal(n))
 	}
@@ -69,7 +93,9 @@ func handleSignals(sigs <-chan os.Signal) {
 	store.Interrupt()
 	if !mutating.Load() {
 		fsutil.RemovePending()
-		fmt.Fprintf(os.Stderr, "sc: interrupted by %s\n", sig)
+		if claimEnd() {
+			fmt.Fprintf(os.Stderr, "sc: interrupted by %s\n", sig)
+		}
 		endBy(sig)
 	}
 	for {
@@ -79,7 +105,9 @@ func handleSignals(sigs <-chan os.Signal) {
 		}
 	}
 	fsutil.RemovePending()
-	fmt.Fprintf(os.Stderr, "sc: stopped by %s (file not changed)\n", sig)
+	if claimEnd() {
+		fmt.Fprintf(os.Stderr, "sc: stopped by %s (file not changed)\n", sig)
+	}
 	endBy(sig)
 }
 
@@ -100,9 +128,14 @@ func endBy(sig os.Signal) {
 // run executes the CLI and returns the exit code. Any error, including a
 // panic, becomes one line on stderr and exit code 1.
 func run(args []string, stdout, stderr io.Writer) (code int) {
+	endMu.Lock()
+	ended = false // the tests call run many times in one process
+	endMu.Unlock()
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(stderr, "sc: internal error: %v\n", r)
+			if claimEnd() {
+				fmt.Fprintf(stderr, "sc: internal error: %v\n", r)
+			}
 			code = 1
 		}
 	}()
@@ -111,10 +144,13 @@ func run(args []string, stdout, stderr io.Writer) (code int) {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	if err := root.Execute(); err != nil {
-		msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
-		fmt.Fprintf(stderr, "sc: %s\n", msg)
+		if claimEnd() {
+			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
+			fmt.Fprintf(stderr, "sc: %s\n", msg)
+		}
 		return 1
 	}
+	claimEnd()
 	return 0
 }
 
