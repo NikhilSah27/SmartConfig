@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now (23:00 UTC):** setup from the roadmap answers: secret hooks,
-CLAUDE.md, `make race`, Go 1.26.8 with govulncheck, CI.
+**Now:** setup is done except CI (it needs you, see below). Two M1 test
+and signal fixes found tonight are in. Next: M2 step 1.
 
 **Still waiting for you:**
 
@@ -37,6 +37,10 @@ CLAUDE.md, `make race`, Go 1.26.8 with govulncheck, CI.
       right-hand panel, Take). Needed before any step that touches the
       real system.
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
+- [ ] **CI is ready but cannot be pushed:** the GitHub token has no
+      `workflow` scope. Run `gh auth refresh -h github.com -s workflow`
+      (it opens a browser login), then tell me and I push
+      `.github/workflows/ci.yml` (kept in `~/smartconfig-work/ci/`).
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
@@ -204,3 +208,32 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **M2 plan approved** with all recommendations; the answers are recorded
   in M2_PLAN.md and NEXT_STEPS.md. Overnight work scheduled for 04:30 IST
   (23:00 UTC).
+
+### 2026-09-28 night (unattended)
+
+- **Secret hooks (question 6):** local `pre-commit`, `commit-msg` and
+  `pre-push` hooks refuse the private denylist (kept outside the repo, mode
+  0600) and the shapes of crypt hashes (`$6$`, `$y$`), private keys, `psk=`
+  values and GitHub tokens. Tested with 11 cases, including a commit that
+  bypassed the commit hooks being refused at push. The hooks are local and not
+  in the repo.
+- **`make race` (question 4)** `2a915c1` and **the CLAUDE.md edits (question
+  8)** `f4c79be`.
+- **Go 1.26.8 (question 9)** `20330e4`: govulncheck v1.8.0 found 3
+  standard-library vulnerabilities with Go 1.22.2 (2 reachable on Linux) and
+  none with 1.26.8. The recovery guide no longer sets `GOTOOLCHAIN=local`.
+- **Slow disk tonight:** a synchronous 4 KB write takes 25 to 340 ms (normally
+  a few ms), worst while big builds run, so the whole suite runs 20 to 30
+  times slower. Two timing tests failed as root because of it, identically on
+  Go 1.22.2.
+- **Tests count COMMIT attempts instead of timing them**
+  (`TestSnapshotDoesNotRetryCommit`, `TestInterruptAfterRenameStopsRetries`),
+  so a slow disk cannot fail them. Mutation checks: with the retry bugs put
+  back, both fail (6 attempts, want 1).
+- **Signal fix: one line even when a second Ctrl-C races the result.** The
+  slow disk exposed a real M1 race: after a first Ctrl-C the restore printed
+  "interrupted (file not changed)", and a second Ctrl-C before sc exited
+  printed another line. Now the first to claim the end prints, the other stays
+  silent, and a finished command also claims it. A new real-binary test holds
+  sc open after its line (a hook built only with `-tags sctest`, absent from
+  the shipped binary) and fails with two lines without the fix.
