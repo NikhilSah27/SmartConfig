@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now:** setup is done except CI (it needs you, see below). Two M1 test
-and signal fixes found tonight are in. Next: M2 step 1.
+**Now: M2 step 1** (chunk A): order history by insert order (rowid), not
+by the wall clock. Setup is done except CI, which needs you (below).
 
 **Still waiting for you:**
 
@@ -226,14 +226,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   a few ms), worst while big builds run, so the whole suite runs 20 to 30
   times slower. Two timing tests failed as root because of it, identically on
   Go 1.22.2.
-- **Tests count COMMIT attempts instead of timing them**
+- **Tests count COMMIT attempts instead of timing them** (`9a746c3`)
   (`TestSnapshotDoesNotRetryCommit`, `TestInterruptAfterRenameStopsRetries`),
   so a slow disk cannot fail them. Mutation checks: with the retry bugs put
   back, both fail (6 attempts, want 1).
-- **Signal fix: one line even when a second Ctrl-C races the result.** The
-  slow disk exposed a real M1 race: after a first Ctrl-C the restore printed
-  "interrupted (file not changed)", and a second Ctrl-C before sc exited
-  printed another line. Now the first to claim the end prints, the other stays
-  silent, and a finished command also claims it. A new real-binary test holds
-  sc open after its line (a hook built only with `-tags sctest`, absent from
-  the shipped binary) and fails with two lines without the fix.
+- **Signal fix: one line even when a second Ctrl-C races the result**
+  (`270b095`). The slow disk exposed a real M1 race: after a first Ctrl-C the
+  restore printed "interrupted (file not changed)", and a second Ctrl-C before
+  sc exited printed another line. Now the first to claim the end prints, the
+  other stays silent, and a finished command also claims it. A new real-binary
+  test holds sc open after its line (a hook built only with `-tags sctest`,
+  absent from the shipped binary) and fails with two lines without the fix.
