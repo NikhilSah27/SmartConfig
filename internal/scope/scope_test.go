@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // machine is the default scope as scd would use it on a host with the
@@ -110,6 +111,21 @@ func TestWithCopiesRoots(t *testing.T) {
 	y := s.With("", []string{"/y"})
 	if !x.Recorded("/x/f") || x.Recorded("/y/f") || !y.Recorded("/y/f") || s.Recorded("/x/f") {
 		t.Fatalf("roots: base %v, x %v, y %v", s.Roots(), x.Roots(), y.Roots())
+	}
+}
+
+// A deep path under an excluded directory is decided at that directory.
+// A user can make ~/.ssh/a/a/.../a up to PATH_MAX; walking up from the leaf
+// took 8 s at depth 1,000 (chunk C review D3).
+func TestRecordedDeepExcludedPath(t *testing.T) {
+	s := machine()
+	deep := "/home/u/.ssh/a" + strings.Repeat("/a", 2000)
+	start := time.Now()
+	if s.Recorded(deep) {
+		t.Fatal("recorded")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %v", d)
 	}
 }
 

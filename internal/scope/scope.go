@@ -166,10 +166,13 @@ func (s *Scope) decide(p string) (bool, int) {
 	if root == "" {
 		return false, -1
 	}
-	// p is under root, so walking up reaches root exactly; the length
-	// test also stops the walk if that were ever not so.
-	for cur := p; len(cur) > len(root); cur = path.Dir(cur) {
-		if ok, line := s.self(cur); !ok {
+	// Walk down from the root, so the first excluded directory ends the
+	// walk: a deep path under it costs one check, not one per level.
+	for i := len(root) + 1; i <= len(p); i++ {
+		if i < len(p) && p[i] != '/' {
+			continue
+		}
+		if ok, line := s.self(p[:i]); !ok {
 			return false, line
 		}
 	}
