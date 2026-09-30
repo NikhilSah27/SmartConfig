@@ -150,7 +150,12 @@ func backupM1(ctx context.Context, conn *sql.Conn, dir string) error {
 		return nil
 	}
 	dst := filepath.Join(dir, m1Backup)
-	if _, err := os.Lstat(dst); err == nil {
+	if fi, err := os.Lstat(dst); err == nil {
+		// Only a real earlier copy counts: a symlink (even a dangling one)
+		// or anything else there would leave the store with no backup.
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("store %s: %s is not a regular file, move it away", dir, m1Backup)
+		}
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("store %s: %w", dir, err)

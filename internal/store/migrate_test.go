@@ -443,3 +443,19 @@ func TestMigrateConcurrentFirstOpensInProcesses(t *testing.T) {
 		t.Fatalf("integrity_check: %q, %v", ok, err)
 	}
 }
+
+// Anything but a regular file at the backup's name (here a dangling
+// symlink) stops the migration instead of leaving the store with no backup.
+func TestMigrateBackupNameTaken(t *testing.T) {
+	home := m1Store(t)
+	if err := os.Symlink("/nonexistent/x", filepath.Join(home, m1Backup)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(home)
+	if err == nil || !strings.Contains(err.Error(), m1Backup+" is not a regular file") || strings.Contains(err.Error(), "\n") {
+		t.Fatalf("got %v", err)
+	}
+	if v := queryInt(t, rawDB(t, home), "PRAGMA user_version"); v != 0 {
+		t.Fatalf("schema version %d, want 0", v)
+	}
+}
