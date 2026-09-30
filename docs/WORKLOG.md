@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 9** (chunk B): `sc snapshot`, `log`, `cat`, `diff` and
-`restore` understand row kinds. From now on one thing at a
+**Now: M2 step 10** (chunk B): prove `sc-m1` still works on a migrated
+store (`scripts/build-sc-m1.sh`, `TestM1Compat`, `make m1-compat`). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -337,3 +337,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   anything. A watcher recording during a restore adds no row after it.
   Mutation checks: 15 of 16 caught, one equivalent. Checks clean as
   user, race and root.
+- **M2 step 9** `3a3dcf5`: the CLI understands row kinds: link and
+  fingerprint lines in `sc snapshot`, link/deleted/digest in `sc log`,
+  link targets in `cat` and `diff`, and the four restore lines of plan
+  5.6. No command shows a fingerprint-only path's content. Mutation
+  checks: 12 of 12 caught. Checks clean as user, race and root.
