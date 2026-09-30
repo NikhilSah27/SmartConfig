@@ -28,9 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 6** (chunk B): fsutil reads files and symlinks with a
-stamp, and writes symlinks atomically. Chunks A and C are reviewed and
-closed. From now on one thing at a
+**Now: M2 step 7** (chunk B): the store records files, links, deletions
+and fingerprints (`record.go`). Chunks A and C are reviewed and closed. From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -314,3 +313,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `~/.ssh/rc`, `~/.ssh/environment` and `/etc/ssh/sshrc` recorded at
   tier 2; dropbear host keys, WireGuard, apt auth and LUKS key files
   fingerprint-only. None exist on this VM today.
+- **M2 step 6** `4034618`: `fsutil.ReadState` reads files and symlinks
+  through the parent directory without following any symlink, refuses
+  directories, FIFOs, sockets, devices and big files without opening
+  them, and says whether the path changed during the read;
+  `SymlinkAtomic` and `RemoveFile`. `sc snapshot` now also refuses a file
+  in a symlinked directory. M1 fsutil tests unchanged. Mutation checks:
+  15 of 15 caught; the new tests found a trailing-slash bug while the
+  step was written. Checks clean as user, race and root; builds for
+  arm64 too. Plan note C10 (API reuse).
