@@ -338,6 +338,24 @@ func TestLoginHomes(t *testing.T) {
 	if LoginHomes(nil) != nil {
 		t.Fatal("homes from no passwd")
 	}
+	// CRLF line ends and trailing spaces around the shell.
+	crlf := "a:x:1:1::/home/a:/usr/sbin/nologin\r\nb:x:2:2::/home/b:/bin/false \r\nc:x:3:3::/home/c:/bin/bash\r\n"
+	if got := strings.Join(LoginHomes([]byte(crlf)), " "); got != "/home/c" {
+		t.Fatalf("CRLF homes %q, want /home/c", got)
+	}
+}
+
+// A path under nested roots is judged from the innermost one: a login
+// root inside an excluded directory is still watched.
+func TestNestedRoots(t *testing.T) {
+	s, err := Parse("root /r\nexclude /r/skip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = s.With("", []string{"/r/skip/u/.ssh"})
+	if !s.Recorded("/r/skip/u/.ssh/authorized_keys") || s.Recorded("/r/skip/u/x") {
+		t.Fatal("nested root judged from the outer root")
+	}
 }
 
 // snapRuntime matches the snapd runtime names under tier 1-2 directories
@@ -418,10 +436,13 @@ func TestDefaultScopeRealListing(t *testing.T) {
 	if kept := files + links; kept < 1000 || kept > 2500 {
 		t.Errorf("%d files and links recorded, want 1000 to 2500", kept)
 	}
+	var secrets []*glob
+	for _, p := range []string{"/etc/machine-id", "/etc/ssh/ssh_host_*", "/etc/ssl/private/**",
+		"/etc/{credstore,credstore.encrypted}/**", "/etc/ppp/*-secrets"} {
+		secrets = append(secrets, mustGlob(t, p))
+	}
 	for _, p := range digests {
-		if p != "/etc/machine-id" && !strings.HasPrefix(p, "/etc/ssh/ssh_host_") &&
-			!strings.HasPrefix(p, "/etc/ssl/private/") && !strings.HasPrefix(p, "/etc/credstore") &&
-			!strings.HasPrefix(p, "/etc/ppp/") {
+		if !matchAny(secrets, p) {
 			t.Errorf("unexpected fingerprint-only path %s", p)
 		}
 	}
