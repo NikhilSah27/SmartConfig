@@ -142,6 +142,7 @@ All changes since approval, with reasons, are kept in one place:
 | C6 | SC_HOME excluded by a path check, not a glob | Glob characters in a path cannot misfire |
 | C7 | Record alternatives; fingerprint private keys and secrets | Owner, after reviewing the excluded list |
 | C8 | Fingerprint host-key temp names; more consumer directories in block D | Chunk C review findings D1-D6 |
+| C9 | Record `~/.ssh/rc` and `environment`; fingerprint dropbear, WireGuard, apt auth and LUKS key files | Owner, on two questions from the chunk C review |
 
 ## 6. Lessons so far
 

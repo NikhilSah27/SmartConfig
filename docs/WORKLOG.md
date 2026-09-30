@@ -310,3 +310,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (8 s to under 1 ms), paths cleaned where a wrong answer would store a
     secret, `\**` and `[**]` accepted. Test gaps closed.
   - Plan Appendix C gains C8. Checks clean as user, race and root.
+- **Scope change C9** `1aca688`, your call on the review's two questions:
+  `~/.ssh/rc`, `~/.ssh/environment` and `/etc/ssh/sshrc` recorded at
+  tier 2; dropbear host keys, WireGuard, apt auth and LUKS key files
+  fingerprint-only. None exist on this VM today.
