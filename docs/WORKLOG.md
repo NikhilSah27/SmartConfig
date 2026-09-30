@@ -34,14 +34,7 @@ which may run while chunk C is built.
 
 **Still waiting for you:**
 
-- [ ] Take the VirtualBox snapshot `m1-frozen` (Snapshots tab above the
-      right-hand panel, Take). Needed before any step that touches the
-      real system.
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
-- [ ] **CI is ready but cannot be pushed:** the GitHub token has no
-      `workflow` scope. Run `gh auth refresh -h github.com -s workflow`
-      (it opens a browser login), then tell me and I push
-      `.github/workflows/ci.yml` (kept in `~/smartconfig-work/ci/`).
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
@@ -263,3 +256,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   caught. Checks clean as user, race and root. The real store is not
   touched (gate G1).
 - **Chunk A (steps 1-3) done**, waiting for its light review.
+- **VirtualBox snapshot `m1-frozen` taken** (you, 2026-09-30).
+- **CI pushed** `3e266cc` after you added the `workflow` scope to the token:
+  gofmt, vet, tests as user and root, race, static build, on every push
+  to main and every pull request.
