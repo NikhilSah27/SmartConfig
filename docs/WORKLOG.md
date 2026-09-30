@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 3** (chunk A): schema version 1 (row kinds), migrated in
-one transaction, with a backup of an M1 database.
+**Now: M2 step 4** (chunk C): the scope glob language (`internal/scope`,
+`glob.go`). Chunk A (steps 1-3) is done and waits for its light review,
+which may run while chunk C is built.
 
 **Still waiting for you:**
 
@@ -248,3 +249,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **M2 step 2** `34da00e`: `sc init` creates `changes.db` mode 0600 and
   tightens an existing 0644 one; the journal gets the same mode.
   Mutation-checked. Checks clean as user, race and root.
+
+### 2026-09-30
+
+- The overnight run stopped part way through step 3; its uncommitted code
+  was reviewed, finished and checked here.
+- **M2 step 3** `69e8f9b`: schema version 1 adds `kind` and `target` and
+  the index `changes_path_seq`, migrated in one IMMEDIATE transaction;
+  an M1 database with rows is copied to `changes.db.m1-backup` (0600)
+  first; a newer schema or a WAL store is refused with one line. The
+  concurrent-first-open test now holds all 4 opens until each has read
+  version 0, so it races on every run. Mutation checks: 6 of 6 guards
+  caught. Checks clean as user, race and root. The real store is not
+  touched (gate G1).
+- **Chunk A (steps 1-3) done**, waiting for its light review.
