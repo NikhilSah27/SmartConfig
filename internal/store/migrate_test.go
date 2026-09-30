@@ -444,6 +444,25 @@ func TestMigrateConcurrentFirstOpensInProcesses(t *testing.T) {
 	}
 }
 
+// A newer sc that migrates the store while this one waits for the lock is
+// seen under the lock: the store is refused, not set back to version 1.
+func TestMigrateRefusesStoreUpgradedWhileWaiting(t *testing.T) {
+	home := m1Store(t)
+	db := rawDB(t, home)
+	testHookBeforeMigrateLock = func() {
+		if _, err := db.Exec("PRAGMA user_version = 2"); err != nil {
+			t.Error(err)
+		}
+	}
+	defer func() { testHookBeforeMigrateLock = nil }()
+	if _, err := Open(home); err == nil || !strings.Contains(err.Error(), "newer sc (schema 2)") {
+		t.Fatalf("got %v", err)
+	}
+	if v := queryInt(t, db, "PRAGMA user_version"); v != 2 {
+		t.Fatalf("schema version set to %d", v)
+	}
+}
+
 // Anything but a regular file at the backup's name (here a dangling
 // symlink) stops the migration instead of leaving the store with no backup.
 func TestMigrateBackupNameTaken(t *testing.T) {
