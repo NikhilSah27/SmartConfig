@@ -22,6 +22,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"smartconfig/internal/fsutil"
+	"smartconfig/internal/scope"
 )
 
 // DefaultHome is used when $SC_HOME is unset.
@@ -65,6 +66,8 @@ type Change struct {
 	GID    int
 	Origin string
 	Intent string
+	Kind   string // KindFile, KindLink, KindDigest or KindDeleted
+	Target string // link text, for KindLink
 }
 
 // busyTimeoutMS is how long one statement waits for another connection's
@@ -107,8 +110,8 @@ func ForceStop() bool {
 	return !passedPoint
 }
 
-// testHookSnapshotBeforeLock, if set by a test, runs in Snapshot after the
-// file is read and before the write lock is taken.
+// testHookSnapshotBeforeLock, if set by a test, runs in Record (so in
+// Snapshot) after the paths are read and before the write lock is taken.
 var testHookSnapshotBeforeLock func()
 
 // testHookBeforeRestoreLock, if set by a test, runs in Restore after the new
@@ -125,9 +128,10 @@ var testHookBeforeCommit func()
 
 // Store is an open SmartConfig data directory.
 type Store struct {
-	dir string
-	db  *sql.DB
-	now func() time.Time
+	dir         string
+	db          *sql.DB
+	now         func() time.Time
+	fingerprint func(path string) bool
 }
 
 // Home returns $SC_HOME, or DefaultHome when it is unset.
@@ -184,7 +188,7 @@ func open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	s := &Store{dir: dir, db: db, now: time.Now}
+	s := &Store{dir: dir, db: db, now: time.Now, fingerprint: scope.Default().FingerprintOnly}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -220,54 +224,27 @@ func (s *Store) Snapshot(path, origin, intent string) (c Change, unchanged bool,
 	}
 }
 
-// snapshotOnce reads path, then records it under the write lock provided the
-// file is still the version that was read (else errChanged). Comparing with
-// the newest row and taking the timestamp under the lock means a snapshot
-// taken while a restore commits waits for it and sees its row, and rows are
-// logged in the order they commit.
+// snapshotOnce reads path and records it through Record, checking under
+// the write lock that the path is still the version read (else errChanged).
+// A manual snapshot equal to the newest row inserts nothing and returns that
+// row with unchanged=true; other origins always insert.
 func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged bool, err error) {
-	data, meta, err := fsutil.ReadWithMeta(path)
+	st, err := fsutil.ReadState(path)
 	if err != nil {
 		return Change{}, false, err
 	}
-	sum := sha256.Sum256(data)
-	blob := hex.EncodeToString(sum[:])
-	// The blob is content-addressed, so writing it before the check costs
-	// nothing when the content is unchanged (it is already stored).
-	if err := s.putBlob(blob, data); err != nil {
-		return Change{}, false, err
+	if !st.Stable {
+		return Change{}, false, errChanged
 	}
-	if testHookSnapshotBeforeLock != nil {
-		testHookSnapshotBeforeLock()
-	}
-	c = Change{
-		Path: path, Blob: blob, Size: int64(len(data)),
-		Mode: meta.Mode, UID: meta.UID, GID: meta.GID, Origin: origin, Intent: intent,
-	}
-	err = s.writeTx(false, func(ctx context.Context, conn *sql.Conn) error {
-		if stopping() {
-			return ErrInterrupted
-		}
-		if st, err := fsutil.LstatStamp(path); err != nil || st != meta.Stamp {
-			return errChanged
-		}
-		if origin == OriginManual {
-			last, err := latestTx(ctx, conn, path)
-			if err != nil {
-				return err
-			}
-			if last != nil && last.Blob == blob {
-				c, unchanged = *last, true
-				return nil
-			}
-		}
-		c.TS = s.now().Unix()
-		return insertTx(ctx, conn, &c)
-	})
+	res, err := s.Record([]Obs{{Path: path, State: &st, CheckStamp: true,
+		Force: origin != OriginManual, Origin: origin, Intent: intent}})
 	if err != nil {
 		return Change{}, false, err
 	}
-	return c, unchanged, nil
+	if res[0].Moved {
+		return Change{}, false, errChanged
+	}
+	return res[0].Change, !res[0].Recorded, nil
 }
 
 // latestTx returns the newest change of path within the caller's
@@ -288,15 +265,28 @@ func latestTx(ctx context.Context, conn *sql.Conn, path string) (*Change, error)
 	return &cs[0], nil
 }
 
-// makeID derives an id from path, timestamp and blob. If that id is taken,
-// attempt n>0 appends "\n<n>" to the hashed text.
-func makeID(path string, ts int64, blob string, attempt int) string {
-	text := path + "\n" + strconv.FormatInt(ts, 10) + "\n" + blob
+// makeID derives an id from path, timestamp and key: the blob for file and
+// digest rows (so M1's ids are reproduced), "link\n"+target for links and
+// "deleted" for deletions. If that id is taken, attempt n>0 appends "\n<n>"
+// to the hashed text.
+func makeID(path string, ts int64, key string, attempt int) string {
+	text := path + "\n" + strconv.FormatInt(ts, 10) + "\n" + key
 	if attempt > 0 {
 		text += "\n" + strconv.Itoa(attempt)
 	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])[:idLen]
+}
+
+// idKey is the part of a row's id that stands for its state (plan 5.2).
+func idKey(c *Change) string {
+	switch c.Kind {
+	case KindLink:
+		return "link\n" + c.Target
+	case KindDeleted:
+		return "deleted"
+	}
+	return c.Blob
 }
 
 // writeTx runs fn inside one write transaction (BEGIN IMMEDIATE, so the
@@ -370,7 +360,7 @@ func isBusy(err error) bool {
 // writer.
 func insertTx(ctx context.Context, conn *sql.Conn, c *Change) error {
 	for attempt := 0; ; attempt++ {
-		id := makeID(c.Path, c.TS, c.Blob, attempt)
+		id := makeID(c.Path, c.TS, idKey(c), attempt)
 		var one int
 		err := conn.QueryRowContext(ctx, `SELECT 1 FROM changes WHERE id = ?`, id).Scan(&one)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -381,9 +371,12 @@ func insertTx(ctx context.Context, conn *sql.Conn, c *Change) error {
 			return fmt.Errorf("check id: %w", err)
 		}
 	}
-	_, err := conn.ExecContext(ctx, `INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin, intent)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.TS, c.Path, c.Blob, c.Size, uint32(c.Mode), c.UID, c.GID, c.Origin, c.Intent)
+	if c.Kind == "" {
+		c.Kind = KindFile
+	}
+	_, err := conn.ExecContext(ctx, `INSERT INTO changes (id, ts, path, blob, size, mode, uid, gid, origin, intent, kind, target)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.TS, c.Path, c.Blob, c.Size, uint32(c.Mode), c.UID, c.GID, c.Origin, c.Intent, c.Kind, c.Target)
 	if err != nil {
 		return fmt.Errorf("record change: %w", err)
 	}
@@ -424,7 +417,7 @@ func (s *Store) Blob(sha string) ([]byte, error) {
 	return data, nil
 }
 
-const cols = `id, ts, path, blob, size, mode, uid, gid, origin, intent`
+const cols = `id, ts, path, blob, size, mode, uid, gid, origin, intent, kind, target`
 
 func scanChanges(rows *sql.Rows) ([]Change, error) {
 	defer rows.Close()
@@ -433,7 +426,7 @@ func scanChanges(rows *sql.Rows) ([]Change, error) {
 		var c Change
 		var mode uint32
 		if err := rows.Scan(&c.ID, &c.TS, &c.Path, &c.Blob, &c.Size, &mode,
-			&c.UID, &c.GID, &c.Origin, &c.Intent); err != nil {
+			&c.UID, &c.GID, &c.Origin, &c.Intent, &c.Kind, &c.Target); err != nil {
 			return nil, fmt.Errorf("read change: %w", err)
 		}
 		c.Mode = os.FileMode(mode)

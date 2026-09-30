@@ -357,6 +357,8 @@ func TestHelperProcess(t *testing.T) {
 			os.Exit(1)
 		}
 		s.Close()
+	case "record-crash":
+		recordCrashHelper()
 	case "write":
 		db, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
 		if err != nil {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -201,14 +202,26 @@ func TestSnapshotModifyLog(t *testing.T) {
 	}
 }
 
+// A symlink is recorded as a link, never followed; directories and FIFOs
+// are refused without blocking.
 func TestSnapshotRefuses(t *testing.T) {
 	s, dir := setup(t)
 	p := filepath.Join(dir, "real")
 	write(t, p, "x", 0o644)
 	link := filepath.Join(dir, "link")
 	os.Symlink(p, link)
-	if _, _, err := s.Snapshot(link, OriginManual, ""); err == nil {
-		t.Fatal("symlink accepted")
+	c, _, err := s.Snapshot(link, OriginManual, "")
+	if err != nil || c.Kind != KindLink || c.Target != p || c.Blob != "" {
+		t.Fatalf("symlink: %+v %v", c, err)
+	}
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{dir, fifo} {
+		if _, _, err := s.Snapshot(q, OriginManual, ""); !errors.Is(err, fsutil.ErrNotRecordable) {
+			t.Errorf("%s: %v", q, err)
+		}
 	}
 }
 

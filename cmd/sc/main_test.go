@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -111,10 +112,13 @@ func TestCLIErrorsAreOneLine(t *testing.T) {
 	t.Setenv("SC_HOME", t.TempDir())
 	mustSC(t, "init")
 	dir := t.TempDir()
-	link := filepath.Join(dir, "link")
-	os.Symlink("/etc/hosts", link)
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
-		{"snapshot", link},
+		{"snapshot", fifo},
+		{"snapshot", dir},
 		{"snapshot", filepath.Join(dir, "missing")},
 		{"cat", "zzz"},
 		{"cat", "abcdef"},
