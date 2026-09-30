@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -333,5 +335,111 @@ func TestFreshStoreSchema(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(Home(), m1Backup)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("fresh store has a backup: %v", err)
+	}
+}
+
+// helperEnv tells the test binary, run by a test as a separate process, what
+// TestHelperProcess should do. SQLite's locks are POSIX locks, which only
+// behave as they do in production between processes.
+const helperEnv = "SC_STORE_TEST_HELPER"
+
+// TestHelperProcess is not a test of its own: it is the other process.
+// "open" opens the store in $SC_HOME; "write" tries to take the write lock
+// for 100 ms and prints "locked" or "got the lock".
+func TestHelperProcess(t *testing.T) {
+	switch os.Getenv(helperEnv) {
+	case "":
+		t.Skip("only run as a helper process")
+	case "open":
+		s, err := Open(Home())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		s.Close()
+	case "write":
+		db, err := sql.Open("sqlite", "file:"+filepath.Join(Home(), "changes.db")+"?_pragma=busy_timeout(100)")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if _, err := db.Exec("BEGIN IMMEDIATE"); err != nil {
+			if !isBusy(err) {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Print("locked")
+		} else {
+			db.Exec("ROLLBACK")
+			fmt.Print("got the lock")
+		}
+		db.Close()
+	}
+	os.Exit(0)
+}
+
+// helper returns the test binary as a helper process doing mode on home.
+func helper(mode, home string) *exec.Cmd {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+	cmd.Env = append(os.Environ(), helperEnv+"="+mode, "SC_HOME="+home)
+	return cmd
+}
+
+// No other process may write while a migration runs, also after the M1
+// backup (reading changes.db through a second descriptor would drop this
+// process's locks).
+func TestMigrateKeepsWriteLockFromOtherProcesses(t *testing.T) {
+	home := m1Store(t)
+	var got string
+	testHookMigrate = func(v int) error {
+		if v == 0 { // the backup is taken
+			out, err := helper("write", home).Output()
+			if err != nil {
+				return fmt.Errorf("helper: %v", err)
+			}
+			got = string(out)
+		}
+		return nil
+	}
+	defer func() { testHookMigrate = nil }()
+	s, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if got != "locked" {
+		t.Fatalf("another process during the migration: %q, want locked", got)
+	}
+	if _, err := os.Stat(filepath.Join(home, m1Backup)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// sc and scd may open an M1 store for the first time at once: every process
+// succeeds and the store is intact.
+func TestMigrateConcurrentFirstOpensInProcesses(t *testing.T) {
+	home := m1Store(t)
+	cmds := make([]*exec.Cmd, 4)
+	outs := make([]*bytes.Buffer, len(cmds))
+	for i := range cmds {
+		cmds[i] = helper("open", home)
+		outs[i] = new(bytes.Buffer)
+		cmds[i].Stderr = outs[i]
+		if err := cmds[i].Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, cmd := range cmds {
+		if err := cmd.Wait(); err != nil {
+			t.Errorf("process %d: %v: %s", i, err, outs[i])
+		}
+	}
+	db := rawDB(t, home)
+	if v := queryInt(t, db, "PRAGMA user_version"); v != 1 {
+		t.Fatalf("schema version %d, want 1", v)
+	}
+	var ok string
+	if err := db.QueryRow("PRAGMA integrity_check").Scan(&ok); err != nil || ok != "ok" {
+		t.Fatalf("integrity_check: %q, %v", ok, err)
 	}
 }

@@ -125,10 +125,14 @@ func (s *Store) migrateTx(ctx context.Context, conn *sql.Conn) error {
 
 // backupM1 copies an M1 database that holds rows to changes.db.m1-backup
 // (0600, synced, renamed into place) before its first migration. It runs
-// inside the migration's write transaction, which has read the database, so
-// the file on disk is the last committed state and no writer can change it
-// meanwhile. An existing backup is kept: it is the copy from before any
-// migration (a failed migration leaves the database as it was anyway).
+// inside the migration's write transaction, so no writer can change the
+// database meanwhile. An existing backup is kept: it is the copy from before
+// any migration (a failed migration leaves the database as it was anyway).
+//
+// The copy is read through conn (sqlite3_serialize), never by opening
+// changes.db: SQLite's locks are POSIX locks, which the kernel drops for the
+// whole process when any descriptor on the file is closed. Other processes
+// could then write while this one migrates, and roll its journal back.
 func backupM1(ctx context.Context, conn *sql.Conn, dir string) error {
 	var tables int
 	if err := conn.QueryRowContext(ctx,
@@ -151,7 +155,16 @@ func backupM1(ctx context.Context, conn *sql.Conn, dir string) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("store %s: %w", dir, err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "changes.db"))
+	var data []byte
+	err := conn.Raw(func(dc any) error {
+		ser, ok := dc.(interface{ Serialize() ([]byte, error) })
+		if !ok {
+			return errors.New("the SQLite driver cannot serialize")
+		}
+		var err error
+		data, err = ser.Serialize()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("store %s: back up the M1 database: %w", dir, err)
 	}
