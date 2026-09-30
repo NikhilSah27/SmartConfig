@@ -5,7 +5,7 @@ we have moved away from the plan. For the day-to-day log see
 [WORKLOG.md](WORKLOG.md); for decisions and recovery, [PROJECT_LOG.md](PROJECT_LOG.md).
 Every fact here comes from those files, the reviews and git history.
 
-Last updated: 2026-09-30, M2 step 5 and the first scope change done.
+Last updated: 2026-09-30, M2 steps 1-5, chunks A and C reviewed.
 
 ## 1. The idea
 
@@ -120,6 +120,13 @@ all three were fixed. Then:
   invisible), and TLS private keys and PPP secrets are fingerprinted instead
   of ignored (a replaced key is now seen; secrets are still never stored).
 
+- **Chunk C review** found no secret leak for the named paths, but two
+  medium gaps: `ssh-keygen` writes a new private host key under a temporary
+  name first, which would have been stored with its content; and scripts
+  that systemd generators and run-parts directories execute were hidden by
+  the noise rules. Both fixed, plus four small ones, each with a test that
+  fails on the old code.
+
 ## 5. Where we moved away from the plan
 
 All changes since approval, with reasons, are kept in one place:
@@ -134,6 +141,7 @@ All changes since approval, with reasons, are kept in one place:
 | C5 | New known limit for never-migrated stores on read-only disks | Accepted: the real store is migrated long before M4 |
 | C6 | SC_HOME excluded by a path check, not a glob | Glob characters in a path cannot misfire |
 | C7 | Record alternatives; fingerprint private keys and secrets | Owner, after reviewing the excluded list |
+| C8 | Fingerprint host-key temp names; more consumer directories in block D | Chunk C review findings D1-D6 |
 
 ## 6. Lessons so far
 
@@ -149,6 +157,6 @@ All changes since approval, with reasons, are kept in one place:
 
 ## 7. Where we are
 
-M1 done. M2: steps 1-5 of 17 done, plus the scope change; chunk A reviewed.
-Next: the light review of chunk C (steps 4-5), then chunk B (row kinds for
-links, deletions and fingerprints through the CLI).
+M1 done. M2: steps 1-5 of 17 done, plus the scope changes; chunks A and C
+reviewed and closed. Next: chunk B (row kinds for links, deletions and
+fingerprints through the CLI), starting with step 6.

@@ -28,9 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: chunk C review** (steps 4-5, light), after you have seen the
-table of what gets watched on this VM. Then chunk B, starting with M2
-step 6 (fsutil: read files and symlinks with a stamp). From now on one thing at a
+**Now: M2 step 6** (chunk B): fsutil reads files and symlinks with a
+stamp, and writes symlinks atomically. Chunks A and C are reviewed and
+closed. From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -297,3 +297,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **Journey and deviations recorded:** [JOURNEY.md](JOURNEY.md) tells how
   the project started, the path chosen and why; M2_PLAN.md Appendix C lists
   every change since the plan was approved (C1-C7).
+- **Chunk C review closed**
+  ([reviews/2026-09-30-m2-chunk-c.md](reviews/2026-09-30-m2-chunk-c.md)):
+  one reviewer, every finding reproduced first. No leak for the named
+  secret paths, no panics, glob matches plan 7.2.
+  - **D1 (medium), `80bc523`:** `ssh-keygen -A` writes a private host key
+    as `NAME.XXXXXXXXXX` first; that name is now fingerprint-only.
+  - **D2 (medium), `310bc1f`:** systemd generator and run-parts
+    directories added to block D, so scripts they run (`foo.disabled`,
+    `sedAbC123`) are recorded.
+  - **D3-D6 (low):** deep paths decided at the first excluded directory
+    (8 s to under 1 ms), paths cleaned where a wrong answer would store a
+    secret, `\**` and `[**]` accepted. Test gaps closed.
+  - Plan Appendix C gains C8. Checks clean as user, race and root.
