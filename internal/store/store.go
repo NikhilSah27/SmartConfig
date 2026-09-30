@@ -36,6 +36,7 @@ const (
 
 const idLen = 6
 
+// schema is M1's schema, migration 0 (see migrate.go).
 const schema = `
 CREATE TABLE IF NOT EXISTS changes (
   id     TEXT PRIMARY KEY,
@@ -183,11 +184,12 @@ func open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	if _, err := db.Exec(schema); err != nil {
+	s := &Store{dir: dir, db: db, now: time.Now}
+	if err := s.migrate(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("create schema in %s: %w", dir, err)
+		return nil, err
 	}
-	return &Store{dir: dir, db: db, now: time.Now}, nil
+	return s, nil
 }
 
 // Close closes the database.
