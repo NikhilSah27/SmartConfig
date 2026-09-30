@@ -24,8 +24,8 @@ exclude **/.goutputstream-*
 include /boot/grub/{grub.cfg,custom.cfg}
 exclude /boot/grub/**
 
-# C. <home>/.ssh roots: only the files sshd reads.
-include **/.ssh/authorized_keys{,2}
+# C. <home>/.ssh roots: only the files sshd reads (rc runs at every login).
+include **/.ssh/{authorized_keys,authorized_keys2,rc,environment}
 exclude **/.ssh/*
 
 # D0. Names inside the block D directories that their consumer skips
@@ -100,10 +100,14 @@ digest /etc/ssh/ssh_host_{*_key,key}{,.??????????}
 digest /etc/machine-id
 digest /etc/{ssl/private,credstore,credstore.encrypted}/**
 digest /etc/ppp/*-secrets
+digest /etc/{dropbear,dropbear/initramfs,dropbear-initramfs}/dropbear_*_host_key
+digest /etc/wireguard/**
+digest /etc/apt/auth.conf{,.d/**}
+digest /etc/cryptsetup-keys.d/**
 
 # I. Tiers: only how loudly scd logs a change (1 boot, 2 access, 3 network).
 tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id}
-tier 1 /etc/{fstab.d,default/grub.d,grub.d,initramfs-tools,modprobe.d,modules-load.d,depmod.d}/**
+tier 1 /etc/{fstab.d,default/grub.d,grub.d,initramfs-tools,modprobe.d,modules-load.d,depmod.d,cryptsetup-keys.d}/**
 tier 1 /etc/{sysctl.d,tmpfiles.d,ld.so.conf.d,kernel,dbus-1}/**
 tier 1 /etc/default/grub
 tier 1 /boot/grub/{grub.cfg,custom.cfg}
@@ -116,17 +120,18 @@ tier 1 /etc/apparmor/parser.conf
 tier 2 /etc/{sudoers,sudo.conf,passwd,group,shadow,gshadow,nsswitch.conf,login.defs,shells}
 tier 2 /etc/{environment,profile,bash.bashrc,nologin,hosts.allow,hosts.deny}
 tier 2 /etc/{sudoers.d,pam.d,security,profile.d,polkit-1,gdm3,ssh/sshd_config.d}/**
-tier 2 /etc/ssh/{sshd_config,sshd_not_to_be_run}
+tier 2 /etc/ssh/{sshd_config,sshd_not_to_be_run,sshrc}
+tier 2 /etc/{dropbear,dropbear/initramfs,dropbear-initramfs}/**
 tier 2 /etc/ssh/ssh_host_{*_key,key}{,.??????????}
 tier 2 /etc/default/{ssh,keyboard,console-setup}
 tier 2 /etc/systemd/logind.conf
 tier 2 /etc/systemd/{logind.conf.d,user}/**
 tier 2 /etc/systemd/{system-environment-generators,user-generators,user-environment-generators,system-preset}/**
-tier 2 **/.ssh/authorized_keys{,2}
+tier 2 **/.ssh/{authorized_keys,authorized_keys2,rc,environment}
 tier 2 /etc/{ssl/private,credstore,credstore.encrypted}/**
 tier 2 /etc/ppp/*-secrets
 tier 3 /etc/{resolv.conf,hosts,nftables.conf,ca-certificates.conf,ssl/openssl.cnf,default/ufw}
-tier 3 /etc/{netplan,NetworkManager,network,ufw,iptables,apt,dpkg}/**
+tier 3 /etc/{netplan,NetworkManager,network,ufw,iptables,apt,dpkg,wireguard}/**
 tier 3 /etc/systemd/resolved.conf
 tier 3 /etc/systemd/{resolved.conf.d,network}/**
 tier 3 /etc/alternatives/{iptables,ip6tables,arptables,ebtables}{,-save,-restore}

@@ -155,6 +155,11 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/etc/systemd/user-environment-generators/x.distUpgrade",
 		"/etc/network/if-up.d/sedAbC123", "/etc/update-motd.d/XXabcdef", "/etc/cron.yearly/sedAbC123",
 		"/etc/ppp/ip-up.d/XXab12cd", "/etc/dhcp/dhclient-exit-hooks.d/sedAbC123",
+		// Added 2026-09-30 (plan Appendix C9): sshd's per-user rc and
+		// environment, and more secrets as fingerprints.
+		"/home/u/.ssh/rc", "/home/u/.ssh/environment", "/etc/ssh/sshrc",
+		"/etc/dropbear/initramfs/dropbear_ed25519_host_key", "/etc/wireguard/wg0.conf",
+		"/etc/apt/auth.conf.d/private.conf", "/etc/cryptsetup-keys.d/data.key",
 		"/etc/alternatives/iptables", "/etc/alternatives/editor",
 		"/etc/ssl/private/ssl-cert-snakeoil.key", "/etc/ppp/chap-secrets", "/etc/credstore/k",
 	}
@@ -267,6 +272,20 @@ func TestTierAndFingerprint(t *testing.T) {
 		{"/etc/credstore.encrypted/db.cred", 2, true},
 		{"/etc/ppp/pap-secrets", 2, true},
 		{"/etc/ppp/options", 4, false},
+		{"/home/u/.ssh/rc", 2, false},
+		{"/home/u/.ssh/environment", 2, false},
+		{"/etc/ssh/sshrc", 2, false},
+		{"/etc/dropbear/initramfs/dropbear_rsa_host_key", 2, true},
+		{"/etc/dropbear-initramfs/dropbear_ecdsa_host_key", 2, true},
+		{"/etc/dropbear/dropbear_ed25519_host_key", 2, true},
+		{"/etc/dropbear/initramfs/dropbear.conf", 2, false},
+		{"/etc/dropbear/initramfs/authorized_keys", 2, false},
+		{"/etc/wireguard/wg0.conf", 3, true},
+		{"/etc/wireguard/private.key", 3, true},
+		{"/etc/apt/auth.conf", 3, true},
+		{"/etc/apt/auth.conf.d/private.conf", 3, true},
+		{"/etc/apt/sources.list.d/ubuntu.sources", 3, false},
+		{"/etc/cryptsetup-keys.d/data.key", 1, true},
 		{"/etc/alternatives/iptables", 3, false},
 		{"/etc/alternatives/ip6tables-restore", 3, false},
 		{"/etc/alternatives/ebtables-save", 3, false},
@@ -438,7 +457,9 @@ func TestDefaultScopeRealListing(t *testing.T) {
 	}
 	var secrets []*glob
 	for _, p := range []string{"/etc/machine-id", "/etc/ssh/ssh_host_*", "/etc/ssl/private/**",
-		"/etc/{credstore,credstore.encrypted}/**", "/etc/ppp/*-secrets"} {
+		"/etc/{credstore,credstore.encrypted}/**", "/etc/ppp/*-secrets",
+		"/etc/{dropbear,dropbear-initramfs}/**", "/etc/wireguard/**", "/etc/apt/auth.conf{,.d/**}",
+		"/etc/cryptsetup-keys.d/**"} {
 		secrets = append(secrets, mustGlob(t, p))
 	}
 	for _, p := range digests {
