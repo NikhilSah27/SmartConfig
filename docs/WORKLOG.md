@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 8** (chunk B): restore of links and deletions; refusals
-for fingerprint paths and unsafe directories (`restore.go`). From now on one thing at a
+**Now: M2 step 9** (chunk B): `sc snapshot`, `log`, `cat`, `diff` and
+`restore` understand row kinds. From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -330,3 +330,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   after a cache spill leaves only committed rows. Mutation checks: 19 of
   20 caught, one equivalent. Checks clean as user, race and root. Plan
   note C11 (computed intents only for watcher rows).
+- **M2 step 8** `83c706c`: restore handles links (atomic symlink, owner set
+  first) and deletions (removes the file after a pre-restore row); it
+  refuses fingerprint-only paths, digest rows and unsafe directories
+  (symlinked, missing, or owned by another user) before writing
+  anything. A watcher recording during a restore adds no row after it.
+  Mutation checks: 15 of 16 caught, one equivalent. Checks clean as
+  user, race and root.
