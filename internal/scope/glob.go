@@ -55,7 +55,7 @@ func compile(pattern string) (*glob, error) {
 			case s == "." || s == "..":
 				return nil, fmt.Errorf("segment %q", s)
 			case s == "**":
-			case strings.Contains(s, "**"):
+			case bareDoubleStar(s):
 				return nil, fmt.Errorf("** must be a whole segment, not %q", s)
 			default:
 				// path.Match checks the whole pattern even when the name
@@ -68,6 +68,34 @@ func compile(pattern string) (*glob, error) {
 		g.alts = append(g.alts, segs)
 	}
 	return g, nil
+}
+
+// bareDoubleStar reports whether segment s holds two adjacent stars outside
+// a class, neither of them escaped. As written in a scope file: a** and
+// a\\** (an escaped backslash, then **) do; \** (an escaped star, then a
+// star), [**] and *a* do not.
+func bareDoubleStar(s string) bool {
+	inClass, star := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\\':
+			i++
+			star = false
+		case inClass:
+			inClass = c != ']'
+		case c == '[':
+			inClass, star = true, false
+		case c == '*':
+			if star {
+				return true
+			}
+			star = true
+		default:
+			star = false
+		}
+	}
+	return false
 }
 
 // expand returns every text the brace groups of p give, in order. Escaped

@@ -29,6 +29,11 @@ func TestGlobMatch(t *testing.T) {
 		{`/etc/a\*`, []string{"/etc/a*"}, []string{"/etc/ab", "/etc/a"}},
 		{`/etc/a\{b,c\}`, []string{"/etc/a{b,c}"}, []string{"/etc/ab"}},
 		{`/etc/a\\b`, []string{`/etc/a\b`}, []string{"/etc/ab"}},
+		// ** only counts bare (chunk C review D6).
+		{`/a/\**`, []string{"/a/*", "/a/*x"}, []string{"/a/x", "/a/b/c"}},
+		{`/a/[**]`, []string{"/a/*"}, []string{"/a/x", "/a/**"}},
+		{`/a/*\*`, []string{"/a/x*", "/a/*"}, []string{"/a/x"}},
+		{`/a/*b*`, []string{"/a/b", "/a/xbx"}, []string{"/a/x"}},
 		// Braces: several groups, an empty alternative, * and / inside.
 		{`/home/*/.ssh/authorized_keys{,2}`,
 			[]string{"/home/u/.ssh/authorized_keys", "/home/u/.ssh/authorized_keys2"},
@@ -79,6 +84,8 @@ func TestGlobErrors(t *testing.T) {
 		{`/etc/a\`, "syntax error in pattern"},
 		{`/etc/a**`, "** must be a whole segment"},
 		{`/etc/**b/c`, "** must be a whole segment"},
+		{`/etc/a\\**`, "** must be a whole segment"},
+		{`/etc/[a]**`, "** must be a whole segment"},
 		{`/etc//hosts`, "empty segment"},
 		{`/etc/`, "empty segment"},
 		{`/`, "empty segment"},
