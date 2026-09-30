@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 4** (chunk C): the scope glob language (`internal/scope`,
-`glob.go`). Chunk A is reviewed and closed. From now on one thing at a
+**Now: M2 step 5** (chunk C): the default scope, roots, tiers,
+fingerprint list and login homes (`scope.go`, `default.scope`,
+`homes.go`). Chunk A is reviewed and closed. From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -278,3 +279,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     be read by the new sc; the real store is migrated at sign-off S2, well
     before the M4 rescue path. Goes into the M2 known limits.
   - Checks clean as user, race and root; the new tests pass 20 of 20.
+- **M2 step 4** `7ba575b`: new package `internal/scope` with the glob language
+  of plan 7.2 (`**`, `*` with leading dots, classes, escapes, braces);
+  every pattern validated at compile time. Mutation checks: 14 of 14
+  caught, two after adding cases. Checks clean as user, race and root.
