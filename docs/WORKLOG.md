@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 10** (chunk B): prove `sc-m1` still works on a migrated
-store (`scripts/build-sc-m1.sh`, `TestM1Compat`, `make m1-compat`). From now on one thing at a
+**Now: chunk B review** (steps 6-10, normal review). Then chunk D,
+starting with M2 step 11 (inotify on the syscall package). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -342,3 +342,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   link targets in `cat` and `diff`, and the four restore lines of plan
   5.6. No command shows a fingerprint-only path's content. Mutation
   checks: 12 of 12 caught. Checks clean as user, race and root.
+- **M2 step 10** `d388381`: `make m1-compat` builds `sc-m1` from the `m1` tag
+  without touching the checkout and proves it still reads a migrated
+  store, restores file rows, refuses every new row kind with one line
+  and changes nothing. The test fails when pointed at the M2 binary, so
+  it tells them apart. Checks clean as user, race and root.
+- **Chunk B (steps 6-10) done**, waiting for its review.
