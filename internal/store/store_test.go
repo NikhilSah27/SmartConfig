@@ -485,17 +485,23 @@ func TestRestoreHoldsLockAcrossRename(t *testing.T) {
 	}
 }
 
-// If the file cannot be written, no restore row may be recorded.
+// If the file cannot be written, no restore row may be recorded. The
+// directory exists but forbids writes (as a normal user); a missing
+// directory is refused before anything is written, tested separately.
 func TestRestoreWriteFailureRecordsNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write into a 0500 directory")
+	}
 	s, dir := setup(t)
-	sub := filepath.Join(dir, "gone")
+	sub := filepath.Join(dir, "ro")
 	os.Mkdir(sub, 0o755)
 	p := filepath.Join(sub, "conf")
 	write(t, p, "x\n", 0o644)
 	c, _ := snap(t, s, p)
-	if err := os.RemoveAll(sub); err != nil {
+	if err := os.Chmod(sub, 0o500); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { os.Chmod(sub, 0o755) })
 	_, _, err := s.Restore(c.ID)
 	if err == nil || !strings.Contains(err.Error(), "restore "+p) {
 		t.Fatalf("got %v", err)
