@@ -5,10 +5,10 @@ package fsutil
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
 // MaxSize is the largest file SmartConfig will snapshot or restore.
@@ -62,16 +62,17 @@ func CheckRegular(path string, fi os.FileInfo) error {
 	return nil
 }
 
-// ReadWithMeta returns the contents of a regular file with its mode and owner.
+// ReadWithMeta returns the contents of a regular file with its mode and
+// owner. It is ReadState for regular files only: a symlink is refused.
 func ReadWithMeta(path string) ([]byte, Meta, error) {
-	fi, err := os.Lstat(path)
+	s, err := ReadState(path)
 	if err != nil {
-		return nil, Meta{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	if err := CheckRegular(path, fi); err != nil {
 		return nil, Meta{}, err
 	}
-	return readChecked(path, fi)
+	if s.Kind == "link" {
+		return nil, Meta{}, fmt.Errorf("%s is a symlink, refusing", path)
+	}
+	return s.Data, s.Meta, nil
 }
 
 // readChecked reads path only if it is still the file that lstat described as
@@ -79,31 +80,16 @@ func ReadWithMeta(path string) ([]byte, Meta, error) {
 // symlink (which would make root read whatever it points to) or by a FIFO
 // (which would block the read forever); both are refused.
 func readChecked(path string, want os.FileInfo) ([]byte, Meta, error) {
-	f, err := openNoFollow(path)
+	dfd, name, err := openParent(path)
 	if err != nil {
 		return nil, Meta{}, err
 	}
-	defer f.Close()
-	// Stat the open file so the metadata matches the bytes we read.
-	fi, err := f.Stat()
+	defer syscall.Close(dfd)
+	s, err := readFileAt(dfd, name, path, func(fi os.FileInfo) bool { return os.SameFile(want, fi) })
 	if err != nil {
-		return nil, Meta{}, fmt.Errorf("stat %s: %w", path, err)
-	}
-	if !os.SameFile(want, fi) {
-		return nil, Meta{}, fmt.Errorf("%s %w", path, ErrReplaced)
-	}
-	if err := CheckRegular(path, fi); err != nil {
 		return nil, Meta{}, err
 	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxSize+1))
-	if err != nil {
-		return nil, Meta{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	if len(data) > MaxSize {
-		return nil, Meta{}, fmt.Errorf("%s grew past the 8 MB limit while reading", path)
-	}
-	uid, gid := owner(fi)
-	return data, Meta{Mode: fi.Mode(), UID: uid, GID: gid, Stamp: stampOf(fi)}, nil
+	return s.Data, s.Meta, nil
 }
 
 // WriteAtomic replaces path with data: it writes a temp file in the same
