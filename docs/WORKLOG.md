@@ -28,9 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 5** (chunk C): the default scope, roots, tiers,
-fingerprint list and login homes (`scope.go`, `default.scope`,
-`homes.go`). Chunk A is reviewed and closed. From now on one thing at a
+**Now: chunk C review** (steps 4-5, light), after you have seen the
+table of what gets watched on this VM. Then chunk B, starting with M2
+step 6 (fsutil: read files and symlinks with a stamp). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -283,3 +283,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   of plan 7.2 (`**`, `*` with leading dots, classes, escapes, braces);
   every pattern validated at compile time. Mutation checks: 14 of 14
   caught, two after adding cases. Checks clean as user, race and root.
+- **M2 step 5** `b5ad961`: the default scope (plan 7.3, embedded), `Recorded`,
+  `Tier`, `FingerprintOnly`, login homes. Against this VM's real `/etc`
+  and `/boot/grub` (read-only listing): 323 watched directories, 1,143
+  files, 234 links, tiers 342/119/66/850, fingerprint-only exactly
+  machine-id and the three host keys; the same as the plan's prototype.
+  Mutation checks: 24 of 24 caught. Checks clean as user, race and root.
