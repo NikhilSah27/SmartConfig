@@ -60,7 +60,6 @@ exclude /etc/security/opasswd
 # F. Generated files and runtime state.
 exclude /etc/ld.so.cache
 exclude /etc/ssl/certs/**
-exclude /etc/alternatives/**
 exclude /etc/rc?.d/**
 exclude /etc/console-setup/cached_*
 exclude /etc/xml/**
@@ -81,15 +80,15 @@ exclude /etc/{.git,.hg,.bzr,_darcs}/**
 exclude /etc/.etckeeper
 
 # G. Secrets with no rescue value.
-exclude /etc/{ssl/private,credstore,credstore.encrypted}/**
 exclude /etc/brlapi.key
 exclude /etc/cloud/cloud.cfg.d/99-installer.cfg
-exclude /etc/ppp/*-secrets
 
 # H. Fingerprint, mode and owner only; content is never stored, shown or
 #    restored.
 digest /etc/ssh/ssh_host_*_key
 digest /etc/machine-id
+digest /etc/{ssl/private,credstore,credstore.encrypted}/**
+digest /etc/ppp/*-secrets
 
 # I. Tiers: only how loudly scd logs a change (1 boot, 2 access, 3 network).
 tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id}
@@ -112,7 +111,10 @@ tier 2 /etc/systemd/logind.conf
 tier 2 /etc/systemd/{logind.conf.d,user}/**
 tier 2 /etc/systemd/{system-environment-generators,user-generators,user-environment-generators,system-preset}/**
 tier 2 **/.ssh/authorized_keys{,2}
+tier 2 /etc/{ssl/private,credstore,credstore.encrypted}/**
+tier 2 /etc/ppp/*-secrets
 tier 3 /etc/{resolv.conf,hosts,nftables.conf,ca-certificates.conf,ssl/openssl.cnf,default/ufw}
 tier 3 /etc/{netplan,NetworkManager,network,ufw,iptables,apt,dpkg}/**
 tier 3 /etc/systemd/resolved.conf
 tier 3 /etc/systemd/{resolved.conf.d,network}/**
+tier 3 /etc/alternatives/{iptables,ip6tables,arptables,ebtables}{,-save,-restore}

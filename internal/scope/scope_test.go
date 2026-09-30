@@ -130,6 +130,10 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/root/.ssh/authorized_keys", "/home/u/.ssh/authorized_keys", "/home/u/.ssh/authorized_keys2",
 		"/etc/ssh/ssh_host_ed25519_key", "/etc/machine-id",
 		"/etc", "/etc/fstab", "/etc/hosts", "/etc/ssh/sshd_config",
+		// Recorded since 2026-09-30 (plan Appendix C): alternatives links,
+		// and private keys and secrets as fingerprints.
+		"/etc/alternatives/iptables", "/etc/alternatives/editor",
+		"/etc/ssl/private/ssl-cert-snakeoil.key", "/etc/ppp/chap-secrets", "/etc/credstore/k",
 	}
 	excluded := []string{
 		"/etc/grub.d/10_linux.dpkg-new", "/etc/grub.d/10_linux.dpkg-old", "/etc/grub.d/10_linux~",
@@ -146,8 +150,8 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/home/u/.ssh/id_ed25519", "/home/u/.ssh/known_hosts", "/root/.ssh/id_ed25519",
 		"/etc/tmpxdvph4n_/resolv.conf", "/etc/dconf/db/ibus",
 		"/etc/systemd/system/snap-firefox-1.mount", "/etc/udev/rules.d/70-snap.firefox.rules",
-		"/etc/ld.so.cache", "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/private/ssl-cert-snakeoil.key",
-		"/etc/alternatives/editor", "/etc/.git/config",
+		"/etc/ld.so.cache", "/etc/ssl/certs/ca-certificates.crt", "/etc/security/opasswd",
+		"/etc/brlapi.key", "/etc/.git/config",
 		"/var/log/syslog", "/var/lib/smartconfig/changes.db", "/boot/vmlinuz", "/home/u/.bashrc",
 	}
 	for _, p := range kept {
@@ -224,6 +228,14 @@ func TestTierAndFingerprint(t *testing.T) {
 		{"/etc/ssh/ssh_config", 4, false},
 		{"/etc/logrotate.d/rsyslog", 4, false},
 		{"/etc/ssh/ssh_host_new_key", 2, true},
+		{"/etc/ssl/private/ssl-cert-snakeoil.key", 2, true},
+		{"/etc/credstore.encrypted/db.cred", 2, true},
+		{"/etc/ppp/pap-secrets", 2, true},
+		{"/etc/ppp/options", 4, false},
+		{"/etc/alternatives/iptables", 3, false},
+		{"/etc/alternatives/ip6tables-restore", 3, false},
+		{"/etc/alternatives/ebtables-save", 3, false},
+		{"/etc/alternatives/editor", 4, false},
 	} {
 		if got := s.Tier(c.path); got != c.tier {
 			t.Errorf("Tier(%s) = %d, want %d", c.path, got, c.tier)
@@ -334,13 +346,16 @@ func TestDefaultScopeRealListing(t *testing.T) {
 	for _, p := range unexpected {
 		t.Errorf("tier 1-2 path excluded: %s", p)
 	}
-	// This VM had 1,377 (plan 7.4, without the two authorized_keys); the
-	// range allows for package changes, not for a rule gone wrong.
+	// This VM had 1,377 (plan 7.4, without the two authorized_keys), and
+	// 1,527 with the alternatives and secrets of Appendix C; the range
+	// allows for package changes, not for a rule gone wrong.
 	if kept := files + links; kept < 1000 || kept > 2500 {
 		t.Errorf("%d files and links recorded, want 1000 to 2500", kept)
 	}
 	for _, p := range digests {
-		if p != "/etc/machine-id" && !strings.HasPrefix(p, "/etc/ssh/ssh_host_") {
+		if p != "/etc/machine-id" && !strings.HasPrefix(p, "/etc/ssh/ssh_host_") &&
+			!strings.HasPrefix(p, "/etc/ssl/private/") && !strings.HasPrefix(p, "/etc/credstore") &&
+			!strings.HasPrefix(p, "/etc/ppp/") {
 			t.Errorf("unexpected fingerprint-only path %s", p)
 		}
 	}
