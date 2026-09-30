@@ -85,7 +85,9 @@ exclude /etc/cloud/cloud.cfg.d/99-installer.cfg
 
 # H. Fingerprint, mode and owner only; content is never stored, shown or
 #    restored.
-digest /etc/ssh/ssh_host_*_key
+# ssh-keygen -A writes each private key to NAME.XXXXXXXXXX (10 random
+# characters) and renames it; ssh_host_key is the old protocol 1 name.
+digest /etc/ssh/ssh_host_{*_key,key}{,.??????????}
 digest /etc/machine-id
 digest /etc/{ssl/private,credstore,credstore.encrypted}/**
 digest /etc/ppp/*-secrets
@@ -105,7 +107,8 @@ tier 1 /etc/apparmor/parser.conf
 tier 2 /etc/{sudoers,sudo.conf,passwd,group,shadow,gshadow,nsswitch.conf,login.defs,shells}
 tier 2 /etc/{environment,profile,bash.bashrc,nologin,hosts.allow,hosts.deny}
 tier 2 /etc/{sudoers.d,pam.d,security,profile.d,polkit-1,gdm3,ssh/sshd_config.d}/**
-tier 2 /etc/ssh/{sshd_config,sshd_not_to_be_run,ssh_host_*_key}
+tier 2 /etc/ssh/{sshd_config,sshd_not_to_be_run}
+tier 2 /etc/ssh/ssh_host_{*_key,key}{,.??????????}
 tier 2 /etc/default/{ssh,keyboard,console-setup}
 tier 2 /etc/systemd/logind.conf
 tier 2 /etc/systemd/{logind.conf.d,user}/**

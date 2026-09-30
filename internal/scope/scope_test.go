@@ -219,6 +219,13 @@ func TestTierAndFingerprint(t *testing.T) {
 		{"/etc/ssh/ssh_host_ed25519_key", 2, true},
 		{"/etc/ssh/ssh_host_ecdsa_key", 2, true},
 		{"/etc/ssh/ssh_host_rsa_key.pub", 4, false},
+		// ssh-keygen -A's temp names (OpenSSH 9.6: "%s%s.XXXXXXXXXX") and
+		// the protocol 1 key.
+		{"/etc/ssh/ssh_host_ed25519_key.AbCdEfGhIj", 2, true},
+		{"/etc/ssh/ssh_host_key", 2, true},
+		{"/etc/ssh/ssh_host_key.AbCdEfGhIj", 2, true},
+		{"/etc/ssh/ssh_host_rsa_key.pub.AbCdEfGhIj", 4, false},
+		{"/etc/ssh/ssh_host_rsa_key.AbCdEfGhI", 4, false},
 		{"/home/u/.ssh/authorized_keys", 2, false},
 		{"/etc/hosts", 3, false},
 		{"/etc/resolv.conf", 3, false},
