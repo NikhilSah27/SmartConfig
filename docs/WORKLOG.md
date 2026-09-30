@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 7** (chunk B): the store records files, links, deletions
-and fingerprints (`record.go`). Chunks A and C are reviewed and closed. From now on one thing at a
+**Now: M2 step 8** (chunk B): restore of links and deletions; refusals
+for fingerprint paths and unsafe directories (`restore.go`). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -322,3 +322,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   15 of 15 caught; the new tests found a trailing-slash bug while the
   step was written. Checks clean as user, race and root; builds for
   arm64 too. Plan note C10 (API reuse).
+- **M2 step 7** `5e9bb25`: rows have kinds (file, link, digest, deleted);
+  `Record` batches up to 50 observations with dedup, stamp re-check under
+  the lock, proof-of-absence rows and computed intents; `Snapshot` is
+  built on it, so `sc snapshot` records symlinks as links and
+  fingerprint-only paths as digests. A writer killed mid-transaction
+  after a cache spill leaves only committed rows. Mutation checks: 19 of
+  20 caught, one equivalent. Checks clean as user, race and root. Plan
+  note C11 (computed intents only for watcher rows).
