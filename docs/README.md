@@ -3,7 +3,8 @@
 What we are doing right now and what is done: [WORKLOG.md](WORKLOG.md).
 Progress at a glance, with charts: [visuals/progress.html](visuals/progress.html).
 What comes next and in what order: [NEXT_STEPS.md](NEXT_STEPS.md).
-The M2 plan (waiting for approval): [M2_PLAN.md](M2_PLAN.md). Reviews: [reviews/](reviews/).
+The M2 plan (approved 2026-09-28; later changes in its Appendix C): [M2_PLAN.md](M2_PLAN.md). Reviews: [reviews/](reviews/).
+How we got here, the path we chose and why, and where we left the plan: [JOURNEY.md](JOURNEY.md).
 
 For the history of the project, its decisions, and a recovery guide, see
 [PROJECT_LOG.md](PROJECT_LOG.md).

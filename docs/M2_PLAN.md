@@ -1711,3 +1711,19 @@ journalctl -u systemd-journald --since "@<epoch>" -> accepted (systemd 255)
 
 - **`debug.SetTraceback("none")` in `sc watch`:** not used. It cannot lower the traceback level below Go's default (S16). The unit sets `Environment=GOTRACEBACK=none` instead, which the critic offered as the alternative.
 - **"No stack traces reach the user" for every fatal error:** not fully achievable. A Go stack overflow dumps in full even with `GOTRACEBACK=none` (S16), so goal 7 and section 14 state this as a known limit instead.
+
+## Appendix C. Changes after approval
+
+The plan above is the text approved on 2026-09-28. Every later change is
+listed here, with the date, the reason and where it shows. Nothing else in
+the plan has changed.
+
+| # | Date | What changed | Why | Where |
+|---|---|---|---|---|
+| C1 | 2026-09-29 | The overnight run was to do steps 1-16 unattended. It stopped part way through step 3 and wrote no reason in WORKLOG; the uncommitted step 3 code was found, reviewed and finished interactively on 2026-09-30. | Unknown (the run left no note). | WORKLOG 2026-09-30 |
+| C2 | 2026-09-30 | Chunk reviews no longer overlap the next chunk (10.3 allowed it for chunks A-C). Strictly one thing at a time: step, checks, push, then the next. | Your call: "we should go 1 step after another". | WORKLOG "Now" |
+| C3 | 2026-09-30 | The light review of chunk A used one reviewer agent, with Claude as the skeptic reproducing each finding, instead of a multi-agent workflow. | A light review; one step at a time; far fewer tokens. The method (run the code, try to break it, confirm before fixing) is unchanged. | reviews/2026-09-30-m2-chunk-a.md |
+| C4 | 2026-09-30 | Step 3's M1 backup (5.1) is read through SQLite (`sqlite3_serialize`), not by copying `changes.db`; the backup's name must hold a regular file or nothing. Store tests about locking run in separate processes. | Review finding D1 (high): closing a second descriptor on the database dropped the process's locks, so concurrent first opens failed or corrupted an index. D3 (low): a symlink there skipped the backup. | `ee0ddea`, `397877a`, `b3d3f8e` |
+| C5 | 2026-09-30 | New known limit: a never-migrated M1 store on a read-only disk cannot be read by the M2 `sc`. | Review finding D2, accepted: the real store is migrated at sign-off S2, long before M4's read-only rescue path. | M2 known limits (step 17) |
+| C6 | 2026-09-30 | The built-in `exclude $SC_HOME/**` (7.1) is a path-prefix check, not a glob, and comes before every rule. The API is `Parse`, `Default`, `With(scHome, sshRoots)`, `Recorded`, `Tier`, `FingerprintOnly`, `Roots`, `LoginHomes`. | A data directory name may hold glob characters (`[`, `*`); a prefix check cannot misread it. | `b5ad961` |
+| C7 | 2026-09-30 | Default scope (7.3): `/etc/alternatives/**` is recorded (the iptables, ip6tables, arptables and ebtables families at tier 3, the rest tier 4); `/etc/ssl/private/**`, `/etc/credstore*/**` and `/etc/ppp/*-secrets` move from excluded to fingerprint-only at tier 2. On this VM: 327 directories, 1,147 files, 380 links (7.4 said 325, 1,145, 234 with the .ssh roots). | Your call after reviewing the excluded list: an iptables legacy/nft switch was invisible, and a replaced or deleted private key went unseen. Secrets are still never stored. | `78b8cc7` |

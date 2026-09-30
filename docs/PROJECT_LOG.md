@@ -16,6 +16,7 @@ Last updated: 2026-09-28, M1 tagged `m1` after four review rounds and five round
 | Live docs site | https://nikhilsah27.github.io/SmartConfig/ (GitHub Pages, serves `docs/`) |
 | Project rules | [CLAUDE.md](../CLAUDE.md), read first, every time |
 | Milestone status | [MILESTONES.md](../MILESTONES.md) |
+| The story so far, choices and deviations | [JOURNEY.md](JOURNEY.md) |
 | Visual explainers | [docs/README.md](README.md) (system map, narrated films) |
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |

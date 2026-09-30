@@ -289,3 +289,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   files, 234 links, tiers 342/119/66/850, fingerprint-only exactly
   machine-id and the three host keys; the same as the plan's prototype.
   Mutation checks: 24 of 24 caught. Checks clean as user, race and root.
+- **Scope change** `78b8cc7`, your call after reviewing the excluded list:
+  `/etc/alternatives` recorded (firewall families at tier 3), TLS private
+  keys, credstore and PPP secrets fingerprint-only at tier 2. On this VM:
+  327 directories, 1,147 files, 380 links. The new tests fail 14 times on
+  the old scope.
+- **Journey and deviations recorded:** [JOURNEY.md](JOURNEY.md) tells how
+  the project started, the path chosen and why; M2_PLAN.md Appendix C lists
+  every change since the plan was approved (C1-C7).
