@@ -132,6 +132,13 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/etc", "/etc/fstab", "/etc/hosts", "/etc/ssh/sshd_config",
 		// Recorded since 2026-09-30 (plan Appendix C): alternatives links,
 		// and private keys and secrets as fingerprints.
+		// Consumers that run names the noise rules would hide (chunk C
+		// review D2): systemd generators and run-parts directories.
+		"/etc/systemd/system-generators/foo.disabled", "/etc/systemd/system-generators/foo.orig",
+		"/etc/systemd/system-generators/foo.tmp", "/etc/systemd/system-generators/sedAbC123",
+		"/etc/systemd/user-environment-generators/x.distUpgrade",
+		"/etc/network/if-up.d/sedAbC123", "/etc/update-motd.d/XXabcdef", "/etc/cron.yearly/sedAbC123",
+		"/etc/ppp/ip-up.d/XXab12cd", "/etc/dhcp/dhclient-exit-hooks.d/sedAbC123",
 		"/etc/alternatives/iptables", "/etc/alternatives/editor",
 		"/etc/ssl/private/ssl-cert-snakeoil.key", "/etc/ppp/chap-secrets", "/etc/credstore/k",
 	}
@@ -152,6 +159,11 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/etc/systemd/system/snap-firefox-1.mount", "/etc/udev/rules.d/70-snap.firefox.rules",
 		"/etc/ld.so.cache", "/etc/ssl/certs/ca-certificates.crt", "/etc/security/opasswd",
 		"/etc/brlapi.key", "/etc/.git/config",
+		"/etc/systemd/system-generators/foo.bak", "/etc/systemd/system-generators/foo.dpkg-new",
+		"/etc/systemd/system-generators/foo~", "/etc/systemd/system-generators/.hidden",
+		"/etc/systemd/system-generators/foo.rpmsave", "/etc/systemd/user-generators/foo.new",
+		"/etc/network/if-up.d/x.dpkg-old", "/etc/update-motd.d/10-x~", "/etc/cron.yearly/x.ucf-dist",
+		"/etc/sedAbC123/x", "/etc/.goutputstream-ABC123",
 		"/var/log/syslog", "/var/lib/smartconfig/changes.db", "/boot/vmlinuz", "/home/u/.bashrc",
 	}
 	for _, p := range kept {

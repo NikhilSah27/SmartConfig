@@ -36,6 +36,13 @@ exclude /etc/apparmor.d/**/*.dpkg-{new,old,dist,bak,remove}
 exclude /etc/apparmor.d/**/{*~,*.orig,*.rej}
 exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
 exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/{*.ucf-new,*.ucf-old,*.ucf-dist,*~}
+# systemd runs every generator except hidden and backup names
+# (hidden_or_backup_file in systemd 255).
+exclude /etc/systemd/{system-generators,user-generators,system-environment-generators,user-environment-generators}/**/{.*,*~,*.rpmnew,*.rpmsave,*.rpmorig,*.ucf-new,*.ucf-old,*.ucf-dist,*.swp,*.bak,*.old,*.new}
+exclude /etc/systemd/{system-generators,user-generators,system-environment-generators,user-environment-generators}/**/*.dpkg-{old,new,tmp,dist,bak,backup,remove}
+# More run-parts directories (run-parts runs only [A-Za-z0-9_-] names).
+exclude /etc/{network/if-*.d,ppp/ip-*.d,ppp/ipv6-*.d,update-motd.d,dhcp/dhclient-*-hooks.d,X11/Xsession.d,cron.yearly}/**/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
+exclude /etc/{network/if-*.d,ppp/ip-*.d,ppp/ipv6-*.d,update-motd.d,dhcp/dhclient-*-hooks.d,X11/Xsession.d,cron.yearly}/**/{*.ucf-new,*.ucf-old,*.ucf-dist,*~}
 
 # D. Consumers that run or parse names the noise rules below would hide
 #    (backup suffixes, sed/mktemp names): record everything else there.
@@ -43,6 +50,8 @@ include /etc/{grub.d,initramfs-tools,apparmor.d}/**
 include /etc/{sudoers.d,apt/apt.conf.d,kernel,logrotate.d,NetworkManager/dispatcher.d}/**
 include /etc/cron.{d,hourly,daily,weekly,monthly}/**
 include /etc/dconf/db/*.d/**
+include /etc/systemd/{system-generators,user-generators,system-environment-generators,user-environment-generators}/**
+include /etc/{network/if-*.d,ppp/ip-*.d,ppp/ipv6-*.d,update-motd.d,dhcp/dhclient-*-hooks.d,X11/Xsession.d,cron.yearly}/**
 
 # E. Editor, package and tool staging names and backups (noise filter only;
 #    the "still there after the quiet period" rule is the real temp guard).
