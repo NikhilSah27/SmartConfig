@@ -111,20 +111,30 @@ func cleanAbs(p string) bool {
 
 // With returns a copy of s for one machine: each of sshRoots (the usable
 // login .ssh directories) becomes a root, and nothing under scHome, sc's
-// own data directory, is ever recorded. Paths that are not clean absolute
-// directories are ignored.
+// own data directory, is ever recorded. Both are cleaned ("/var/sc/"
+// excludes /var/sc); relative paths and "/" are ignored, so the caller
+// passes absolute ones.
 func (s *Scope) With(scHome string, sshRoots []string) *Scope {
 	c := &Scope{rules: s.rules, scHome: s.scHome}
 	c.roots = append(c.roots, s.roots...)
 	for _, r := range sshRoots {
-		if cleanAbs(r) && r != "/" && !contains(c.roots, r) {
+		if r, ok := clean(r); ok && r != "/" && !contains(c.roots, r) {
 			c.roots = append(c.roots, r)
 		}
 	}
-	if cleanAbs(scHome) {
-		c.scHome = scHome
+	if h, ok := clean(scHome); ok && h != "/" {
+		c.scHome = h
 	}
 	return c
+}
+
+// clean returns the clean form of an absolute path, and false for a
+// relative one.
+func clean(p string) (string, bool) {
+	if !strings.HasPrefix(p, "/") {
+		return "", false
+	}
+	return path.Clean(p), true
 }
 
 func contains(list []string, s string) bool {
@@ -196,8 +206,9 @@ func (s *Scope) self(p string) (bool, int) {
 }
 
 // Tier returns how loudly a change of p is logged: the first matching tier
-// line, else 4 (1 boot, 2 access, 3 network).
+// line, else 4 (1 boot, 2 access, 3 network). p is cleaned first.
 func (s *Scope) Tier(p string) int {
+	p, _ = clean(p)
 	for _, r := range s.rules {
 		if r.verb == "tier" && r.g.match(p) {
 			return r.tier
@@ -210,7 +221,15 @@ func (s *Scope) Tier(p string) int {
 // stored: its content is never stored, shown or restored. It holds for any
 // matching digest line, whether or not p is recorded, so every writer
 // (scd, sc snapshot, a restore's pre-restore row) obeys it.
+//
+// p is cleaned first, so "/etc/ssh//ssh_host_rsa_key" is caught too. A
+// relative p gets true: a caller that passes one has a bug, and a
+// fingerprint is the answer that cannot leak a secret.
 func (s *Scope) FingerprintOnly(p string) bool {
+	p, ok := clean(p)
+	if !ok {
+		return true
+	}
 	for _, r := range s.rules {
 		if r.verb == "digest" && r.g.match(p) {
 			return true

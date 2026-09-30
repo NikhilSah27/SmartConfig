@@ -281,6 +281,37 @@ func TestTierAndFingerprint(t *testing.T) {
 	}
 }
 
+// Paths are cleaned where a wrong answer would store sc's own data or a
+// secret (chunk C review D4, D5). Recorded itself takes only clean paths.
+func TestUncleanPaths(t *testing.T) {
+	for _, h := range []string{"/etc/sc/", "/etc//sc", "/etc/x/../sc"} {
+		if Default().With(h, nil).Recorded("/etc/sc/changes.db") {
+			t.Errorf("With(%q): sc's data recorded", h)
+		}
+	}
+	for _, h := range []string{"etc/sc", "", "/"} {
+		if got := Default().With(h, nil).scHome; got != "" {
+			t.Errorf("With(%q) excludes %q", h, got)
+		}
+	}
+	if got := strings.Join(Default().With("", []string{"/home/u/.ssh/", "/home/u//.ssh"}).Roots(), " "); got != "/etc /boot/grub /home/u/.ssh" {
+		t.Errorf("roots %q", got)
+	}
+	s := machine()
+	for _, p := range []string{"/etc/ssh//ssh_host_rsa_key", "/etc/ssh/./ssh_host_rsa_key", "/etc/x/../ssh/ssh_host_rsa_key",
+		"etc/ssh/ssh_host_rsa_key", "relative", ""} {
+		if !s.FingerprintOnly(p) {
+			t.Errorf("FingerprintOnly(%q) = false", p)
+		}
+	}
+	if s.FingerprintOnly("/etc//hosts") {
+		t.Error("FingerprintOnly(/etc//hosts)")
+	}
+	if got := s.Tier("/etc//fstab"); got != 1 {
+		t.Errorf("Tier(/etc//fstab) = %d", got)
+	}
+}
+
 // Fingerprint-only holds even where nothing is recorded, so a manual
 // snapshot of such a path is a fingerprint too.
 func TestFingerprintOnlyOutsideRecordedScope(t *testing.T) {
