@@ -1,0 +1,118 @@
+# SmartConfig default scope (M2), built into sc.
+# Lines: root DIR | include GLOB | exclude GLOB | digest GLOB | tier N GLOB
+# include/exclude: the FIRST matching line wins; no match = included.
+# Only paths under a root are recorded. A root itself is never excluded.
+# An excluded directory is not watched. digest: any match.
+# tier: first match, else 4.
+# Built in, not written here: root <home>/.ssh for each login account,
+# and exclude $SC_HOME/**.
+
+root /etc
+root /boot/grub
+
+# A. Never recorded anywhere: sc's own temp files, editor swap, lock and
+#    probe files (they can hold a copy of a secret file's buffer).
+exclude **/.*.sc-tmp-*
+exclude **/.*.sw[a-p]
+exclude **/.*.{swx,swpx}
+exclude **/.#*
+exclude **/#*#
+exclude **/{4913,DEADJOE}
+exclude **/.goutputstream-*
+
+# B. /boot/grub: only the two files GRUB reads.
+include /boot/grub/{grub.cfg,custom.cfg}
+exclude /boot/grub/**
+
+# C. <home>/.ssh roots: only the files sshd reads.
+include **/.ssh/authorized_keys{,2}
+exclude **/.ssh/*
+
+# D0. Names inside the block D directories that their consumer skips
+#     itself (checked on this VM). dpkg leaves each conffile of a package
+#     being upgraded as NAME.dpkg-new until it is configured.
+exclude /etc/grub.d/**/{*.dpkg-*,*~}
+exclude /etc/apparmor.d/**/*.dpkg-{new,old,dist,bak,remove}
+exclude /etc/apparmor.d/**/{*~,*.orig,*.rej}
+exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
+exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/{*.ucf-new,*.ucf-old,*.ucf-dist,*~}
+
+# D. Consumers that run or parse names the noise rules below would hide
+#    (backup suffixes, sed/mktemp names): record everything else there.
+include /etc/{grub.d,initramfs-tools,apparmor.d}/**
+include /etc/{sudoers.d,apt/apt.conf.d,kernel,logrotate.d,NetworkManager/dispatcher.d}/**
+include /etc/cron.{d,hourly,daily,weekly,monthly}/**
+include /etc/dconf/db/*.d/**
+
+# E. Editor, package and tool staging names and backups (noise filter only;
+#    the "still there after the quiet period" rule is the real temp guard).
+exclude **/*~
+exclude **/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
+exclude **/*.{ucf-new,ucf-old,ucf-dist,merge-error}
+exclude **/*.pam-{new,old}
+exclude **/{sed??????,XX??????,*.tmp}
+exclude **/*.{old,orig,bak,save,rej,distUpgrade,disabled}
+exclude /etc/{passwd,shadow,group,gshadow,subuid,subgid}{.lock,+,-,.edit}
+exclude /etc/{passwd,shadow,group,gshadow,subuid,subgid}.[0-9]*
+exclude /etc/{nshadow,npasswd,.pwd.lock,.pwd??????}
+exclude /etc/security/opasswd
+
+# F. Generated files and runtime state.
+exclude /etc/ld.so.cache
+exclude /etc/ssl/certs/**
+exclude /etc/alternatives/**
+exclude /etc/rc?.d/**
+exclude /etc/console-setup/cached_*
+exclude /etc/xml/**
+exclude /etc/dconf/db/*
+exclude /etc/systemd/system/snap{-,.}*
+exclude /etc/systemd/system/*.wants/snap{-,.}*
+exclude /etc/systemd/system/snapd.mounts.target.wants/**
+exclude /etc/systemd/user/snap.*
+exclude /etc/udev/rules.d/70-snap.*.rules
+exclude /etc/cups/{printers,classes,subscriptions}.conf*
+exclude /etc/cups/ssl/**
+exclude /etc/cups/*.O
+exclude /etc/{printcap,mtab,.updated,adjtime}
+exclude /etc/brltty/**
+exclude /etc/apt/preferences.d.save/**
+exclude /etc/tmp[a-z0-9_][a-z0-9_][a-z0-9_][a-z0-9_][a-z0-9_][a-z0-9_][a-z0-9_][a-z0-9_]/**
+exclude /etc/{.git,.hg,.bzr,_darcs}/**
+exclude /etc/.etckeeper
+
+# G. Secrets with no rescue value.
+exclude /etc/{ssl/private,credstore,credstore.encrypted}/**
+exclude /etc/brlapi.key
+exclude /etc/cloud/cloud.cfg.d/99-installer.cfg
+exclude /etc/ppp/*-secrets
+
+# H. Fingerprint, mode and owner only; content is never stored, shown or
+#    restored.
+digest /etc/ssh/ssh_host_*_key
+digest /etc/machine-id
+
+# I. Tiers: only how loudly scd logs a change (1 boot, 2 access, 3 network).
+tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id}
+tier 1 /etc/{fstab.d,default/grub.d,grub.d,initramfs-tools,modprobe.d,modules-load.d,depmod.d}/**
+tier 1 /etc/{sysctl.d,tmpfiles.d,ld.so.conf.d,kernel,dbus-1}/**
+tier 1 /etc/default/grub
+tier 1 /boot/grub/{grub.cfg,custom.cfg}
+tier 1 /etc/systemd/{system,system.control,system.attached,system-generators,system.conf.d}/**
+tier 1 /etc/systemd/system.conf
+tier 1 /etc/udev/rules.d/**
+tier 1 /etc/udev/udev.conf
+tier 1 /etc/apparmor.d/{tunables,abstractions,abi}/**
+tier 1 /etc/apparmor/parser.conf
+tier 2 /etc/{sudoers,sudo.conf,passwd,group,shadow,gshadow,nsswitch.conf,login.defs,shells}
+tier 2 /etc/{environment,profile,bash.bashrc,nologin,hosts.allow,hosts.deny}
+tier 2 /etc/{sudoers.d,pam.d,security,profile.d,polkit-1,gdm3,ssh/sshd_config.d}/**
+tier 2 /etc/ssh/{sshd_config,sshd_not_to_be_run,ssh_host_*_key}
+tier 2 /etc/default/{ssh,keyboard,console-setup}
+tier 2 /etc/systemd/logind.conf
+tier 2 /etc/systemd/{logind.conf.d,user}/**
+tier 2 /etc/systemd/{system-environment-generators,user-generators,user-environment-generators,system-preset}/**
+tier 2 **/.ssh/authorized_keys{,2}
+tier 3 /etc/{resolv.conf,hosts,nftables.conf,ca-certificates.conf,ssl/openssl.cnf,default/ufw}
+tier 3 /etc/{netplan,NetworkManager,network,ufw,iptables,apt,dpkg}/**
+tier 3 /etc/systemd/resolved.conf
+tier 3 /etc/systemd/{resolved.conf.d,network}/**
