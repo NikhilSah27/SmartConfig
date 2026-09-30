@@ -19,7 +19,7 @@ func newCatCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := s.Blob(c.Blob)
+			data, err := rowContent(s, c)
 			if err != nil {
 				return err
 			}

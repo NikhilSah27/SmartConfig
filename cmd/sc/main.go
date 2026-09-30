@@ -174,5 +174,39 @@ func newRoot() *cobra.Command {
 }
 
 func openStore() (*store.Store, error) {
-	return store.Open(store.Home())
+	s, err := store.Open(store.Home())
+	if err == nil && testHookOpenStore != nil {
+		testHookOpenStore(s)
+	}
+	return s, err
+}
+
+// testHookOpenStore, if set by a test, runs on every store a command opens
+// (to set the fingerprint rule, say).
+var testHookOpenStore func(*store.Store)
+
+// rowContent returns what a row shows as text: a file's content, or a
+// link's target on one line. A fingerprint-only path, a deletion and a
+// digest row have none, and each says why in one line.
+func rowContent(s *store.Store, c store.Change) ([]byte, error) {
+	if s.FingerprintOnly(c.Path) {
+		return nil, fmt.Errorf("%s is fingerprint-only; sc never shows its content", c.Path)
+	}
+	switch c.Kind {
+	case store.KindLink:
+		return []byte(c.Target + "\n"), nil
+	case store.KindDeleted:
+		return nil, fmt.Errorf("%s records that %s %s", c.ID, c.Path, absence(c))
+	case store.KindDigest:
+		return nil, fmt.Errorf("%s keeps only a fingerprint of %s, not its content", c.ID, c.Path)
+	}
+	return s.Blob(c.Blob)
+}
+
+// absence says how a deleted row came about.
+func absence(c store.Change) string {
+	if strings.HasPrefix(c.Intent, "did not exist") {
+		return "did not exist"
+	}
+	return "was deleted"
 }

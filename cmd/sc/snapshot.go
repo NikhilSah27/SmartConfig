@@ -32,6 +32,10 @@ func newSnapshotCmd() *cobra.Command {
 				fmt.Fprintln(out, c.ID)
 			case unchanged:
 				fmt.Fprintf(out, "unchanged since %s\n", c.ID)
+			case c.Kind == store.KindLink:
+				fmt.Fprintf(out, "snapshot %s  %s  (link -> %s)\n", c.ID, c.Path, c.Target)
+			case c.Kind == store.KindDigest:
+				fmt.Fprintf(out, "snapshot %s  %s  (fingerprint only)\n", c.ID, c.Path)
 			default:
 				fmt.Fprintf(out, "snapshot %s  %s  (%d bytes)\n", c.ID, c.Path, c.Size)
 			}

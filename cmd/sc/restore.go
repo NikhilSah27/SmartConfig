@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
+
+	"smartconfig/internal/store"
 )
 
 func newRestoreCmd() *cobra.Command {
@@ -29,12 +31,25 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			out := cmd.OutOrStdout()
+			if c.ID == "" {
+				fmt.Fprintf(out, "nothing to do: %s is already absent, as in %s\n", src.Path, src.ID)
+				return nil
+			}
 			saved := "no previous file existed"
 			if prev != nil {
 				saved = "previous state saved as " + prev.ID
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "restored %s from %s (mode %s %s:%s), %s\n",
-				c.Path, src.ID, octalMode(c.Mode), userName(c.UID), groupName(c.GID), saved)
+			switch c.Kind {
+			case store.KindLink:
+				fmt.Fprintf(out, "restored %s from %s (link -> %s, owner %s:%s), %s\n",
+					c.Path, src.ID, c.Target, userName(c.UID), groupName(c.GID), saved)
+			case store.KindDeleted:
+				fmt.Fprintf(out, "removed %s to match %s (%s), %s\n", c.Path, src.ID, absenceWord(src), saved)
+			default:
+				fmt.Fprintf(out, "restored %s from %s (mode %s %s:%s), %s\n",
+					c.Path, src.ID, octalMode(c.Mode), userName(c.UID), groupName(c.GID), saved)
+			}
 			return nil
 		},
 	}
@@ -67,4 +82,12 @@ func groupName(gid int) string {
 		return g.Name
 	}
 	return strconv.Itoa(gid)
+}
+
+// absenceWord is "did not exist" or "deleted", for the removal line.
+func absenceWord(c store.Change) string {
+	if absence(c) == "did not exist" {
+		return "did not exist"
+	}
+	return "deleted"
 }

@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"smartconfig/internal/store"
 )
 
 func newLogCmd() *cobra.Command {
@@ -36,9 +39,13 @@ func newLogCmd() *cobra.Command {
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "ID\tWHEN\tORIGIN\tFILE\tSIZE\tWHAT")
 			for _, c := range cs {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n", c.ID,
+				size := strconv.FormatInt(c.Size, 10)
+				if c.Kind != store.KindFile {
+					size = c.Kind // link, deleted or digest
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", c.ID,
 					time.Unix(c.TS, 0).Local().Format("2006-01-02 15:04"),
-					c.Origin, c.Path, c.Size, c.Intent)
+					c.Origin, c.Path, size, c.Intent)
 			}
 			return tw.Flush()
 		},

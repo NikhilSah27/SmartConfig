@@ -36,9 +36,13 @@ func newDiffCmd() *cobra.Command {
 				}
 				bData, bLabel = data, label("b", b.Path, "snapshot "+b.ID)
 			} else {
-				bData, _, err = fsutil.ReadWithMeta(a.Path)
+				st, err := fsutil.ReadState(a.Path)
 				if err != nil {
 					return err
+				}
+				bData = st.Data
+				if st.Kind == "link" {
+					bData = []byte(st.Target + "\n")
 				}
 				bLabel = label("b", a.Path, "on disk")
 			}
@@ -62,7 +66,7 @@ func loadSnapshot(s *store.Store, id string) (store.Change, []byte, error) {
 	if err != nil {
 		return store.Change{}, nil, err
 	}
-	data, err := s.Blob(c.Blob)
+	data, err := rowContent(s, c)
 	return c, data, err
 }
 
