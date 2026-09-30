@@ -29,8 +29,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
    (chunk reviews, checks) runs as ultracode workflows.
 
 **Now: M2 step 4** (chunk C): the scope glob language (`internal/scope`,
-`glob.go`). Chunk A (steps 1-3) is done and waits for its light review,
-which may run while chunk C is built.
+`glob.go`). Chunk A is reviewed and closed. From now on one thing at a
+time: no review runs while the next chunk is built (your call,
+2026-09-30).
 
 **Still waiting for you:**
 
@@ -260,3 +261,20 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **CI pushed** `3e266cc` after you added the `workflow` scope to the token:
   gofmt, vet, tests as user and root, race, static build, on every push
   to main and every pull request.
+- **Chunk A review closed**
+  ([reviews/2026-09-30-m2-chunk-a.md](reviews/2026-09-30-m2-chunk-a.md)):
+  one reviewer, every finding reproduced before fixing.
+  - **D1 (high), fixed `ee0ddea`:** the step 3 backup read `changes.db`
+    with a second descriptor, whose close dropped the process's SQLite
+    locks; with several processes opening an M1 store at once, 13 of 20
+    failed mid-migration and an index could be corrupted. The copy now
+    comes through SQLite itself. After: 0 of 80 failed, integrity ok. Two
+    new tests use real processes and fail on the old code.
+  - **D3 (low), fixed `397877a`:** a symlink at the backup's name no
+    longer counts as a backup.
+  - **Test gap, `b3d3f8e`:** a store upgraded by a newer sc while this one
+    waits for the lock is refused, not set back.
+  - **D2 accepted:** a never-migrated M1 store on a read-only disk cannot
+    be read by the new sc; the real store is migrated at sign-off S2, well
+    before the M4 rescue path. Goes into the M2 known limits.
+  - Checks clean as user, race and root; the new tests pass 20 of 20.
