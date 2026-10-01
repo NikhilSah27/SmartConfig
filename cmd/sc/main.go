@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -55,6 +56,13 @@ func claimEnd() bool {
 	return first
 }
 
+// watchCancel holds the cancel function of a running sc watch: a stop
+// signal ends the watch cleanly instead of killing sc (plan 8: exit 0).
+var watchCancel atomic.Pointer[context.CancelFunc]
+
+// watchStopped is set when a signal ended sc watch through watchCancel.
+var watchStopped atomic.Bool
+
 // testHookAfterRun runs in main after the command has returned; the signal
 // tests' build (-tags sctest) sets it.
 var testHookAfterRun = func() {}
@@ -71,7 +79,7 @@ func main() {
 	go handleSignals(sigs)
 	code := run(os.Args[1:], os.Stdout, os.Stderr)
 	testHookAfterRun()
-	if n := received.Load(); n != 0 {
+	if n := received.Load(); n != 0 && !watchStopped.Load() {
 		endBy(syscall.Signal(n))
 	}
 	os.Exit(code)
@@ -93,6 +101,17 @@ func main() {
 func handleSignals(sigs <-chan os.Signal) {
 	sig := <-sigs
 	received.Store(int32(sig.(syscall.Signal)))
+	if c := watchCancel.Load(); c != nil && isStop(sig) {
+		// sc watch: stop watching, finish the batch, exit 0. A second
+		// signal stops at once.
+		watchStopped.Store(true)
+		(*c)()
+		sig = <-sigs
+		if claimEnd() {
+			fmt.Fprintf(os.Stderr, "sc: stopped by %s\n", sig)
+		}
+		os.Exit(1)
+	}
 	store.Interrupt()
 	if !mutating.Load() {
 		fsutil.RemovePending()
@@ -114,6 +133,11 @@ func handleSignals(sigs <-chan os.Signal) {
 	endBy(sig)
 }
 
+// isStop reports whether sig asks sc to stop (not a fault signal).
+func isStop(sig os.Signal) bool {
+	return sig == os.Interrupt || sig == syscall.SIGTERM || sig == syscall.SIGHUP
+}
+
 // endBy ends sc after a stop signal. For SIGINT, SIGTERM and SIGHUP it dies
 // by that signal, as programs are expected to, so a calling shell sees an
 // interrupted command (a loop stops instead of running the next step). The
@@ -130,7 +154,12 @@ func endBy(sig os.Signal) {
 
 // run executes the CLI and returns the exit code. Any error, including a
 // panic, becomes one line on stderr and exit code 1.
-func run(args []string, stdout, stderr io.Writer) (code int) {
+func run(args []string, stdout, stderr io.Writer) int {
+	return runContext(context.Background(), args, stdout, stderr)
+}
+
+// runContext is run with a context: cancelling it stops sc watch (tests).
+func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (code int) {
 	endMu.Lock()
 	ended = false // the tests call run many times in one process
 	endMu.Unlock()
@@ -146,7 +175,7 @@ func run(args []string, stdout, stderr io.Writer) (code int) {
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		if claimEnd() {
 			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
 			fmt.Fprintf(stderr, "sc: %s\n", msg)
@@ -172,6 +201,7 @@ func newRoot() *cobra.Command {
 		newCatCmd(),
 		newDiffCmd(),
 		newRestoreCmd(),
+		newWatchCmd(),
 	)
 	return root
 }
