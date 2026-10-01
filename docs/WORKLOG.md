@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: chunk D review** (steps 11-13, full review: concurrency, events,
-security). Then chunk E, starting with M2 step 14 (`sc watch`). Chunks A,
+**Now: M2 step 14** (chunk E): `sc watch` (`cmd/sc/watch.go`,
+`runContext`, journald prefixes, `--root`). Chunks A-D are reviewed and
+closed. Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -387,3 +388,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   5 normal runs and the root run passed. The chunk D review is asked to
   look for flakiness. Mutation checks: 14 of 14. Plan note C13.
 - **Chunk D (steps 11-13) done**, waiting for its full review.
+- **Chunk D review closed**
+  ([reviews/2026-10-01-m2-chunk-d.md](reviews/2026-10-01-m2-chunk-d.md)):
+  three reviewers (concurrency, events, security), every finding
+  reproduced first.
+  - **Security (high), `1beb8f3`:** as uid 1000, a user could make the
+    root watcher store a root-only file through a directory named
+    `authorized_keys` and a symlink swap. Nothing below `.ssh` entries is
+    recorded now, and the watcher never reads through a symlink below a
+    root. The attack is a permanent root-only test.
+  - **Events and concurrency, `962a118` and `3cbbd2d`:** an endless
+    "moved" loop, a crash on a moved directory over the dirty bound, new
+    directories left unwatched by a racing rescan, missing deleted rows
+    when paths change type, rescan loops on busy hosts, and a hang after a
+    panic. All fixed with tests that fail when the fix is reverted.
+  - Checks clean as user (5 watcher runs), race (2 runs) and root.
