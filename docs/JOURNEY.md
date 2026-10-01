@@ -5,7 +5,7 @@ we have moved away from the plan. For the day-to-day log see
 [WORKLOG.md](WORKLOG.md); for decisions and recovery, [PROJECT_LOG.md](PROJECT_LOG.md).
 Every fact here comes from those files, the reviews and git history.
 
-Last updated: 2026-10-01, M2 steps 1-13, chunks A-D reviewed.
+Last updated: 2026-10-01, M2 built (steps 1-16), chunks A-E reviewed.
 
 ## 1. The idea
 
@@ -146,6 +146,13 @@ all three were fixed. Then:
   permanent test. The same review found an endless loop, a crash, a hang
   after a panic and a rescan race, all fixed with tests.
 
+- **Steps 14-16 (chunk E):** `sc watch`, the `scd.service` unit, the
+  19-step acceptance script and the docs. Its review found that the
+  acceptance script, started as the worklog then said, would have
+  restored root's own `authorized_keys` under nested sudo, and could have
+  stopped itself before cleaning up. Both were fixed before it was ever
+  run, which is why reviews come before anything touches the real system.
+
 ## 5. Where we moved away from the plan
 
 All changes since approval, with reasons, are kept in one place:
@@ -166,6 +173,7 @@ All changes since approval, with reasons, are kept in one place:
 | C11 | Computed intents only for watcher rows | `sc snapshot -m` stays what the user typed |
 | C12 | `Obs.Suffix`; the CLI turns log priorities into journald or time prefixes | Plan had no field for the suffixes |
 | C13 | A rescan for a moved root waits `Cap` | A root moved away and back was dropped for an hour |
+| C14 | SIGHUP rescans; unit reload and remote-fs ordering; acceptance fixes | Chunk E review |
 
 ## 6. Lessons so far
 
@@ -187,6 +195,7 @@ All changes since approval, with reasons, are kept in one place:
 
 ## 7. Where we are
 
-M1 done. M2: steps 1-13 of 17 done, plus the scope changes; chunks A-D
-reviewed and closed. Next: chunk E: `sc watch`, the systemd unit, the
-acceptance script and docs (steps 14-17), then the sign-off runs.
+M1 done. M2: built (steps 1-16 of 17) and every chunk reviewed and closed.
+What is left is the owner's part: the acceptance run, the M1 smoke run,
+the real store (S2), the owner scenario, a reboot, failure paths and a
+24-hour soak, each with a VM snapshot first. Step 17 (tag `m2`) closes M2.
