@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 12** (chunk D): the watcher: quiet period, proof of
-absence, rescans at start and new directories (`watcher.go`). Chunks A,
+**Now: M2 step 13** (chunk D): overflow, periodic rescan, root changes,
+watch limit, disk floor, user-file limits, crash (`rescan.go`). Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -368,3 +368,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   unblocks `Read`, directory-only watches that refuse symlinks, and an
   event parser. Mutation checks: 9 of 9 caught; 5 runs in a row pass.
   Checks clean as user, race and root.
+- **M2 step 12** `e6b1c32`: the watcher. Two inotify readers, one debounced
+  worker recording through the store with the stamp check, proof of
+  absence for "did not exist", a startup rescan with "while not
+  watching" and a one-line baseline summary, log lines without content,
+  panic recovery, the single-instance lock and the SC_HOME-in-a-root
+  refusal. Writer matrix and structural tests pass; 5 runs in a row and
+  the race detector clean. Mutation checks: 17 of 20 caught, 3
+  equivalent; one test was found not to test what it claimed and fixed.
+  Plan note C12.
