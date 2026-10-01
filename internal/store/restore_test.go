@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"smartconfig/internal/fsutil"
 )
 
 // storeShape counts rows and object files, to show a refusal wrote nothing.
@@ -224,6 +226,15 @@ func TestRestoreRefusesUnsafeDir(t *testing.T) {
 	}
 	refuse(t, s, c.ID, "refusing to restore into "+filepath.Join(dir, "link")+" (a symlink); see it with: sc cat "+c.ID)
 
+	// A symlink higher up than the parent (chunk B review).
+	sub := filepath.Join(real, "sub")
+	os.Mkdir(sub, 0o755)
+	write(t, filepath.Join(sub, "conf"), "z\n", 0o644)
+	if _, err := db.Exec(`UPDATE changes SET path = ? WHERE id = ?`, filepath.Join(dir, "link", "sub", "conf"), c.ID); err != nil {
+		t.Fatal(err)
+	}
+	refuse(t, s, c.ID, "refusing to restore into "+filepath.Join(dir, "link")+" (a symlink)")
+
 	// A missing directory: refused before anything is written.
 	if _, err := db.Exec(`UPDATE changes SET path = ? WHERE id = ?`, filepath.Join(dir, "nodir", "conf"), c.ID); err != nil {
 		t.Fatal(err)
@@ -277,10 +288,17 @@ func TestRecordDuringRestore(t *testing.T) {
 				target = cs[1]
 			}
 			before := observe(t, p) // read before the restore
-			done := make(chan []Result, 1)
+			type result struct {
+				res []Result
+				err error
+			}
+			done := make(chan result, 1)
 			testHookAfterRestoreWrite = func() {
 				after := observe(t, p) // read after the write, before the commit
-				go func() { done <- record(t, s, after) }()
+				go func() {
+					res, err := s.Record([]Obs{after})
+					done <- result{res, err}
+				}()
 				time.Sleep(50 * time.Millisecond) // let it reach BEGIN IMMEDIATE
 			}
 			defer func() { testHookAfterRestoreWrite = nil }()
@@ -288,8 +306,8 @@ func TestRecordDuringRestore(t *testing.T) {
 			if err != nil || restored.ID == "" {
 				t.Fatalf("restore: %+v %v", restored, err)
 			}
-			if r := <-done; r[0].Recorded || r[0].Moved {
-				t.Fatalf("read after the write: %+v", r[0])
+			if r := <-done; r.err != nil || r.res[0].Recorded || r.res[0].Moved {
+				t.Fatalf("read after the write: %+v %v", r.res, r.err)
 			}
 			if r := record(t, s, before); r[0].Recorded || !r[0].Moved {
 				t.Fatalf("read before the restore: %+v", r[0])
@@ -299,5 +317,91 @@ func TestRecordDuringRestore(t *testing.T) {
 				t.Fatalf("newest row %+v", cs[0])
 			}
 		})
+	}
+}
+
+// A link or deletion restore whose path changes after the pre-restore
+// read starts over, so the change is saved before the restore replaces it
+// (chunk B review).
+func TestRestoreLinkAndDeletionRecheckStamp(t *testing.T) {
+	for _, kind := range []string{KindLink, KindDeleted} {
+		t.Run(kind, func(t *testing.T) {
+			s, dir := setup(t)
+			p := filepath.Join(dir, "conf")
+			var src Change
+			if kind == KindLink {
+				os.Symlink("good", p)
+				src, _ = snap(t, s, p)
+				os.Remove(p)
+				os.Symlink("broken", p)
+			} else {
+				write(t, p, "x\n", 0o644)
+				o := observe(t, p)
+				o.Created = true
+				record(t, s, o)
+				cs, _ := s.List(p, 0)
+				src = cs[1]
+			}
+			edits := 0
+			testHookBeforeRestoreLock = func() {
+				if edits == 0 { // a late edit, once
+					os.Remove(p)
+					write(t, p, "late edit\n", 0o644)
+				}
+				edits++
+			}
+			defer func() { testHookBeforeRestoreLock = nil }()
+			if _, prev, err := s.Restore(src.ID); err != nil || prev == nil || prev.Kind != KindFile || prev.Size != 10 {
+				t.Fatalf("restore: %+v %v", prev, err)
+			}
+			if edits != 2 {
+				t.Fatalf("%d attempts, want 2", edits)
+			}
+		})
+	}
+}
+
+// A path removed after the refusals and before the pre-restore read
+// leaves a deletion restore with nothing to do and no row.
+func TestRestoreDeletionGoneMeanwhile(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	o := observe(t, p)
+	o.Created = true
+	record(t, s, o)
+	cs, _ := s.List(p, 0)
+	rows, objects := storeShape(t, s)
+	testHookBeforePreRestore = func() { os.Remove(p) }
+	defer func() { testHookBeforePreRestore = nil }()
+	restored, prev, err := s.Restore(cs[1].ID)
+	if err != nil || restored.ID != "" || prev != nil {
+		t.Fatalf("%+v %+v %v", restored, prev, err)
+	}
+	if r, ob := storeShape(t, s); r != rows || ob != objects {
+		t.Fatal("rows or objects added")
+	}
+}
+
+// A restored link gets the recorded owner (root half).
+func TestRestoreLinkOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	s, dir := setup(t)
+	l := filepath.Join(dir, "unit")
+	os.Symlink("/nonexistent", l)
+	if err := os.Lchown(l, 1234, 5678); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := snap(t, s, l)
+	os.Remove(l)
+	os.Symlink("/other", l)
+	if _, _, err := s.Restore(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	st, err := fsutil.ReadState(l)
+	if err != nil || st.Meta.UID != 1234 || st.Meta.GID != 5678 || st.Target != "/nonexistent" {
+		t.Fatalf("%+v %v", st, err)
 	}
 }

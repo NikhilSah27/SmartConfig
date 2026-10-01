@@ -61,6 +61,9 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 		defer pending.Discard()
 	}
 
+	if testHookBeforePreRestore != nil {
+		testHookBeforePreRestore()
+	}
 	wrote := false
 	for attempt := 1; ; attempt++ {
 		if stopping() {
@@ -105,6 +108,10 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	}
 	return Change{}, prev, fmt.Errorf("restore %s: %w (file not changed)", src.Path, err)
 }
+
+// testHookBeforePreRestore, if set by a test, runs in Restore after the
+// refusals and before the current state is read.
+var testHookBeforePreRestore func()
 
 // safeDir checks every directory from / down to the parent of src.Path
 // with lstat: each must be a real directory, not a symlink, owned by root

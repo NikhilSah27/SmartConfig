@@ -60,6 +60,9 @@ func TestCLILinks(t *testing.T) {
 	if out := mustSC(t, "cat", id); out != "/usr/share/zoneinfo/Etc/UTC\n" {
 		t.Fatalf("cat: %q", out)
 	}
+	if out := mustSC(t, "diff", id); out != "no differences\n" {
+		t.Fatalf("diff of an unchanged link: %q", out)
+	}
 	os.Remove(l)
 	os.Symlink("/usr/share/zoneinfo/Asia/Kolkata", l)
 	if out := mustSC(t, "diff", id); !strings.Contains(out, "-/usr/share/zoneinfo/Etc/UTC\n+/usr/share/zoneinfo/Asia/Kolkata\n") {
@@ -208,5 +211,24 @@ func TestCLIQuotesControlCharacters(t *testing.T) {
 	os.WriteFile(plain, []byte("x"), 0o644)
 	if out := mustSC(t, "snapshot", plain); !strings.Contains(out, "  "+plain+"  (1 bytes)") {
 		t.Fatalf("plain: %q", out)
+	}
+}
+
+// The link restore line names the link's owner and group (root half: a
+// group that differs from the owner).
+func TestCLILinkRestoreOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	dir, _ := kindsHome(t)
+	l := filepath.Join(dir, "unit")
+	os.Symlink("/nonexistent", l)
+	os.Lchown(l, 0, 65534)
+	id := strings.Fields(mustSC(t, "snapshot", l))[1]
+	os.Remove(l)
+	os.Symlink("/other", l)
+	out := mustSC(t, "restore", id)
+	if !strings.Contains(out, "(link -> /nonexistent, owner root:"+groupName(65534)+")") || groupName(65534) == "root" {
+		t.Fatalf("restore: %q", out)
 	}
 }

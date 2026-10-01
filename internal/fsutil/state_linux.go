@@ -224,7 +224,7 @@ func SymlinkAtomic(path, target string, uid, gid int) error {
 	defer syscall.Close(dfd)
 	var tmp string
 	for attempt := 0; ; attempt++ {
-		tmp = "." + name + ".sc-tmp-" + randomSuffix()
+		tmp = "." + name + ".sc-tmp-" + tempSuffix()
 		err = symlinkat(target, dfd, tmp)
 		if !errors.Is(err, syscall.EEXIST) || attempt == 9 {
 			break
@@ -276,6 +276,10 @@ func RemoveFile(path string) error {
 	syscall.Fsync(dfd)
 	return nil
 }
+
+// tempSuffix makes the random part of a temp link's name; tests replace
+// it to force a collision.
+var tempSuffix = randomSuffix
 
 func randomSuffix() string {
 	b := make([]byte, 6)

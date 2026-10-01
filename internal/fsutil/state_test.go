@@ -299,6 +299,12 @@ func TestSymlinkAtomicOwner(t *testing.T) {
 	p := filepath.Join(dir, "unit")
 	var tmpOwner [2]int
 	testHookBeforeSymlinkRename = func(tmp string) {
+		pendingTemps.Lock()
+		tracked := pendingTemps.names[tmp]
+		pendingTemps.Unlock()
+		if !tracked {
+			t.Error("temp link not tracked for signal cleanup")
+		}
 		var st syscall.Stat_t
 		if err := syscall.Lstat(tmp, &st); err != nil {
 			t.Error(err)
@@ -309,7 +315,11 @@ func TestSymlinkAtomicOwner(t *testing.T) {
 		}
 	}
 	defer func() { testHookBeforeSymlinkRename = nil }()
-	if err := SymlinkAtomic(p, "/dev/null", 1234, 5678); err != nil {
+	// The target is a file of this test: if lchown ever followed the
+	// link, it would change this file, never the host's /dev/null.
+	target := filepath.Join(dir, "target")
+	mustWrite(t, target, "x", 0o644)
+	if err := SymlinkAtomic(p, target, 1234, 5678); err != nil {
 		t.Fatal(err)
 	}
 	if tmpOwner != [2]int{1234, 5678} {
@@ -383,6 +393,62 @@ func TestReadStateSwapBeforeOpen(t *testing.T) {
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("%s: blocked", name)
+		}
+	}
+}
+
+// The temp link is tracked for signal cleanup only until the rename; it
+// is removed after a failed chown; and a name collision is retried.
+func TestSymlinkAtomicTempHandling(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "l")
+	var seen string
+	testHookBeforeSymlinkRename = func(tmp string) {
+		seen = tmp
+		pendingTemps.Lock()
+		defer pendingTemps.Unlock()
+		if !pendingTemps.names[tmp] {
+			t.Error("temp link not tracked for signal cleanup")
+		}
+	}
+	defer func() { testHookBeforeSymlinkRename = nil }()
+	if err := SymlinkAtomic(p, "a", os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	pendingTemps.Lock()
+	still := pendingTemps.names[seen]
+	pendingTemps.Unlock()
+	if seen == "" || still {
+		t.Fatalf("temp %q still tracked after the rename", seen)
+	}
+	testHookBeforeSymlinkRename = nil
+
+	// Collision: the first name is taken, so another is tried.
+	calls := 0
+	tempSuffix = func() string {
+		calls++
+		if calls == 1 {
+			return "taken"
+		}
+		return randomSuffix()
+	}
+	defer func() { tempSuffix = randomSuffix }()
+	os.Symlink("x", filepath.Join(dir, ".l.sc-tmp-taken"))
+	if err := SymlinkAtomic(p, "b", os.Getuid(), os.Getgid()); err != nil || calls != 2 {
+		t.Fatalf("collision: %v after %d names", err, calls)
+	}
+	if got, _ := os.Readlink(p); got != "b" {
+		t.Fatalf("link -> %q", got)
+	}
+	os.Remove(filepath.Join(dir, ".l.sc-tmp-taken"))
+
+	// A failed chown (a normal user giving the link to root) removes it.
+	if os.Geteuid() != 0 {
+		if err := SymlinkAtomic(p, "c", 0, 0); err == nil {
+			t.Fatal("chown to root succeeded as a normal user")
+		}
+		if got := names(t, dir); got != "l" {
+			t.Fatalf("directory holds %q", got)
 		}
 	}
 }
