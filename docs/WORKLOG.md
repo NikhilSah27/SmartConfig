@@ -30,7 +30,7 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 
 **Now: chunk E review** (steps 14-16, normal review). Then the sign-off
 runs of plan section 13, each with your OK: the acceptance run
-(`sudo make accept-m2`), the M1 smoke run, the real store (S2), the
+(`make accept-m2`, as your user: it asks for sudo itself), the M1 smoke run, the real store (S2), the
 owner scenario, a reboot, failure paths and a 24-hour soak. Step 17
 ("M2 done", tag `m2`) comes last. Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run

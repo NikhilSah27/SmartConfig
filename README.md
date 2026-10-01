@@ -35,11 +35,15 @@ make race       # tests under the race detector
 make vet
 make fmt        # fails if gofmt would change anything
 make m1-compat  # the M1 binary still works on an M2 store
-sudo make smoke # M1 acceptance run against the real /etc/hosts (restores it)
-make accept-m2  # M2 acceptance run in the VM (sudo; its own test paths only)
+make smoke      # M1 acceptance run against the real /etc/hosts (asks for sudo; restores it)
+make accept-m2  # M2 acceptance run in the VM (asks for sudo; its own test paths only)
 ```
 
 ## Use
+
+The M2 `sc` upgrades an existing store (made by M1) on first use, keeping a
+copy as `changes.db.m1-backup`. On a machine whose store must stay as M1 left
+it, use the M1 binary until you choose to upgrade.
 
 ```sh
 sudo ./bin/sc init                                    # create /var/lib/smartconfig

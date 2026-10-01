@@ -4,7 +4,8 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-09-28, M1 tagged `m1` after four review rounds and five rounds of fixes.
+Last updated: 2026-10-01, M2 built and reviewed (steps 1-16), waiting for its
+acceptance and sign-off runs. M1 was tagged `m1` on 2026-09-28.
 
 ---
 
@@ -21,12 +22,11 @@ Last updated: 2026-09-28, M1 tagged `m1` after four review rounds and five round
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
 
-Status (2026-10-01): **M2 built and reviewed** (steps 1-16; chunks A-D
-reviewed), waiting for its acceptance run and sign-off; see
-[WORKLOG.md](WORKLOG.md). Before that: **M1 done and tagged `m1`** (store + CLI, hardened by four review
-rounds and five rounds of fixes, see [reviews/](reviews/)). **M2 (watcher daemon) is next**; its plan
-([M2_PLAN.md](M2_PLAN.md)) waits for approval. Live progress:
-[WORKLOG.md](WORKLOG.md).
+Status (2026-10-01): **M2 built and reviewed** (steps 1-16, chunks A-E),
+waiting for its acceptance run and sign-off; plan:
+[M2_PLAN.md](M2_PLAN.md), live progress: [WORKLOG.md](WORKLOG.md). Before
+that: **M1 done and tagged `m1`** (store + CLI, hardened by four review rounds
+and five rounds of fixes, see [reviews/](reviews/)).
 
 M2 research: [M2_WATCHLIST.md](M2_WATCHLIST.md) lists what the watcher must watch,
 ignore and beware of, verified on this VM, plus two M1 fixes needed first and
@@ -174,11 +174,17 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-sudo ./bin/sc log /etc/fstab        # find the last good id
-sudo ./bin/sc diff <id>             # confirm what changed
-sudo ./bin/sc restore <id>          # put it back; the broken state is saved too
+SC=/var/backups/smartconfig/sc-m1   # until M2 is installed (sign-off S2); then /usr/local/sbin/sc
+sudo $SC log /etc/fstab             # find the last good id
+sudo $SC diff <id>                  # confirm what changed
+sudo $SC restore <id>               # put it back; the broken state is saved too
 sudo systemctl daemon-reload        # after touching fstab
 ```
+
+Do not run the repo's `bin/sc` (the M2 build) on `/var/lib/smartconfig`
+before sign-off S2: any command upgrades the store to schema 1 on first use
+(keeping `changes.db.m1-backup`), and plan gate G1 says that happens only
+after the backups and your yes.
 
 For `/etc/fstab` specifically, `2c6901` in `/var/lib/smartconfig` is the
 original file of this VM.
