@@ -176,3 +176,37 @@ func TestCLIDigestRow(t *testing.T) {
 		}
 	}
 }
+
+// A newline in a link target or name cannot forge output lines: such
+// strings are quoted (chunk B review D3).
+func TestCLIQuotesControlCharacters(t *testing.T) {
+	dir, record := kindsHome(t)
+	l := filepath.Join(dir, "nl")
+	target := "/x\nsnapshot ffffff  /etc/shadow  (12 bytes)"
+	os.Symlink(target, l)
+	out := mustSC(t, "snapshot", l)
+	id := strings.Fields(out)[1]
+	if strings.Count(out, "\n") != 1 || !strings.Contains(out, `(link -> "/x\nsnapshot ffffff`) {
+		t.Fatalf("snapshot: %q", out)
+	}
+	os.Remove(l)
+	os.Symlink("/y", l)
+	record(l, false)
+	out = mustSC(t, "restore", id)
+	if strings.Count(out, "\n") != 1 || !strings.Contains(out, `(link -> "/x\nsnapshot`) {
+		t.Fatalf("restore: %q", out)
+	}
+	odd := filepath.Join(dir, "a\x1b[31mred")
+	os.WriteFile(odd, []byte("x"), 0o644)
+	mustSC(t, "snapshot", odd)
+	out = mustSC(t, "log")
+	if n := strings.Count(out, "\n"); n != 6 || strings.Contains(out, "\x1b") {
+		t.Fatalf("log (%d lines): %q", n, out)
+	}
+	// Ordinary names are printed as they are.
+	plain := filepath.Join(dir, "plain file")
+	os.WriteFile(plain, []byte("x"), 0o644)
+	if out := mustSC(t, "snapshot", plain); !strings.Contains(out, "  "+plain+"  (1 bytes)") {
+		t.Fatalf("plain: %q", out)
+	}
+}

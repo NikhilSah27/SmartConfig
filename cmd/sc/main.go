@@ -6,11 +6,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -201,6 +204,16 @@ func rowContent(s *store.Store, c store.Change) ([]byte, error) {
 		return nil, fmt.Errorf("%s keeps only a fingerprint of %s, not its content", c.ID, c.Path)
 	}
 	return s.Blob(c.Blob)
+}
+
+// show returns s as it is, or quoted like a Go string when it holds a
+// control character or invalid UTF-8, so a planted file name or link
+// target cannot forge output lines.
+func show(s string) string {
+	if utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	return strconv.Quote(s)
 }
 
 // absence says how a deleted row came about.

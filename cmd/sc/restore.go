@@ -33,7 +33,7 @@ func newRestoreCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if c.ID == "" {
-				fmt.Fprintf(out, "nothing to do: %s is already absent, as in %s\n", src.Path, src.ID)
+				fmt.Fprintf(out, "nothing to do: %s is already absent, as in %s\n", show(src.Path), src.ID)
 				return nil
 			}
 			saved := "no previous file existed"
@@ -43,12 +43,12 @@ func newRestoreCmd() *cobra.Command {
 			switch c.Kind {
 			case store.KindLink:
 				fmt.Fprintf(out, "restored %s from %s (link -> %s, owner %s:%s), %s\n",
-					c.Path, src.ID, c.Target, userName(c.UID), groupName(c.GID), saved)
+					show(c.Path), src.ID, show(c.Target), userName(c.UID), groupName(c.GID), saved)
 			case store.KindDeleted:
-				fmt.Fprintf(out, "removed %s to match %s (%s), %s\n", c.Path, src.ID, absenceWord(src), saved)
+				fmt.Fprintf(out, "removed %s to match %s (%s), %s\n", show(c.Path), src.ID, absenceWord(src), saved)
 			default:
 				fmt.Fprintf(out, "restored %s from %s (mode %s %s:%s), %s\n",
-					c.Path, src.ID, octalMode(c.Mode), userName(c.UID), groupName(c.GID), saved)
+					show(c.Path), src.ID, octalMode(c.Mode), userName(c.UID), groupName(c.GID), saved)
 			}
 			return nil
 		},

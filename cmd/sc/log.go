@@ -45,7 +45,7 @@ func newLogCmd() *cobra.Command {
 				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", c.ID,
 					time.Unix(c.TS, 0).Local().Format("2006-01-02 15:04"),
-					c.Origin, c.Path, size, c.Intent)
+					c.Origin, show(c.Path), size, show(c.Intent))
 			}
 			return tw.Flush()
 		},
