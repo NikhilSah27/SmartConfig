@@ -21,10 +21,19 @@ import (
 // directories, FIFOs, sockets, devices and big files.
 var ErrNotRecordable = errors.New("cannot be recorded")
 
-type notRecordable struct{ msg string }
+// ErrTooBig is matched, besides ErrNotRecordable, for a regular file over
+// MaxSize: unlike a directory or a FIFO at the path, the file is there.
+var ErrTooBig = errors.New("larger than the 8 MB limit")
 
-func (e *notRecordable) Error() string        { return e.msg }
-func (e *notRecordable) Is(target error) bool { return target == ErrNotRecordable }
+type notRecordable struct {
+	msg string
+	big bool
+}
+
+func (e *notRecordable) Error() string { return e.msg }
+func (e *notRecordable) Is(target error) bool {
+	return target == ErrNotRecordable || e.big && target == ErrTooBig
+}
 
 // State is one observed version of a path: a regular file with its content,
 // or a symlink with its target text. Meta holds the mode and owner (of the
@@ -145,7 +154,7 @@ func readAt(dfd int, name, path string) (State, error) {
 		return readLink(dfd, name, path, &st)
 	case syscall.S_IFREG:
 		if st.Size > MaxSize {
-			return State{}, &notRecordable{fmt.Sprintf("%s is %d bytes, larger than the 8 MB limit", path, st.Size)}
+			return State{}, &notRecordable{fmt.Sprintf("%s is %d bytes, larger than the 8 MB limit", path, st.Size), true}
 		}
 		s, err := readFileAt(dfd, name, path, func(fi os.FileInfo) bool { return sameStat(fi, &st) })
 		var link *linkRefused
@@ -155,7 +164,7 @@ func readAt(dfd int, name, path string) (State, error) {
 		}
 		return s, err
 	default:
-		return State{}, &notRecordable{fmt.Sprintf("%s is not a regular file", path)}
+		return State{}, &notRecordable{msg: fmt.Sprintf("%s is not a regular file", path)}
 	}
 }
 
@@ -245,14 +254,14 @@ func readFileAt(dfd int, name, path string, same func(os.FileInfo) bool) (State,
 		return State{}, fmt.Errorf("%s %w", path, ErrReplaced)
 	}
 	if err := CheckRegular(path, fi); err != nil {
-		return State{}, &notRecordable{err.Error()}
+		return State{}, &notRecordable{err.Error(), fi.Mode().IsRegular()}
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxSize+1))
 	if err != nil {
 		return State{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	if len(data) > MaxSize {
-		return State{}, &notRecordable{fmt.Sprintf("%s grew past the 8 MB limit while reading", path)}
+		return State{}, &notRecordable{fmt.Sprintf("%s grew past the 8 MB limit while reading", path), true}
 	}
 	if testHookAfterRead != nil {
 		testHookAfterRead()

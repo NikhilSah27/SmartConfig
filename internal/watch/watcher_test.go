@@ -672,3 +672,82 @@ func TestBaselineNotLoggedPerRow(t *testing.T) {
 		t.Fatalf("log:\n%s", log)
 	}
 }
+
+// A path that changes type gets the right rows (chunk D review): a file
+// replaced by a directory, a directory by a symlink or a file, and a
+// directory moved away with a file put at its name at once.
+func TestTypeChanges(t *testing.T) {
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	put(t, r("f"), "f\n", 0o644)
+	for _, d := range []string{"tolink", "tofile", "moved"} {
+		os.Mkdir(r(d), 0o755)
+		put(t, r(d+"/x"), "x\n", 0o644)
+	}
+	e.start()
+	os.Remove(r("f"))
+	os.Mkdir(r("f"), 0o755)
+	os.RemoveAll(r("tolink"))
+	os.Symlink("/usr/share", r("tolink"))
+	os.RemoveAll(r("tofile"))
+	put(t, r("tofile"), "now a file\n", 0o644)
+	os.Rename(r("moved"), filepath.Join(filepath.Dir(e.root), "moved-out"))
+	put(t, r("moved"), "a file now\n", 0o644)
+	for _, p := range []string{"f", "tolink/x", "tofile/x", "moved/x"} {
+		p := r(p)
+		e.waitFor(p+" deleted", func() bool {
+			h := e.history(p)
+			return len(h) == 2 && h[1] == "deleted deleted"
+		})
+	}
+	e.want(r("tolink"), "link first seen")
+	e.want(r("tofile"), "file first seen")
+	e.want(r("moved"), "file first seen")
+}
+
+// The same type changes while scd is stopped are found at the next start,
+// and the baseline completes.
+func TestTypeChangesWhileStopped(t *testing.T) {
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	for _, d := range []string{"tolink", "tofile"} {
+		os.Mkdir(r(d), 0o755)
+		put(t, r(d+"/x"), "x\n", 0o644)
+	}
+	put(t, r("f"), "f\n", 0o644)
+	e.start()
+	e.stop()
+	os.RemoveAll(r("tolink"))
+	os.Symlink("/usr/share", r("tolink"))
+	os.RemoveAll(r("tofile"))
+	put(t, r("tofile"), "file\n", 0o644)
+	os.Remove(r("f"))
+	os.Mkdir(r("f"), 0o755)
+	e.log = &syncBuf{}
+	e.cfg.Log = e.log
+	e.start()
+	for _, p := range []string{"tolink/x", "tofile/x", "f"} {
+		e.want(r(p), "file first seen", "deleted deleted while not watching")
+	}
+	if !strings.Contains(e.log.String(), "3 deleted while not watching") {
+		t.Fatalf("log:\n%s", e.log.String())
+	}
+}
+
+// A directory moved away whose files push the dirty set past MaxDirty
+// clears it and rescans; it used to crash the worker (chunk D review).
+func TestDirtyBoundFromMovedDir(t *testing.T) {
+	e := newEnv(t)
+	e.cfg.MaxDirty = 20
+	d := filepath.Join(e.root, "d")
+	os.Mkdir(d, 0o755)
+	for i := 0; i < 30; i++ {
+		put(t, filepath.Join(d, fmt.Sprintf("f%02d", i)), "x\n", 0o644)
+	}
+	e.start()
+	os.Rename(d, filepath.Join(filepath.Dir(e.root), "away"))
+	for i := 0; i < 30; i++ {
+		p := filepath.Join(d, fmt.Sprintf("f%02d", i))
+		e.waitFor(p+" deleted", func() bool { return len(e.history(p)) == 2 })
+	}
+}

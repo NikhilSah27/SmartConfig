@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"smartconfig/internal/fsutil"
 )
@@ -216,7 +217,9 @@ func sameState(last, c *Change) bool {
 func stillAsRead(o Obs) bool {
 	st, err := fsutil.LstatStamp(o.Path)
 	if o.State == nil {
-		return errors.Is(err, os.ErrNotExist)
+		// A directory on the way that became a file (ENOTDIR) also means
+		// the path is gone.
+		return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 	}
 	return err == nil && st == o.State.Meta.Stamp
 }

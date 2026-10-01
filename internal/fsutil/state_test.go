@@ -119,6 +119,9 @@ func TestReadStateNotRecordable(t *testing.T) {
 			if !errors.Is(err, ErrNotRecordable) || !strings.Contains(err.Error(), msg) {
 				t.Errorf("%s: %v", p, err)
 			}
+			if errors.Is(err, ErrTooBig) != (p == big) {
+				t.Errorf("%s: ErrTooBig is %v", p, errors.Is(err, ErrTooBig))
+			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("%s: blocked", p)
 		}

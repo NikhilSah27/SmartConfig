@@ -488,3 +488,20 @@ func TestHasObject(t *testing.T) {
 		t.Fatal("HasObject wrong")
 	}
 }
+
+// A path whose directory became a file is absent for the stamp check too
+// (chunk D review: it looped as "moved" forever).
+func TestRecordAbsentThroughFile(t *testing.T) {
+	s, dir := setup(t)
+	d := filepath.Join(dir, "d")
+	os.Mkdir(d, 0o755)
+	p := filepath.Join(d, "x")
+	write(t, p, "x\n", 0o644)
+	record(t, s, observe(t, p))
+	os.RemoveAll(d)
+	write(t, d, "now a file", 0o644)
+	o := Obs{Path: p, CheckStamp: true, Origin: OriginAuto}
+	if r := record(t, s, o); r[0].Moved || !r[0].Recorded || r[0].Change.Kind != KindDeleted {
+		t.Fatalf("%+v", r[0])
+	}
+}

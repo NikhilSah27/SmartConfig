@@ -168,6 +168,7 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/etc/apparmor.d/usr.bin.foo.dpkg-new", "/etc/apparmor.d/abstractions/base.dpkg-dist",
 		"/etc/apparmor.d/p.dpkg-remove", "/etc/apparmor.d/p~", "/etc/apparmor.d/p.orig",
 		"/etc/sudoers.d/x.dpkg-new", "/etc/sudoers.d/x~", "/etc/sudoers.d/.README.swp",
+		"/etc/sudoers.d/foo.tmp", "/etc/sudoers.d/x.conf",
 		"/etc/apt/apt.conf.d/01autoremove.dpkg-new", "/etc/apt/apt.conf.d/20auto-upgrades.ucf-dist",
 		"/etc/apt/apt.conf.d/4913",
 		"/etc/cron.daily/logrotate.dpkg-new", "/etc/kernel/postinst.d/zz-update-grub.dpkg-new",

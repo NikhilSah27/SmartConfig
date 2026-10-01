@@ -101,9 +101,11 @@ const (
 type entry struct {
 	first, due time.Time
 	reason     string
-	created    bool // proof of absence (6.4)
-	prefix     bool
-	moved      int // consecutive Moved results
+	created    bool      // proof of absence (6.4)
+	prefix     bool      // expand to the stored paths below (a dir moved away)
+	self       bool      // read the path itself
+	moved      int       // consecutive Moved results
+	notBefore  time.Time // a backoff no new event may cut short
 }
 
 // watchRef is one watched directory.
@@ -537,8 +539,13 @@ func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 		return
 	}
 	if e == nil {
-		e = &entry{first: now, reason: reason, prefix: prefix}
+		e = &entry{first: now, reason: reason}
 		w.dirty[p] = e
+	}
+	if prefix {
+		e.prefix = true
+	} else {
+		e.self = true // also when a moved-away dir's name is reused at once
 	}
 	if reason == reasonEvent {
 		e.reason = reasonEvent // a live event explains the change
@@ -550,6 +557,9 @@ func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 	}
 	if limit := e.first.Add(w.cfg.Cap); due.After(limit) {
 		due = limit
+	}
+	if due.Before(e.notBefore) {
+		due = e.notBefore
 	}
 	e.due = due
 }
@@ -622,7 +632,10 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 			delete(w.listings, old)
 		}
 		w.wds[in][wd] = dir
-		w.dirs[dir] = watchRef{in: in, wd: wd, gen: gen}
+		// The current generation, not the one the walk started with: a
+		// reader's walk overlapping a rescan must not leave a watch the
+		// rescan's cleanup would remove.
+		w.dirs[dir] = watchRef{in: in, wd: wd, gen: w.gen}
 	}
 	w.mu.Unlock()
 
@@ -869,7 +882,10 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 	for _, d := range batch {
 		if d.e.prefix {
 			w.expandPrefix(d.path)
-			continue
+			d.e.prefix = false
+			if !d.e.self {
+				continue
+			}
 		}
 		o, ok, requeued := w.observe(d)
 		if !ok {
@@ -889,7 +905,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 		w.mu.Lock()
 		for i, o := range obs {
 			if w.needsObject(o) {
-				w.remarkLocked(handled[i], time.Now().Add(w.cfg.FloorBackoff))
+				w.holdLocked(handled[i], time.Now().Add(w.cfg.FloorBackoff))
 				continue
 			}
 			keepObs, keepDue = append(keepObs, o), append(keepDue, handled[i])
@@ -908,7 +924,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 		w.logOnce("store: "+err.Error(), prioErr, "store: "+err.Error())
 		w.mu.Lock()
 		for _, d := range handled {
-			w.remarkLocked(d, time.Now().Add(w.cfg.StoreBackoff))
+			w.holdLocked(d, time.Now().Add(w.cfg.StoreBackoff))
 		}
 		w.mu.Unlock()
 		return
@@ -966,15 +982,28 @@ func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 	st, err := fsutil.ReadStateBelow(root, d.path)
 	switch {
 	case fsutil.IsNotExist(err):
+		// Absent. After 10 moved results in a row, record it without the
+		// stamp check, as for a file that keeps changing.
+		if d.e.moved >= 10 {
+			o.CheckStamp = false
+			o.Suffix += store.SuffixChanging
+		}
 		return o, true, false
 	case errors.Is(err, fsutil.ErrUnsafePath):
+		// A directory on the way became a symlink: nothing is read through
+		// it, and the recorded file is gone from where it was.
 		w.logOnce("unsafe "+d.path, prioWarning, "not reading "+show(d.path)+": a directory on the way is a symlink")
+		o.CheckStamp = false
+		return o, true, false
+	case errors.Is(err, fsutil.ErrTooBig):
+		w.logOnce("big "+d.path, prioWarning, err.Error())
 		return o, false, false
 	case errors.Is(err, fsutil.ErrNotRecordable):
-		if strings.Contains(err.Error(), "8 MB") {
-			w.logOnce("big "+d.path, prioWarning, err.Error())
-		}
-		return o, false, false
+		// A directory, FIFO, socket or device took the path: the file or
+		// link recorded there is gone (no row if none was recorded). The
+		// stamp check would only see the newcomer, so it is skipped.
+		o.CheckStamp = false
+		return o, true, false
 	case errors.Is(err, fsutil.ErrReplaced):
 		w.mu.Lock()
 		w.remarkLocked(d, time.Now().Add(w.cfg.Quiet))
@@ -998,7 +1027,7 @@ func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 	o.State = &st
 	if until := w.limitUserFile(&o); !until.IsZero() {
 		w.mu.Lock()
-		w.remarkLocked(d, until)
+		w.holdLocked(d, until)
 		w.mu.Unlock()
 		return o, false, true
 	}
@@ -1012,13 +1041,27 @@ func (w *Watcher) remarkLocked(d due, t time.Time) {
 	e.due = t
 	if cur := w.dirty[d.path]; cur != nil {
 		cur.created = cur.created || e.created
-		if t.Before(cur.due) {
+		cur.self = cur.self || e.self
+		if t.Before(cur.due) && !t.Before(cur.notBefore) {
 			cur.due = t
 		}
 		cur.moved = e.moved
 		return
 	}
 	w.dirty[d.path] = &e
+}
+
+// holdLocked is remarkLocked for a backoff (store error, free-space floor,
+// user-file gap): no event marks the path due before t (caller holds mu).
+func (w *Watcher) holdLocked(d due, t time.Time) {
+	d.e.notBefore = t
+	w.remarkLocked(d, t)
+	if cur := w.dirty[d.path]; cur != nil {
+		cur.notBefore = t
+		if cur.due.Before(t) {
+			cur.due = t
+		}
+	}
 }
 
 // expandPrefix marks every live stored path below dir: it moved away, so
@@ -1033,7 +1076,9 @@ func (w *Watcher) expandPrefix(dir string) {
 	for _, p := range live {
 		if strings.HasPrefix(p, dir+"/") && w.scope.Recorded(p) {
 			w.markLocked(p, reasonEvent, false, false)
-			w.dirty[p].due = time.Now()
+			if e := w.dirty[p]; e != nil { // nil after the dirty-set bound
+				e.due = time.Now()
+			}
 		}
 	}
 	w.mu.Unlock()

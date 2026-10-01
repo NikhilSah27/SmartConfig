@@ -39,6 +39,9 @@ exclude /etc/apparmor.d/**/*.dpkg-{new,old,dist,bak,remove}
 exclude /etc/apparmor.d/**/{*~,*.orig,*.rej}
 exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
 exclude /etc/{sudoers.d,apt/apt.conf.d,kernel,cron.d,cron.hourly,cron.daily,cron.weekly,cron.monthly}/**/{*.ucf-new,*.ucf-old,*.ucf-dist,*~}
+# sudo skips sudoers.d names that contain a dot (sudoers(5)), so visudo's
+# foo.tmp, kept for a whole edit session, has no effect.
+exclude /etc/sudoers.d/**/*.*
 # systemd runs every generator except hidden and backup names
 # (hidden_or_backup_file in systemd 255).
 exclude /etc/systemd/{system-generators,user-generators,system-environment-generators,user-environment-generators}/**/{.*,*~,*.rpmnew,*.rpmsave,*.rpmorig,*.ucf-new,*.ucf-old,*.ucf-dist,*.swp,*.bak,*.old,*.new}
