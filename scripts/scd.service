@@ -1,0 +1,28 @@
+[Unit]
+Description=SmartConfig watcher (scd): records config file changes
+Documentation=https://github.com/NikhilSah27/SmartConfig
+# multi-user.target is ordered after every service it wants, this one too.
+# Type=exec makes scd count as started once the binary runs, so boot waits
+# only for the exec, never for the baseline scan. No other unit orders
+# itself after scd or requires it.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+Type=exec
+ExecStart=/usr/local/sbin/sc watch
+SyslogIdentifier=scd
+# A fatal Go runtime error prints one line instead of a goroutine dump.
+Environment=GOTRACEBACK=none
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=10s
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Deliberately no ProtectSystem=, ProtectHome=, PrivateTmp=,
+# TemporaryFileSystem= or InaccessiblePaths=: they could hide /etc, /boot,
+# /root or /home from the watcher.
+
+[Install]
+WantedBy=multi-user.target
