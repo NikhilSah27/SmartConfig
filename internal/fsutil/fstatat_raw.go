@@ -1,4 +1,4 @@
-//go:build linux && amd64
+//go:build linux && (amd64 || ppc64 || ppc64le || s390x)
 
 package fsutil
 
@@ -7,8 +7,8 @@ import (
 	"unsafe"
 )
 
-// fstatat is newfstatat(2); the syscall package does not export it on
-// amd64.
+// fstatat is newfstatat(2) into Stat_t, as the syscall package does it
+// internally on these architectures; it does not export it there.
 func fstatat(dfd int, name string, st *syscall.Stat_t, flags int) error {
 	p, err := syscall.BytePtrFromString(name)
 	if err != nil {
