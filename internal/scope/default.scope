@@ -27,6 +27,9 @@ exclude /boot/grub/**
 # C. <home>/.ssh roots: only the files sshd reads (rc runs at every login).
 include **/.ssh/{authorized_keys,authorized_keys2,rc,environment}
 exclude **/.ssh/*
+# Nothing below those names: a directory called authorized_keys must not
+# make a user-chosen tree recorded and watched by root.
+exclude **/.ssh/*/*
 
 # D0. Names inside the block D directories that their consumer skips
 #     itself (checked on this VM). dpkg leaves each conffile of a package

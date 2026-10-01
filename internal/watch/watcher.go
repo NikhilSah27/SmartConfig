@@ -318,7 +318,7 @@ func resolveMissing(p string) (string, error) {
 // this process's pid into it.
 func lockHome(home string) (*os.File, error) {
 	p := filepath.Join(home, "scd.lock")
-	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|syscall.O_CLOEXEC, 0o600)
+	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", p, err)
 	}
@@ -492,6 +492,18 @@ func (w *Watcher) currentGen() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.gen
+}
+
+// rootOfLocked returns the root d.path lies under (the longest), or ""
+// (caller holds mu).
+func (w *Watcher) rootOfLocked(p string) string {
+	best := ""
+	for _, r := range w.roots {
+		if strings.HasPrefix(p, r+"/") && len(r) > len(best) {
+			best = r
+		}
+	}
+	return best
 }
 
 // isRoot reports whether dir is one of the roots (caller holds mu).
@@ -942,10 +954,22 @@ func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 	case reasonRescan:
 		o.Suffix = store.SuffixRescan
 	}
-	st, err := fsutil.ReadState(d.path)
+	// Read through the root with O_NOFOLLOW at every level: a user who
+	// controls a root (a login's ~/.ssh) cannot point a directory in it at
+	// files root may read (chunk D review).
+	w.mu.Lock()
+	root := w.rootOfLocked(d.path)
+	w.mu.Unlock()
+	if root == "" {
+		return o, false, false
+	}
+	st, err := fsutil.ReadStateBelow(root, d.path)
 	switch {
 	case fsutil.IsNotExist(err):
 		return o, true, false
+	case errors.Is(err, fsutil.ErrUnsafePath):
+		w.logOnce("unsafe "+d.path, prioWarning, "not reading "+show(d.path)+": a directory on the way is a symlink")
+		return o, false, false
 	case errors.Is(err, fsutil.ErrNotRecordable):
 		if strings.Contains(err.Error(), "8 MB") {
 			w.logOnce("big "+d.path, prioWarning, err.Error())
@@ -1075,9 +1099,16 @@ func (w *Watcher) logLine(prio int, line string) {
 	fmt.Fprintf(w.cfg.Log, "<%d>%s\n", prio, strings.ReplaceAll(line, "\n", " "))
 }
 
-// logOnce logs line only the first time key is seen.
+// maxLogged bounds the memory of logOnce: keys can hold user-chosen paths.
+const maxLogged = 10000
+
+// logOnce logs line only the first time key is seen (the memory is reset
+// when it grows past maxLogged, so a flood of names cannot grow it).
 func (w *Watcher) logOnce(key string, prio int, line string) {
 	logMu.Lock()
+	if len(w.logged) >= maxLogged {
+		w.logged = map[string]bool{}
+	}
 	seen := w.logged[key]
 	w.logged[key] = true
 	logMu.Unlock()

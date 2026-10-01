@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -63,6 +64,78 @@ func ReadState(path string) (State, error) {
 		return State{}, err
 	}
 	defer syscall.Close(dfd)
+	return readAt(dfd, name, path)
+}
+
+// ErrUnsafePath is matched by ReadStateBelow's error when a directory
+// between the base directory and the file is a symlink: nothing is read
+// through it.
+var ErrUnsafePath = errors.New("a symlink below the watched directory, refusing")
+
+// ReadStateBelow is ReadState for a path below dir, a directory whose
+// contents a user may control (a login's ~/.ssh): dir and every directory
+// from it down to the file's parent are opened with O_NOFOLLOW, one at a
+// time with openat, so a symlink anywhere below dir, or dir itself swapped
+// for one, is refused (ErrUnsafePath) and never followed. A path that no
+// longer exists, also because a directory on the way became a file, gives
+// an error for which IsNotExist holds.
+func ReadStateBelow(dir, path string) (State, error) {
+	dfd, name, err := openParentBelow(filepath.Clean(dir), filepath.Clean(path))
+	if err != nil {
+		return State{}, err
+	}
+	defer syscall.Close(dfd)
+	return readAt(dfd, name, path)
+}
+
+const dirFlags = syscall.O_RDONLY | syscall.O_DIRECTORY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC
+
+func openParentBelow(dir, path string) (int, string, error) {
+	rel, ok := strings.CutPrefix(path, dir+"/")
+	if !ok || rel == "" {
+		return -1, "", fmt.Errorf("read %s: not below %s", path, dir)
+	}
+	parts := strings.Split(rel, "/")
+	fd, err := syscall.Open(dir, dirFlags, 0)
+	if err != nil {
+		return -1, "", belowErr(path, dir, -1, dir, err)
+	}
+	cur := dir
+	for _, c := range parts[:len(parts)-1] {
+		nfd, err := syscall.Openat(fd, c, dirFlags, 0)
+		if err != nil {
+			err = belowErr(path, cur+"/"+c, fd, c, err)
+			syscall.Close(fd)
+			return -1, "", err
+		}
+		syscall.Close(fd)
+		fd, cur = nfd, cur+"/"+c
+	}
+	return fd, parts[len(parts)-1], nil
+}
+
+// belowErr explains why directory name (in dfd, or a path when dfd < 0)
+// did not open: a symlink is unsafe, anything else not a directory means
+// the path is gone.
+func belowErr(path, shown string, dfd int, name string, err error) error {
+	if errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.ENOTDIR) {
+		var st syscall.Stat_t
+		var serr error
+		if dfd < 0 {
+			serr = syscall.Lstat(name, &st)
+		} else {
+			serr = fstatat(dfd, name, &st, _AT_SYMLINK_NOFOLLOW)
+		}
+		if serr == nil && st.Mode&syscall.S_IFMT == syscall.S_IFLNK {
+			return fmt.Errorf("%s: %s is %w", path, shown, ErrUnsafePath)
+		}
+		return fmt.Errorf("read %s: %w", path, os.ErrNotExist)
+	}
+	return fmt.Errorf("read %s: %w", path, err)
+}
+
+// readAt reads name in the open directory dfd (ReadState's work).
+func readAt(dfd int, name, path string) (State, error) {
 	var st syscall.Stat_t
 	if err := fstatat(dfd, name, &st, _AT_SYMLINK_NOFOLLOW); err != nil {
 		return State{}, fmt.Errorf("read %s: %w", path, err)

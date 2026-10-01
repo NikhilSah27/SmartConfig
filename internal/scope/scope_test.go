@@ -176,6 +176,9 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/etc/passwd-", "/etc/passwd.lock", "/etc/shadow.1234", "/etc/.pwd.lock",
 		"/boot/grub/grubenv", "/boot/grub/i386-pc/normal.mod", "/boot/grub/i386-pc",
 		"/home/u/.ssh/id_ed25519", "/home/u/.ssh/known_hosts", "/root/.ssh/id_ed25519",
+		// A directory named like an sshd file adds nothing (chunk D review).
+		"/home/u/.ssh/authorized_keys/a", "/home/u/.ssh/authorized_keys/a/etc/shadow",
+		"/home/u/.ssh/rc/x", "/root/.ssh/environment/deep/er",
 		"/etc/tmpxdvph4n_/resolv.conf", "/etc/dconf/db/ibus",
 		"/etc/systemd/system/snap-firefox-1.mount", "/etc/udev/rules.d/70-snap.firefox.rules",
 		"/etc/ld.so.cache", "/etc/ssl/certs/ca-certificates.crt", "/etc/security/opasswd",

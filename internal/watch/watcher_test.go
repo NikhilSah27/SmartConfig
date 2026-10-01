@@ -30,6 +30,7 @@ exclude **/.*.sw[a-p]
 exclude **/.*.{swx,swpx}
 include **/.ssh/{authorized_keys,authorized_keys2,rc,environment}
 exclude **/.ssh/*
+exclude **/.ssh/*/*
 exclude ROOT/cons/**/*.dpkg-{new,tmp,old,dist,bak,remove,backup}
 include ROOT/cons/**
 exclude **/*~

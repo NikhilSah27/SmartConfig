@@ -452,3 +452,58 @@ func TestSymlinkAtomicTempHandling(t *testing.T) {
 		}
 	}
 }
+
+// ReadStateBelow refuses a symlink anywhere between the base directory and
+// the file, the base itself included, and reads normal paths as ReadState.
+func TestReadStateBelow(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "ssh")
+	os.MkdirAll(filepath.Join(home, "a", "b"), 0o755)
+	mustWrite(t, filepath.Join(home, "a", "b", "f"), "ok\n", 0o644)
+	vault := filepath.Join(base, "vault")
+	os.MkdirAll(filepath.Join(vault, "b"), 0o700)
+	mustWrite(t, filepath.Join(vault, "b", "f"), "SECRET\n", 0o600)
+
+	s, err := ReadStateBelow(home, filepath.Join(home, "a", "b", "f"))
+	if err != nil || string(s.Data) != "ok\n" {
+		t.Fatalf("normal path: %+v %v", s, err)
+	}
+	// A middle directory swapped for a symlink.
+	os.Rename(filepath.Join(home, "a"), filepath.Join(home, "a.old"))
+	os.Symlink(vault, filepath.Join(home, "a"))
+	if _, err := ReadStateBelow(home, filepath.Join(home, "a", "b", "f")); !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("symlink in the middle: %v", err)
+	}
+	// The last directory as a symlink.
+	os.Remove(filepath.Join(home, "a"))
+	os.Mkdir(filepath.Join(home, "a"), 0o755)
+	os.Symlink(filepath.Join(vault, "b"), filepath.Join(home, "a", "b"))
+	if _, err := ReadStateBelow(home, filepath.Join(home, "a", "b", "f")); !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("symlink as the parent: %v", err)
+	}
+	// The base itself swapped for a symlink.
+	os.Rename(home, home+".old")
+	os.Symlink(vault, home)
+	if _, err := ReadStateBelow(home, filepath.Join(home, "b", "f")); !errors.Is(err, ErrUnsafePath) {
+		t.Fatalf("symlinked base: %v", err)
+	}
+	os.Remove(home)
+	os.Rename(home+".old", home)
+	// A directory on the way that became a file: the path is gone.
+	os.Remove(filepath.Join(home, "a", "b"))
+	mustWrite(t, filepath.Join(home, "a", "b"), "file now", 0o644)
+	if _, err := ReadStateBelow(home, filepath.Join(home, "a", "b", "f")); !IsNotExist(err) {
+		t.Fatalf("file on the way: %v", err)
+	}
+	// Missing, and a link as the last name (read as a link, not followed).
+	if _, err := ReadStateBelow(home, filepath.Join(home, "nope", "f")); !IsNotExist(err) {
+		t.Fatalf("missing: %v", err)
+	}
+	os.Symlink(filepath.Join(vault, "b", "f"), filepath.Join(home, "l"))
+	if s, err := ReadStateBelow(home, filepath.Join(home, "l")); err != nil || s.Kind != "link" || s.Data != nil {
+		t.Fatalf("link: %+v %v", s, err)
+	}
+	if _, err := ReadStateBelow(home, "/etc/hosts"); err == nil {
+		t.Fatal("path outside the base accepted")
+	}
+}

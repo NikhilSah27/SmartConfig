@@ -72,12 +72,10 @@ func (w *Watcher) needsObject(o store.Obs) bool {
 	return !w.st.HasObject(hex.EncodeToString(sum[:]))
 }
 
-// homeFile reports whether p lies under a login .ssh root and is owned by
-// a user other than root: such files are size- and rate-limited.
+// homeFile reports whether p lies under a login .ssh root: such files are
+// size- and rate-limited whoever owns them (a user can make root's reads
+// land on files root owns, so ownership proves nothing).
 func (w *Watcher) homeFile(p string, uid int) bool {
-	if uid == 0 {
-		return false
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for r := range w.sshSet {
@@ -88,7 +86,7 @@ func (w *Watcher) homeFile(p string, uid int) bool {
 	return false
 }
 
-// limitUserFile applies question 9's limits to a user-owned home file:
+// limitUserFile applies question 9's limits to a file under a login home:
 // over UserFileMax it becomes a digest row, and it is recorded at most
 // once per UserFileGap. It returns the time to wait until, or zero.
 func (w *Watcher) limitUserFile(o *store.Obs) time.Time {
