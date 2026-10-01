@@ -877,3 +877,21 @@ func TestPanicWhileLockedEndsRun(t *testing.T) {
 	}
 	e.cancel = nil
 }
+
+// With explicit roots (sc watch --root) the watcher reads no passwd at all:
+// nothing in it may do a name lookup that could hang at boot.
+func TestExplicitRootsReadNoPasswd(t *testing.T) {
+	e := newEnv(t)
+	e.cfg.Roots = []string{e.root}
+	e.cfg.PasswdPath = filepath.Join(t.TempDir(), "missing-passwd")
+	e.start()
+	if strings.Contains(e.log.String(), "passwd") {
+		t.Fatalf("passwd read:\n%s", e.log.String())
+	}
+}
+
+func TestCheckHomeRootSlash(t *testing.T) {
+	if err := checkHome("/tmp/x/home", []string{"/"}); err == nil {
+		t.Fatal("SC_HOME under / accepted")
+	}
+}

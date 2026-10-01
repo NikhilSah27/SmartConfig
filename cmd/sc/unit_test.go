@@ -24,6 +24,7 @@ func TestUnitFile(t *testing.T) {
 		"\nType=exec\n", "\nRestart=on-failure\n", "\nWantedBy=multi-user.target\n",
 		"\nEnvironment=GOTRACEBACK=none\n", "\nStartLimitBurst=", "\nIOSchedulingClass=",
 		"\nExecStart=/usr/local/sbin/sc watch\n", "\nSyslogIdentifier=scd\n",
+		"\nExecReload=/bin/kill -HUP $MAINPID\n", "\nAfter=remote-fs.target\n",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit lacks %q", strings.TrimSpace(want))

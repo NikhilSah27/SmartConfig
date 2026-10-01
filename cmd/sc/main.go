@@ -60,6 +60,9 @@ func claimEnd() bool {
 // signal ends the watch cleanly instead of killing sc (plan 8: exit 0).
 var watchCancel atomic.Pointer[context.CancelFunc]
 
+// watchRescan holds the running watcher's RequestRescan, for SIGHUP.
+var watchRescan atomic.Pointer[func()]
+
 // watchStopped is set when a signal ended sc watch through watchCancel.
 var watchStopped atomic.Bool
 
@@ -100,15 +103,22 @@ func main() {
 // prints one line; SQLite rolls back an open transaction at the next open.
 func handleSignals(sigs <-chan os.Signal) {
 	sig := <-sigs
+	// sc watch: SIGHUP asks for a rescan (systemctl reload scd), as
+	// daemons treat it; it never stops the watcher.
+	for sig == syscall.SIGHUP && watchRescan.Load() != nil {
+		(*watchRescan.Load())()
+		sig = <-sigs
+	}
 	received.Store(int32(sig.(syscall.Signal)))
 	if c := watchCancel.Load(); c != nil && isStop(sig) {
 		// sc watch: stop watching, finish the batch, exit 0. A second
-		// signal stops at once.
+		// stop signal stops at once.
 		watchStopped.Store(true)
 		(*c)()
-		sig = <-sigs
+		for sig = <-sigs; sig == syscall.SIGHUP; sig = <-sigs {
+		}
 		if claimEnd() {
-			fmt.Fprintf(os.Stderr, "sc: stopped by %s\n", sig)
+			fmt.Fprintf(os.Stderr, "%ssc: stopped by %s\n", errPrefix(os.Stderr), sig)
 		}
 		os.Exit(1)
 	}
@@ -131,6 +141,16 @@ func handleSignals(sigs <-chan os.Signal) {
 		fmt.Fprintf(os.Stderr, "sc: stopped by %s (file not changed)\n", sig)
 	}
 	endBy(sig)
+}
+
+// errPrefix is "<3>" when stderr is journald (JOURNAL_STREAM names it), so
+// a fatal error of scd is logged at err priority and shows up in
+// journalctl -p warning (plan 7.6); "" otherwise.
+func errPrefix(stderr io.Writer) string {
+	if f, ok := stderr.(*os.File); ok && isJournal(f, os.Getenv("JOURNAL_STREAM")) {
+		return "<3>"
+	}
+	return ""
 }
 
 // isStop reports whether sig asks sc to stop (not a fault signal).
@@ -166,7 +186,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 	defer func() {
 		if r := recover(); r != nil {
 			if claimEnd() {
-				fmt.Fprintf(stderr, "sc: internal error: %v\n", r)
+				fmt.Fprintf(stderr, "%ssc: internal error: %v\n", errPrefix(stderr), r)
 			}
 			code = 1
 		}
@@ -178,7 +198,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 	if err := root.ExecuteContext(ctx); err != nil {
 		if claimEnd() {
 			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
-			fmt.Fprintf(stderr, "sc: %s\n", msg)
+			fmt.Fprintf(stderr, "%ssc: %s\n", errPrefix(stderr), msg)
 		}
 		return 1
 	}

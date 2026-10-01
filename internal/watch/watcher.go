@@ -291,7 +291,7 @@ func checkHome(home string, roots []string) error {
 		if err != nil {
 			continue
 		}
-		if resolved == rr || strings.HasPrefix(resolved, rr+"/") {
+		if resolved == rr || strings.HasPrefix(resolved, strings.TrimSuffix(rr, "/")+"/") {
 			return fmt.Errorf("SC_HOME %s is inside watched root %s", home, r)
 		}
 	}
@@ -326,7 +326,7 @@ func lockHome(home string) (*os.File, error) {
 	p := filepath.Join(home, "scd.lock")
 	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", p, err)
+		return nil, fmt.Errorf("open %s: %v", p, errText(err))
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		b, _ := os.ReadFile(p)
@@ -405,6 +405,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		return err
 	case <-done:
 	}
+	w.logLine(prioInfo, "stopped")
 	select {
 	case err := <-errc:
 		return err
@@ -615,6 +616,9 @@ func (w *Watcher) rootChangedLocked() {
 		w.rescanAfter = t
 	}
 }
+
+// RequestRescan asks the worker for a rescan (sc watch on SIGHUP).
+func (w *Watcher) RequestRescan() { w.requestRescan() }
 
 // requestRescan asks the worker for a rescan.
 func (w *Watcher) requestRescan() {
