@@ -28,9 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 14** (chunk E): `sc watch` (`cmd/sc/watch.go`,
-`runContext`, journald prefixes, `--root`). Chunks A-D are reviewed and
-closed. Chunks A,
+**Now: M2 step 15** (chunk E): `scripts/scd.service` and the M2
+acceptance script (`accept-m2.sh`, `make accept-m2`). Chunks A-D are
+reviewed and closed. Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -403,3 +403,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     when paths change type, rescan loops on busy hosts, and a hang after a
     panic. All fixed with tests that fail when the fix is reverted.
   - Checks clean as user (5 watcher runs), race (2 runs) and root.
+- **M2 step 14** `39ae262`: `sc watch` with `--root`, `runContext`, exit 0 on
+  SIGTERM (the real binary is tested), journald priority prefixes only
+  when `JOURNAL_STREAM` names stderr. Mutation checks: 6 of 6. Checks
+  clean as user, race and root.
