@@ -114,7 +114,9 @@ func (e *env) start() {
 		e.t.Cleanup(func() { st.Close() })
 	}
 	e.t.Cleanup(e.stop)
-	e.waitFor("the baseline", func() bool { return strings.Contains(e.log.String(), "baseline: ") })
+	// A large baseline under the race detector can take a while; this is
+	// only an upper bound.
+	e.waitForWithin(60*time.Second, "the baseline", func() bool { return strings.Contains(e.log.String(), "baseline: ") })
 }
 
 // stop cancels the watcher and checks that Run returned nil.

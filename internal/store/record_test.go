@@ -478,3 +478,13 @@ func TestRecordSuffix(t *testing.T) {
 	wantHistory(t, s, p, "file first seen", "file changed while not watching")
 	wantHistory(t, s, q, "file first seen (found by rescan)")
 }
+
+func TestHasObject(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "x\n", 0o644)
+	c, _ := snap(t, s, p)
+	if !s.HasObject(c.Blob) || s.HasObject(strings.Repeat("0", 64)) || s.HasObject("../x") {
+		t.Fatal("HasObject wrong")
+	}
+}

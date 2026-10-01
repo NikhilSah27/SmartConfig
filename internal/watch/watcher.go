@@ -130,10 +130,16 @@ type Watcher struct {
 	dirty     map[string]*entry
 	gen       int
 	rescanReq string // reason of a requested rescan, "" if none
-	lastScan  time.Time
-	logged    map[string]bool // one-time log lines
-	roots     []string        // usable roots of the last rescan
-	baseline  *baseline       // startup counts, nil once logged
+	// rescanAfter delays a requested rescan: one asked for because a root
+	// itself moved or vanished waits until things settle (Cap).
+	rescanAfter time.Time
+	lastScan    time.Time
+	logged      map[string]bool      // one-time log lines
+	roots       []string             // usable roots of the last rescan
+	baseline    *baseline            // startup counts, nil once logged
+	sshSet      map[string]bool      // login .ssh roots of the last rescan
+	userRows    map[string]time.Time // last row of each user-owned home file
+	lowSpace    bool                 // under the free-space floor
 
 	poke chan struct{}
 }
@@ -178,6 +184,7 @@ func New(cfg Config) (*Watcher, error) {
 		cfg: cfg, dirs: map[string]watchRef{}, wds: map[*Inotify]map[int]string{},
 		listings: map[string]map[string]bool{}, dirty: map[string]*entry{},
 		logged: map[string]bool{}, poke: make(chan struct{}, 1),
+		sshSet: map[string]bool{}, userRows: map[string]time.Time{},
 	}
 	roots, machine := w.usableRoots(sc)
 	w.scope = machine
@@ -390,6 +397,9 @@ func (w *Watcher) Run(ctx context.Context) error {
 func (w *Watcher) read(ctx context.Context, in *Inotify) {
 	buf := make([]byte, ReadBuf)
 	for {
+		if testHookBeforeRead != nil {
+			testHookBeforeRead(in)
+		}
 		evs, err := in.Read(buf)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, os.ErrClosed) {
@@ -411,7 +421,11 @@ func (w *Watcher) handle(in *Inotify, e Event) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if e.Wd == -1 && e.Mask&syscall.IN_Q_OVERFLOW != 0 {
-		w.logLine(prioErr, "event queue overflowed; rescanning")
+		which := "system"
+		if in == w.home {
+			which = "home"
+		}
+		w.logLine(prioErr, "event queue of the "+which+" roots overflowed; rescanning them")
 		for d, ref := range w.dirs {
 			if ref.in == in {
 				delete(w.listings, d)
@@ -431,13 +445,13 @@ func (w *Watcher) handle(in *Inotify, e Event) {
 			delete(w.listings, dir)
 		}
 		if w.isRoot(dir) {
-			w.requestRescanLocked(reasonRescan)
+			w.rootChangedLocked()
 		}
 		return
 	}
 	if e.Mask&(syscall.IN_MOVE_SELF|syscall.IN_DELETE_SELF) != 0 {
 		if w.isRoot(dir) {
-			w.requestRescanLocked(reasonRescan)
+			w.rootChangedLocked()
 		}
 		return
 	}
@@ -507,6 +521,9 @@ func (w *Watcher) unwatchBelow(dir string) {
 func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 	now := time.Now()
 	e := w.dirty[p]
+	if e == nil && reason == reasonEvent && w.overDirtyLocked() {
+		return
+	}
 	if e == nil {
 		e = &entry{first: now, reason: reason, prefix: prefix}
 		w.dirty[p] = e
@@ -544,6 +561,16 @@ func (w *Watcher) requestRescanLocked(reason string) {
 	}
 }
 
+// rootChangedLocked asks for a rescan once a moved or removed root has
+// had Cap to settle: a root moved away and back (or a ~/.ssh replaced by
+// a new one) is then found in place (caller holds mu).
+func (w *Watcher) rootChangedLocked() {
+	w.requestRescanLocked(reasonRescan)
+	if t := time.Now().Add(w.cfg.Cap); t.After(w.rescanAfter) {
+		w.rescanAfter = t
+	}
+}
+
 // requestRescan asks the worker for a rescan.
 func (w *Watcher) requestRescan() {
 	w.mu.Lock()
@@ -558,20 +585,33 @@ func (w *Watcher) requestRescan() {
 // itself has proof of absence.
 func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) int {
 	w.mu.Lock()
-	wd, err := in.AddWatch(dir)
-	if err != nil {
+	var wd int
+	var err error
+	if testHookAddWatch != nil {
+		err = testHookAddWatch(dir)
+	}
+	if err == nil {
+		wd, err = in.AddWatch(dir)
+	}
+	switch {
+	case errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR):
 		w.mu.Unlock()
-		if !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ENOTDIR) {
-			w.logOnce("watch "+dir, prioErr, err.Error())
-		}
 		return 0
+	case err != nil:
+		// Out of watches (ENOSPC) or another error: log once per rescan,
+		// and still walk the directory, so every rescan reads it.
+		w.mu.Unlock()
+		w.logOnce(fmt.Sprintf("watch %d %s", gen, err), prioErr,
+			fmt.Sprintf("cannot watch %s: %v (rescans still read it)", show(dir), errText(err)))
+		w.mu.Lock()
+	default:
+		if old, ok := w.wds[in][wd]; ok && old != dir {
+			delete(w.dirs, old) // the same inode under a new name
+			delete(w.listings, old)
+		}
+		w.wds[in][wd] = dir
+		w.dirs[dir] = watchRef{in: in, wd: wd, gen: gen}
 	}
-	if old, ok := w.wds[in][wd]; ok && old != dir {
-		delete(w.dirs, old) // the same inode under a new name
-		delete(w.listings, old)
-	}
-	w.wds[in][wd] = dir
-	w.dirs[dir] = watchRef{in: in, wd: wd, gen: gen}
 	w.mu.Unlock()
 
 	ents, err := os.ReadDir(dir)
@@ -611,6 +651,9 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 // rescan walks every usable root and marks every stored live path (plan
 // 6.3 step 17), so changes no event reported are found.
 func (w *Watcher) rescan(reason string) {
+	if testHookRescan != nil {
+		testHookRescan(reason)
+	}
 	base, err := w.baseScope()
 	if err != nil {
 		w.logOnce("scope", prioErr, err.Error())
@@ -631,6 +674,7 @@ func (w *Watcher) rescan(reason string) {
 	}
 	w.mu.Lock()
 	w.scope = machine // login homes may have changed
+	w.sshSet = ssh
 	w.gen++
 	gen := w.gen
 	w.roots = keep
@@ -719,8 +763,10 @@ func (w *Watcher) work(ctx context.Context) {
 			testHookPanic()
 		}
 		w.mu.Lock()
+		w.periodicLocked(time.Now())
 		reason := w.rescanReq
-		if reason != "" && (reason == reasonStartup || time.Since(w.lastScan) >= w.cfg.RescanMinGap) {
+		settled := !time.Now().Before(w.rescanAfter)
+		if reason != "" && (reason == reasonStartup || settled && time.Since(w.lastScan) >= w.cfg.RescanMinGap) {
 			w.rescanReq = ""
 			w.mu.Unlock()
 			w.rescan(reason)
@@ -732,6 +778,7 @@ func (w *Watcher) work(ctx context.Context) {
 			w.mu.Lock()
 		}
 		batch, next := w.popDue(time.Now())
+		lastScan, rescanAfter := w.lastScan, w.rescanAfter // read under mu
 		w.mu.Unlock()
 		if len(batch) > 0 {
 			w.process(ctx, batch)
@@ -743,9 +790,16 @@ func (w *Watcher) work(ctx context.Context) {
 			wait = w.cfg.RescanEvery
 		}
 		if reason != "" {
-			if gap := w.cfg.RescanMinGap - time.Since(w.lastScan); gap < wait {
+			gap := w.cfg.RescanMinGap - time.Since(lastScan)
+			if s := time.Until(rescanAfter); s > gap {
+				gap = s
+			}
+			if gap < wait {
 				wait = gap
 			}
+		}
+		if tick := w.cfg.RescanEvery - time.Since(lastScan); tick < wait {
+			wait = tick
 		}
 		if wait < 0 {
 			wait = 0
@@ -818,6 +872,22 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 	if len(obs) == 0 {
 		return
 	}
+	if w.underFloor() {
+		keepObs, keepDue := obs[:0], handled[:0]
+		w.mu.Lock()
+		for i, o := range obs {
+			if w.needsObject(o) {
+				w.remarkLocked(handled[i], time.Now().Add(w.cfg.FloorBackoff))
+				continue
+			}
+			keepObs, keepDue = append(keepObs, o), append(keepDue, handled[i])
+		}
+		w.mu.Unlock()
+		obs, handled = keepObs, keepDue
+		if len(obs) == 0 {
+			return
+		}
+	}
 	if testHookBeforeStoreRecord != nil {
 		testHookBeforeStoreRecord()
 	}
@@ -831,6 +901,9 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 		w.mu.Unlock()
 		return
 	}
+	if testHookRecorded != nil {
+		testHookRecorded(len(res))
+	}
 	for i, r := range res {
 		d := handled[i]
 		switch {
@@ -840,6 +913,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			w.remarkLocked(d, time.Now().Add(w.cfg.Quiet))
 			w.mu.Unlock()
 		case r.Recorded:
+			w.noteUserRow(r.Change)
 			w.logRow(r.Change, d.e.reason)
 			if d.path == w.cfg.PasswdPath {
 				w.requestRescan()
@@ -898,6 +972,12 @@ func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 		o.CheckStamp = false
 	}
 	o.State = &st
+	if until := w.limitUserFile(&o); !until.IsZero() {
+		w.mu.Lock()
+		w.remarkLocked(d, until)
+		w.mu.Unlock()
+		return o, false, true
+	}
 	return o, true, false
 }
 

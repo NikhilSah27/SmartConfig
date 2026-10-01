@@ -401,6 +401,29 @@ func (s *Store) putBlob(sha string, data []byte) error {
 	return nil
 }
 
+// IntegrityCheck runs SQLite's integrity_check and returns nil when the
+// database is sound.
+func (s *Store) IntegrityCheck() error {
+	var res string
+	if err := s.db.QueryRow("PRAGMA integrity_check").Scan(&res); err != nil {
+		return fmt.Errorf("integrity check: %w", err)
+	}
+	if res != "ok" {
+		return fmt.Errorf("integrity check: %s", res)
+	}
+	return nil
+}
+
+// HasObject reports whether content sha is already stored, so recording
+// it needs no new object (the watcher's free-space floor).
+func (s *Store) HasObject(sha string) bool {
+	if len(sha) != 64 {
+		return false
+	}
+	_, err := os.Stat(s.blobPath(sha))
+	return err == nil
+}
+
 // Blob returns the stored bytes for sha, verifying their checksum.
 func (s *Store) Blob(sha string) ([]byte, error) {
 	if len(sha) != 64 {
