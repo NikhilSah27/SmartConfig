@@ -350,3 +350,39 @@ func TestRemoveFile(t *testing.T) {
 		t.Fatal("directory removed")
 	}
 }
+
+// Whatever replaces the path between fstatat and the open or readlink is
+// ErrReplaced (so callers read again), never read and never followed.
+func TestReadStateSwapBeforeOpen(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "conf")
+	other := filepath.Join(dir, "other")
+	mustWrite(t, other, "secret\n", 0o600)
+	defer func() { testHookBeforeOpen = nil }()
+	for name, c := range map[string]struct {
+		setup, swap func()
+	}{
+		"file for file": {func() { mustWrite(t, p, "x\n", 0o644) },
+			func() { mustWrite(t, p+".n", "y\n", 0o644); os.Rename(p+".n", p) }},
+		"file for link": {func() { mustWrite(t, p, "x\n", 0o644) },
+			func() { os.Remove(p); os.Symlink(other, p) }},
+		"file for fifo": {func() { mustWrite(t, p, "x\n", 0o644) },
+			func() { os.Remove(p); syscall.Mkfifo(p, 0o644) }},
+		"link for file": {func() { os.Symlink(other, p) },
+			func() { os.Remove(p); mustWrite(t, p, "x\n", 0o644) }},
+	} {
+		os.Remove(p)
+		c.setup()
+		testHookBeforeOpen = c.swap
+		done := make(chan error, 1)
+		go func() { _, err := ReadState(p); done <- err }()
+		select {
+		case err := <-done:
+			if !errors.Is(err, ErrReplaced) {
+				t.Errorf("%s: %v", name, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s: blocked", name)
+		}
+	}
+}

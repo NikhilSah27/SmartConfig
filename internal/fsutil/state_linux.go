@@ -36,6 +36,16 @@ type State struct {
 	Stable bool // false: the path changed while it was being read
 }
 
+// linkRefused is readFileAt's error for a symlink where a file was
+// expected. ReadState turns it into ErrReplaced; readChecked reports it.
+type linkRefused struct{ path string }
+
+func (e *linkRefused) Error() string { return e.path + " is a symlink, refusing" }
+
+// testHookBeforeOpen, if set by a test, runs in ReadState after fstatat
+// and before the file is opened or the link read.
+var testHookBeforeOpen func()
+
 // testHookAfterRead, if set by a test, runs in ReadState after the content
 // or link text is read and before the path is checked again.
 var testHookAfterRead func()
@@ -64,7 +74,13 @@ func ReadState(path string) (State, error) {
 		if st.Size > MaxSize {
 			return State{}, &notRecordable{fmt.Sprintf("%s is %d bytes, larger than the 8 MB limit", path, st.Size)}
 		}
-		return readFileAt(dfd, name, path, func(fi os.FileInfo) bool { return sameStat(fi, &st) })
+		s, err := readFileAt(dfd, name, path, func(fi os.FileInfo) bool { return sameStat(fi, &st) })
+		var link *linkRefused
+		if errors.As(err, &link) {
+			// A link put in its place since fstatat: read the path again.
+			return State{}, fmt.Errorf("%s %w", path, ErrReplaced)
+		}
+		return s, err
 	default:
 		return State{}, &notRecordable{fmt.Sprintf("%s is not a regular file", path)}
 	}
@@ -102,7 +118,14 @@ func openParent(path string) (int, string, error) {
 }
 
 func readLink(dfd int, name, path string, before *syscall.Stat_t) (State, error) {
+	if testHookBeforeOpen != nil {
+		testHookBeforeOpen()
+	}
 	target, err := readlinkat(dfd, name)
+	if errors.Is(err, syscall.EINVAL) {
+		// No longer a link: something was put in its place since fstatat.
+		return State{}, fmt.Errorf("%s %w", path, ErrReplaced)
+	}
 	if err != nil {
 		return State{}, fmt.Errorf("read link %s: %w", path, err)
 	}
@@ -129,10 +152,13 @@ func readLink(dfd int, name, path string, before *syscall.Stat_t) (State, error)
 // readFileAt opens name in dfd without following a symlink or blocking on a
 // FIFO, checks with same that it is the file expected, and reads it.
 func readFileAt(dfd int, name, path string, same func(os.FileInfo) bool) (State, error) {
+	if testHookBeforeOpen != nil {
+		testHookBeforeOpen()
+	}
 	fd, err := syscall.Openat(dfd, name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
-			return State{}, fmt.Errorf("%s is a symlink, refusing", path)
+			return State{}, &linkRefused{path}
 		}
 		return State{}, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -173,11 +199,11 @@ func readFileAt(dfd int, name, path string, same func(os.FileInfo) bool) (State,
 		Meta: Meta{Mode: fi.Mode(), UID: uid, GID: gid, Stamp: stamp}}, nil
 }
 
-// sameStat reports whether fi and st describe the same file (device and
-// inode).
+// sameStat reports whether fi and st describe the same file: device,
+// inode and type (a filesystem may give a new file a removed one's inode).
 func sameStat(fi os.FileInfo, st *syscall.Stat_t) bool {
 	s, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && s.Dev == st.Dev && s.Ino == st.Ino
+	return ok && s.Dev == st.Dev && s.Ino == st.Ino && s.Mode&syscall.S_IFMT == st.Mode&syscall.S_IFMT
 }
 
 // statInfo turns a Stat_t from fstatat into an os.FileInfo.
