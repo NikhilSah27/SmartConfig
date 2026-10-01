@@ -28,9 +28,11 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 15** (chunk E): `scripts/scd.service` and the M2
-acceptance script (`accept-m2.sh`, `make accept-m2`). Chunks A-D are
-reviewed and closed. Chunks A,
+**Now: chunk E review** (steps 14-16, normal review). Then the sign-off
+runs of plan section 13, each with your OK: the acceptance run
+(`sudo make accept-m2`), the M1 smoke run, the real store (S2), the
+owner scenario, a reboot, failure paths and a 24-hour soak. Step 17
+("M2 done", tag `m2`) comes last. Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -407,3 +409,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   SIGTERM (the real binary is tested), journald priority prefixes only
   when `JOURNAL_STREAM` names stderr. Mutation checks: 6 of 6. Checks
   clean as user, race and root.
+- **M2 step 15** `833a899`: `scripts/scd.service` (plan 9) with
+  `TestUnitFile`, and `scripts/accept-m2.sh` (plan 12, 19 steps, `make
+  accept-m2`). The acceptance run has not been run: it is yours.
+- **M2 step 16** `51a4b0a`: README (sc watch, install by hand, scope),
+  CLAUDE.md layout, PROJECT_LOG (rescue binary, resume prompt).
+- **Chunk E (steps 14-16) done**, waiting for its review.
