@@ -38,7 +38,15 @@ type Obs struct {
 	Force      bool          // insert even if equal to the newest row
 	Origin     string
 	Intent     string // "" for OriginAuto: computed (changed, mode ...)
+	Suffix     string // appended to a computed intent (SuffixNotWatching, ...)
 }
+
+// Intent suffixes for watcher rows that no live event explained (plan 6.5).
+const (
+	SuffixNotWatching = " while not watching" // found by the startup rescan
+	SuffixRescan      = " (found by rescan)"  // found by a later rescan
+	SuffixChanging    = " (still changing)"   // recorded although never stable
+)
 
 // Result is what Record did with one observation.
 type Result struct {
@@ -132,6 +140,10 @@ func (s *Store) Record(obs []Obs) ([]Result, error) {
 			}
 			if o.Origin == OriginAuto && o.Intent == "" {
 				c.Intent = autoIntent(last, c, o.Created)
+				// "first seen while not watching" says nothing more.
+				if !(c.Intent == "first seen" && o.Suffix == SuffixNotWatching) {
+					c.Intent += o.Suffix
+				}
 			}
 			if o.Created && last == nil && c.Kind != KindDeleted {
 				gone := Change{Path: o.Path, Kind: KindDeleted, Origin: o.Origin, Intent: "did not exist", TS: ts}

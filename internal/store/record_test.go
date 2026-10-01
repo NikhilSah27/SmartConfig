@@ -458,3 +458,23 @@ func TestRecordKindChangeIntent(t *testing.T) {
 	record(t, s, observe(t, p))
 	wantHistory(t, s, p, "file first seen", "digest now fingerprint only", "digest changed", "file now with content")
 }
+
+func TestRecordSuffix(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "conf")
+	write(t, p, "a\n", 0o644)
+	o := observe(t, p)
+	o.Suffix = SuffixNotWatching
+	record(t, s, o)
+	write(t, p, "b\n", 0o644)
+	o = observe(t, p)
+	o.Suffix = SuffixNotWatching
+	record(t, s, o)
+	q := filepath.Join(dir, "other")
+	write(t, q, "a\n", 0o644)
+	o = observe(t, q)
+	o.Suffix = SuffixRescan
+	record(t, s, o)
+	wantHistory(t, s, p, "file first seen", "file changed while not watching")
+	wantHistory(t, s, q, "file first seen (found by rescan)")
+}
