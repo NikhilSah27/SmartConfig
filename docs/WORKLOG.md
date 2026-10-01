@@ -28,8 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 13** (chunk D): overflow, periodic rescan, root changes,
-watch limit, disk floor, user-file limits, crash (`rescan.go`). Chunks A,
+**Now: chunk D review** (steps 11-13, full review: concurrency, events,
+security). Then chunk E, starting with M2 step 14 (`sc watch`). Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -377,3 +377,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   the race detector clean. Mutation checks: 17 of 20 caught, 3
   equivalent; one test was found not to test what it claimed and fixed.
   Plan note C12.
+- **M2 step 13** `836a2a9`: overflow (a real kernel overflow in the test),
+  periodic and rate-limited rescans, root changes (passwd, late roots, a
+  root moved away and back), the watch limit, the free-space floor,
+  user-file limits, the dirty-set bound, store-error backoff, and
+  `TestKillDuringBaseline`. The race detector found a real race in the
+  worker's wait computation; fixed. One race-mode run of the whole suite
+  failed in `internal/watch` with output not kept; the next 9 race runs,
+  5 normal runs and the root run passed. The chunk D review is asked to
+  look for flakiness. Mutation checks: 14 of 14. Plan note C13.
+- **Chunk D (steps 11-13) done**, waiting for its full review.
