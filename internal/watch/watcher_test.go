@@ -177,13 +177,19 @@ func (e *env) newest(p string) store.Change {
 }
 
 // barrier writes a new file and waits for its row: everything marked
-// before it has been handled by then (plan 11.2).
+// before it has been handled by then (plan 11.2). It does so twice: a
+// directory moved away is expanded into its stored paths in the batch
+// that may hold the first barrier, and those paths are handled before
+// the second. A path put back after a moved stamp can still slip past;
+// tests use testHookProcessed or waitFor for that.
 func (e *env) barrier() {
 	e.t.Helper()
-	e.n++
-	p := filepath.Join(e.root, fmt.Sprintf("barrier-%d", e.n))
-	os.WriteFile(p, []byte("b"), 0o644)
-	e.waitFor("barrier "+p, func() bool { return len(e.history(p)) > 0 })
+	for i := 0; i < 2; i++ {
+		e.n++
+		p := filepath.Join(e.root, fmt.Sprintf("barrier-%d", e.n))
+		os.WriteFile(p, []byte("b"), 0o644)
+		e.waitFor("barrier "+p, func() bool { return len(e.history(p)) > 0 })
+	}
 }
 
 func (e *env) want(p string, want ...string) {
@@ -750,4 +756,124 @@ func TestDirtyBoundFromMovedDir(t *testing.T) {
 		p := filepath.Join(d, fmt.Sprintf("f%02d", i))
 		e.waitFor(p+" deleted", func() bool { return len(e.history(p)) == 2 })
 	}
+}
+
+// A busy host whose scope holds more paths than MaxDirty: a rescan's marks
+// do not count against the bound, so events meanwhile do not clear them
+// and start rescan after rescan (chunk D concurrency review).
+func TestRescanUnderBusyEvents(t *testing.T) {
+	e := newEnv(t)
+	e.cfg.MaxDirty = 100
+	e.cfg.Batch = 10
+	var files []string
+	for i := 0; i < 300; i++ {
+		p := filepath.Join(e.root, fmt.Sprintf("f%03d", i))
+		put(t, p, "one\n", 0o644)
+		files = append(files, p)
+	}
+	var n atomic.Int32
+	testHookRescan = func(string) { n.Add(1) }
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	other := filepath.Join(filepath.Dir(e.root), "unwatched")
+	os.Mkdir(other, 0o755)
+	for i, p := range files { // changes no event reports (hard links)
+		a := filepath.Join(other, fmt.Sprint(i))
+		if err := os.Link(p, a); err != nil {
+			t.Skip(err)
+		}
+		f, _ := os.OpenFile(a, os.O_WRONLY|os.O_APPEND, 0)
+		f.WriteString("two\n")
+		f.Close()
+	}
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() { // a new file every 10 ms
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			os.WriteFile(filepath.Join(e.root, fmt.Sprintf("new%05d", i)), nil, 0o644)
+		}
+	}()
+	start := n.Load()
+	e.w.requestRescan()
+	for _, p := range files {
+		p := p
+		e.waitForWithin(30*time.Second, p, func() bool { return len(e.history(p)) == 2 })
+	}
+	if got := n.Load() - start; got > 2 {
+		t.Fatalf("%d rescans for one request", got)
+	}
+}
+
+// Stopping during a rescan ends the walk instead of calling add_watch on
+// closed inotify instances (one error line per directory before).
+func TestStopDuringRescan(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 20; i++ {
+		os.Mkdir(filepath.Join(e.root, fmt.Sprintf("d%02d", i)), 0o755)
+	}
+	var armed atomic.Bool
+	var cancel atomic.Value
+	testHookRescan = func(string) {
+		if armed.CompareAndSwap(true, false) {
+			cancel.Load().(func())()
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	cancel.Store(e.cancel)
+	armed.Store(true)
+	e.w.requestRescan()
+	if err := <-e.done; err != nil {
+		t.Fatal(err)
+	}
+	e.cancel = nil
+	if n := strings.Count(e.log.String(), "cannot watch"); n != 0 {
+		t.Fatalf("%d error lines on stop:\n%s", n, e.log.String())
+	}
+}
+
+// A panic while the worker holds mu still ends Run, even if a reader is
+// left blocked on mu, so systemd can restart scd.
+func TestPanicWhileLockedEndsRun(t *testing.T) {
+	e := newEnv(t)
+	var armed atomic.Bool
+	testHookPanicLocked = func() {
+		if armed.Load() {
+			// Hold mu long enough for the busy reader to block on it.
+			time.Sleep(300 * time.Millisecond)
+			panic("injected with mu held")
+		}
+	}
+	t.Cleanup(func() { testHookPanicLocked = nil })
+	e.start()
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() { // keep a reader busy, so it blocks on mu
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			os.WriteFile(filepath.Join(e.root, "busy"), []byte{byte(i)}, 0o644)
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	armed.Store(true)
+	e.w.wake()
+	select {
+	case err := <-e.done:
+		if err == nil || !strings.Contains(err.Error(), "injected with mu held") {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Run did not return after a panic with mu held")
+	}
+	e.cancel = nil
 }

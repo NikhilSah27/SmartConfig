@@ -116,12 +116,14 @@ func (w *Watcher) noteUserRow(c store.Change) {
 
 // overDirtyLocked handles the dirty-set bound: more than MaxDirty event
 // marks clear the set and ask for one rescan, which finds them all again
-// (caller holds mu). Rescans themselves are not bounded.
+// (caller holds mu). Only event marks count: a rescan marks every path of
+// the scope, which may be more than MaxDirty on its own.
 func (w *Watcher) overDirtyLocked() bool {
-	if len(w.dirty) < w.cfg.MaxDirty {
+	if w.nEvent < w.cfg.MaxDirty {
 		return false
 	}
 	w.dirty = map[string]*entry{}
+	w.nEvent = 0
 	w.requestRescanLocked(reasonRescan)
 	w.logLine(prioErr, fmt.Sprintf("more than %d changes waiting; rescanning instead", w.cfg.MaxDirty))
 	return true

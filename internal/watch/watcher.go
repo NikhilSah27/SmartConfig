@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -142,6 +143,8 @@ type Watcher struct {
 	sshSet      map[string]bool      // login .ssh roots of the last rescan
 	userRows    map[string]time.Time // last row of each user-owned home file
 	lowSpace    bool                 // under the free-space floor
+	nEvent      int                  // dirty entries marked by events (the MaxDirty bound)
+	stopping    atomic.Bool          // Run is stopping: walks end early
 
 	poke chan struct{}
 }
@@ -157,6 +160,7 @@ var (
 	testHookProcessed    func(path string) // the worker handled path
 	testHookBeforeRecord func()            // the worker is about to pop due paths
 	testHookPanic        func()            // runs in the worker loop
+	testHookPanicLocked  func()            // runs in the worker loop, mu held
 	// testHookBeforeStoreRecord runs after a batch is read and before it
 	// is recorded.
 	testHookBeforeStoreRecord func()
@@ -384,9 +388,23 @@ func (w *Watcher) Run(ctx context.Context) error {
 	start("home reader", func() { w.read(ctx, w.home) })
 	start("worker", func() { w.work(ctx) })
 	<-ctx.Done()
+	w.stopping.Store(true)
 	w.sys.Close()
 	w.home.Close()
-	wg.Wait()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case err := <-errc:
+		// A goroutine that panicked while holding mu may leave the others
+		// blocked for good: give them a moment, then report anyway, so
+		// the process exits and systemd restarts it.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+		return err
+	case <-done:
+	}
 	select {
 	case err := <-errc:
 		return err
@@ -541,6 +559,11 @@ func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 	if e == nil {
 		e = &entry{first: now, reason: reason}
 		w.dirty[p] = e
+		if reason == reasonEvent {
+			w.nEvent++
+		}
+	} else if reason == reasonEvent && e.reason != reasonEvent {
+		w.nEvent++
 	}
 	if prefix {
 		e.prefix = true
@@ -606,6 +629,9 @@ func (w *Watcher) requestRescan() {
 // recorded file and link. created holds for paths in a directory that
 // itself has proof of absence.
 func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) int {
+	if w.stopping.Load() {
+		return 0
+	}
 	w.mu.Lock()
 	var wd int
 	var err error
@@ -788,6 +814,9 @@ func (w *Watcher) work(ctx context.Context) {
 			testHookPanic()
 		}
 		w.mu.Lock()
+		if testHookPanicLocked != nil {
+			testHookPanicLocked()
+		}
 		w.periodicLocked(time.Now())
 		reason := w.rescanReq
 		settled := !time.Now().Before(w.rescanAfter)
@@ -871,6 +900,9 @@ func (w *Watcher) popDue(now time.Time) ([]due, time.Time) {
 	}
 	for _, d := range all {
 		delete(w.dirty, d.path)
+		if d.e.reason == reasonEvent {
+			w.nEvent--
+		}
 	}
 	return all, next
 }
@@ -901,10 +933,14 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 		return
 	}
 	if w.underFloor() {
+		needs := make([]bool, len(obs)) // hashing and stats outside mu
+		for i, o := range obs {
+			needs[i] = w.needsObject(o)
+		}
 		keepObs, keepDue := obs[:0], handled[:0]
 		w.mu.Lock()
 		for i, o := range obs {
-			if w.needsObject(o) {
+			if needs[i] {
 				w.holdLocked(handled[i], time.Now().Add(w.cfg.FloorBackoff))
 				continue
 			}
@@ -1049,6 +1085,9 @@ func (w *Watcher) remarkLocked(d due, t time.Time) {
 		return
 	}
 	w.dirty[d.path] = &e
+	if e.reason == reasonEvent {
+		w.nEvent++
+	}
 }
 
 // holdLocked is remarkLocked for a backoff (store error, free-space floor,

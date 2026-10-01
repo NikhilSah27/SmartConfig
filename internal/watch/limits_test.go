@@ -74,6 +74,7 @@ func TestOverflow(t *testing.T) {
 	var w atomic.Pointer[Watcher]
 	arm, release := stallReader(t, func() *Inotify { return w.Load().sys })
 	e.start()
+	t.Cleanup(release) // runs before the stop, even if a wait fails
 	w.Store(e.w)
 	arm()
 	os.WriteFile(r("poke"), nil, 0o644) // the reader returns once, then stalls
@@ -100,6 +101,7 @@ func TestOverflowIsolation(t *testing.T) {
 	arm, release := stallReader(t, func() *Inotify { return w.Load().home })
 	e.cfg.UserFileGap = time.Millisecond
 	e.start()
+	t.Cleanup(release) // runs before the stop, even if a wait fails
 	w.Store(e.w)
 	arm()
 	os.Chmod(filepath.Join(ssh, "authorized_keys"), 0o644) // the reader returns once, then stalls
@@ -141,23 +143,23 @@ func TestPeriodicRescan(t *testing.T) {
 // Requests within RescanMinGap of a rescan are merged into one.
 func TestRescanRateLimit(t *testing.T) {
 	e := newEnv(t)
-	e.cfg.RescanMinGap = time.Second
+	e.cfg.RescanMinGap = 2 * time.Second
 	var n atomic.Int32
 	testHookRescan = func(string) { n.Add(1) }
 	t.Cleanup(func() { testHookRescan = nil })
 	e.start()
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 	start := n.Load()
 	e.w.requestRescan()
 	e.waitFor("one rescan", func() bool { return n.Load() == start+1 })
-	// Ten requests spread over about 250 ms, well inside the 1 s gap,
+	// Ten requests spread over about 250 ms, well inside the 2 s gap,
 	// give one more rescan, after the gap.
 	begin := time.Now()
 	for i := 0; i < 10; i++ {
 		e.w.requestRescan()
 		time.Sleep(25 * time.Millisecond)
 	}
-	if time.Since(begin) > 800*time.Millisecond {
+	if time.Since(begin) > 1500*time.Millisecond {
 		t.Skip("machine too slow to stay inside the gap")
 	}
 	e.waitFor("the merged rescan", func() bool { return n.Load() >= start+2 })
