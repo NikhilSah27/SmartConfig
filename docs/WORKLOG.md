@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: chunk E review** (steps 14-16, normal review). Then the sign-off
-runs of plan section 13, each with your OK: the acceptance run
+**Now: waiting for you.** M2 is built and every chunk (A-E) is reviewed
+and closed. Next are the sign-off runs of plan section 13, each with your
+OK: the acceptance run
 (`make accept-m2`, as your user: it asks for sudo itself), the M1 smoke run, the real store (S2), the
 owner scenario, a reboot, failure paths and a 24-hour soak. Step 17
 ("M2 done", tag `m2`) comes last. Chunks A,
@@ -415,3 +416,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **M2 step 16** `51a4b0a`: README (sc watch, install by hand, scope),
   CLAUDE.md layout, PROJECT_LOG (rescue binary, resume prompt).
 - **Chunk E (steps 14-16) done**, waiting for its review.
+- **Chunk E review closed**
+  ([reviews/2026-10-01-m2-chunk-e.md](reviews/2026-10-01-m2-chunk-e.md)):
+  two reviewers. The acceptance script, started as this worklog said
+  (`sudo make accept-m2`), would have restored root's own
+  `authorized_keys` under nested sudo, and could stop itself with `kill
+  -STOP 0`: both fixed `e865164` before it was ever run. `sc watch`: SIGPIPE
+  no longer kills it silently, SIGHUP rescans instead of stopping, fatal
+  lines are logged at err `d56237f`. Docs warn that the M2 `sc` upgrades an
+  M1 store on first use `0bdf909`. Plan note C14. Checks clean as user (5
+  watcher runs), race and root; `make m1-compat` passes.
