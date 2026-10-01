@@ -28,7 +28,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 step 11** (chunk D): inotify on the syscall package. Chunks A,
+**Now: M2 step 12** (chunk D): the watcher: quiet period, proof of
+absence, rescans at start and new directories (`watcher.go`). Chunks A,
 B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
 (`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
@@ -349,7 +350,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   and changes nothing. The test fails when pointed at the M2 binary, so
   it tells them apart. Checks clean as user, race and root.
 - **Chunk B (steps 6-10) done**, waiting for its review.
-
 - **Chunk B review closed**
   ([reviews/2026-10-01-m2-chunk-b.md](reviews/2026-10-01-m2-chunk-b.md)):
   two reviewers, every finding reproduced first.
@@ -363,3 +363,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     piped through `tail`, which hid its exit status. It was fixed before
     any push; checks now run with `pipefail`.
   - Checks clean as user, race and root; `make m1-compat` passes.
+- **M2 step 11** `e410264`: new package `internal/watch` with the inotify
+  layer (syscall package only): nonblocking instance whose `Close`
+  unblocks `Read`, directory-only watches that refuse symlinks, and an
+  event parser. Mutation checks: 9 of 9 caught; 5 runs in a row pass.
+  Checks clean as user, race and root.
