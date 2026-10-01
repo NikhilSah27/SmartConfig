@@ -5,7 +5,7 @@ we have moved away from the plan. For the day-to-day log see
 [WORKLOG.md](WORKLOG.md); for decisions and recovery, [PROJECT_LOG.md](PROJECT_LOG.md).
 Every fact here comes from those files, the reviews and git history.
 
-Last updated: 2026-09-30, M2 steps 1-5, chunks A and C reviewed.
+Last updated: 2026-10-01, M2 steps 1-10, chunks A, B and C reviewed.
 
 ## 1. The idea
 
@@ -127,6 +127,14 @@ all three were fixed. Then:
   the noise rules. Both fixed, plus four small ones, each with a test that
   fails on the old code.
 
+- **Steps 6-10 (chunk B):** safe reads that never follow a symlink, row
+  kinds for links, deletions and fingerprints, restores of links and
+  deletions, a kind-aware CLI, and proof that the M1 binary still works on
+  an upgraded store. Its review (two reviewers) found one medium bug that
+  both found independently: a host key or machine-id reached through a
+  symlinked directory was stored with its content. Fixed, with four small
+  fixes and ten test gaps closed.
+
 ## 5. Where we moved away from the plan
 
 All changes since approval, with reasons, are kept in one place:
@@ -153,11 +161,12 @@ All changes since approval, with reasons, are kept in one place:
   hid a lock bug that separate processes showed at once.
 - **Independent review pays.** Every review round has found something the
   author's own tests did not.
+- **A check that cannot fail is no check.** A pipe through `tail` once hid
+  a failing test; the checks now run with `pipefail`.
 - **Check the real machine, read-only.** Running the scope against the real
   `/etc` listing is what makes the exclude list trustworthy.
 
 ## 7. Where we are
 
-M1 done. M2: steps 1-5 of 17 done, plus the scope changes; chunks A and C
-reviewed and closed. Next: chunk B (row kinds for links, deletions and
-fingerprints through the CLI), starting with step 6.
+M1 done. M2: steps 1-10 of 17 done, plus the scope changes; chunks A, B
+and C reviewed and closed. Next: chunk D, the watcher engine (steps 11-13).

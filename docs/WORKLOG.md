@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: chunk B review** (steps 6-10, normal review). Then chunk D,
-starting with M2 step 11 (inotify on the syscall package). From now on one thing at a
+**Now: M2 step 11** (chunk D): inotify on the syscall package. Chunks A,
+B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
+(`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
 time: no review runs while the next chunk is built (your call,
 2026-09-30).
 
@@ -348,3 +349,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   and changes nothing. The test fails when pointed at the M2 binary, so
   it tells them apart. Checks clean as user, race and root.
 - **Chunk B (steps 6-10) done**, waiting for its review.
+
+- **Chunk B review closed**
+  ([reviews/2026-10-01-m2-chunk-b.md](reviews/2026-10-01-m2-chunk-b.md)):
+  two reviewers, every finding reproduced first.
+  - **D1 (medium, found by both), `cae8992`:** a fingerprint-only file
+    reached through a symlinked directory (`/proc/self/root/etc/machine-id`)
+    was stored with its content; the rule now also checks the resolved path.
+  - **D2-D5 (low):** kind-change intents, swap races now retried, control
+    characters quoted in output, more 64-bit architectures build.
+  - Ten test gaps closed; each reported mutation now fails a test.
+  - A lesson: one commit briefly held a failing test because `go test` was
+    piped through `tail`, which hid its exit status. It was fixed before
+    any push; checks now run with `pipefail`.
+  - Checks clean as user, race and root; `make m1-compat` passes.
