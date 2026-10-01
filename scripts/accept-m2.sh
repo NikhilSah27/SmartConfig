@@ -9,6 +9,7 @@
 # refuses to run outside a VM (unless SC_ALLOW_REAL_HOST=1) or next to a
 # real scd.
 set -euo pipefail
+umask 022 # the expected modes (0644) assume it
 
 SC="$PWD/bin/sc"
 D=/etc/sc-accept.d
@@ -24,6 +25,12 @@ note() { echo "   note: $*"; }
 # --- 0. Preconditions --------------------------------------------------
 step "0. preconditions"
 [ "$(id -u)" -eq 0 ] || fail "run as root: sudo $0"
+# The user who ran sudo. Under nested sudo (sudo make accept-m2, whose
+# recipe calls sudo again) SUDO_USER is root: treat that as unknown, so
+# step 5 never restores root's own authorized_keys and step 1 never runs
+# go test as root.
+OWNER=${SUDO_USER:-}
+[ "$OWNER" != root ] || OWNER=
 if [ "${SC_ALLOW_REAL_HOST:-}" != 1 ] && ! systemd-detect-virt -q; then
 	fail "not a virtual machine (set SC_ALLOW_REAL_HOST=1 to run anyway)"
 fi
@@ -37,8 +44,8 @@ done
 file "$SC" | grep -q 'statically linked' || fail "$SC is not statically linked"
 HAVE_PY=1
 command -v python3 >/dev/null || { HAVE_PY=0; note "no python3: steps 3, 16 and the integrity checks are skipped"; }
-for p in "$D" "$D2" "$INERT" "$UNITFILE"; do
-	[ ! -e "$p" ] || fail "$p already exists"
+for p in "$D" "$D2" "$INERT" "$UNITFILE" "/etc/systemd/system/$UNIT.service"; do
+	[ ! -e "$p" ] && [ ! -L "$p" ] || fail "$p already exists"
 done
 sum() { sha256sum "$1" | cut -d' ' -f1; }
 SUM_FSTAB=$(sum /etc/fstab)
@@ -84,11 +91,11 @@ py_ro() { python3 - "$SC_HOME/changes.db" "$@"; }
 step "1. default scope against the real /etc"
 find /etc /boot/grub -xdev -printf '%y %p\n' >"$LISTING" 2>/dev/null || true
 chmod 644 "$LISTING"
-if [ -n "${SUDO_USER:-}" ]; then
-	sudo -u "$SUDO_USER" -H bash -lc "cd '$PWD' && SC_ETC_LISTING='$LISTING' go test -count=1 -run TestDefaultScopeRealListing ./internal/scope" ||
+if [ -n "$OWNER" ]; then
+	sudo -u "$OWNER" -H bash -lc "cd '$PWD' && SC_ETC_LISTING='$LISTING' go test -count=1 -run TestDefaultScopeRealListing ./internal/scope" ||
 		fail "TestDefaultScopeRealListing"
 else
-	note "SUDO_USER unset: skipped"
+	note "no non-root SUDO_USER: skipped (run: make accept-m2, not sudo make)"
 fi
 
 # --- 2. Start ----------------------------------------------------------
@@ -143,10 +150,16 @@ LOG=$("$SC" log -n 0)
 for p in /etc/fstab /etc/sudoers /etc/default/grub /etc/pam.d/common-auth /boot/grub/grub.cfg; do
 	grep -q " $p " <<<"$LOG" || fail "$p not recorded"
 done
-[ -e /root/.ssh/authorized_keys ] && { grep -q ' /root/.ssh/authorized_keys ' <<<"$LOG" || fail "/root/.ssh/authorized_keys not recorded"; }
-[ -L /etc/systemd/system/display-manager.service ] && {
+if [ -e /root/.ssh/authorized_keys ]; then
+	grep -q ' /root/.ssh/authorized_keys ' <<<"$LOG" || fail "/root/.ssh/authorized_keys not recorded"
+else
+	note "/root/.ssh/authorized_keys does not exist on this machine"
+fi
+if [ -L /etc/systemd/system/display-manager.service ]; then
 	[ "$(newest /etc/systemd/system/display-manager.service 6)" = link ] || fail "display-manager.service is not a link row"
-}
+else
+	note "no display-manager.service link on this machine"
+fi
 for p in /etc/ssh/ssh_host_ed25519_key /etc/machine-id; do
 	[ "$(newest $p 6)" = digest ] || fail "$p is not a digest row"
 done
@@ -156,28 +169,48 @@ fi
 
 # --- 5. Refusals --------------------------------------------------------
 step "5. refusals write nothing"
-before=$("$SC" log -n 0 | wc -l)
-out=$("$SC" watch 2>&1) && fail "a second sc watch started"
-grep -q 'already running' <<<"$out" || fail "second watch: $out"
-out=$(SC_HOME=$D/home "$SC" watch 2>&1) && fail "SC_HOME in /etc accepted"
-grep -q 'inside watched root /etc' <<<"$out" || fail "SC_HOME in /etc: $out"
+# Rows of the paths these steps touch, before and after: unrelated /etc
+# writes by other services must not fail the run.
+UHOME=""
+[ -z "$OWNER" ] || UHOME=$(getent passwd "$OWNER" | cut -d: -f6)
+TOUCHED=(/etc/ssh/ssh_host_ed25519_key /etc/machine-id)
+[ -z "$UHOME" ] || TOUCHED+=("$UHOME/.ssh/authorized_keys")
+count_touched() { local n=0 p; for p in "${TOUCHED[@]}"; do n=$((n + $(nrows "$p"))); done; echo $n; }
+before=$(count_touched)
+one_line() { [ -n "$2" ] && [ "$(wc -l <<<"$2")" -eq 1 ] || fail "$1: expected one line, got: $2"; }
+set +e
+out=$(timeout 20 "$SC" watch 2>&1); rc=$?
+set -e
+[ $rc -eq 1 ] && grep -q 'already running' <<<"$out" || fail "second watch (exit $rc): $out"
+set +e
+out=$(SC_HOME=$D/home timeout 20 "$SC" watch 2>&1); rc=$?
+set -e
+[ $rc -eq 1 ] && grep -q 'inside watched root /etc' <<<"$out" || fail "SC_HOME in /etc (exit $rc): $out"
 [ ! -e "$D" ] || fail "$D was created"
 KEY=$(newest /etc/ssh/ssh_host_ed25519_key 1)
+[ -n "$KEY" ] || fail "no row for the ed25519 host key"
 for c in cat diff restore; do
-	out=$("$SC" $c "$KEY" 2>&1) && fail "sc $c of the host key succeeded"
-	[ "$(wc -l <<<"$out")" -eq 1 ] || fail "sc $c of the host key: $out"
+	set +e
+	out=$("$SC" $c "$KEY" 2>&1); rc=$?
+	set -e
+	[ $rc -eq 1 ] || fail "sc $c of the host key: exit $rc"
+	one_line "sc $c of the host key" "$out"
 done
-out=$("$SC" restore "$(newest /etc/machine-id 1)" 2>&1) && fail "machine-id restored"
-grep -q 'fingerprint-only' <<<"$out" || fail "machine-id: $out"
+set +e
+out=$("$SC" restore "$(newest /etc/machine-id 1)" 2>&1); rc=$?
+set -e
+[ $rc -eq 1 ] && grep -q 'fingerprint-only' <<<"$out" || fail "machine-id (exit $rc): $out"
 [ "$(sum /etc/machine-id)" = "$SUM_MID" ] || fail "machine-id changed"
-if [ -n "${SUDO_USER:-}" ]; then
-	uhome=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-	if [ -n "$(rows "$uhome/.ssh/authorized_keys")" ]; then
-		out=$("$SC" restore "$(newest "$uhome/.ssh/authorized_keys" 1)" 2>&1) && fail "a user's authorized_keys restored"
-		[ "$(wc -l <<<"$out")" -eq 1 ] || fail "user authorized_keys: $out"
-	fi
+if [ -n "$UHOME" ] && [ -n "$(rows "$UHOME/.ssh/authorized_keys")" ]; then
+	set +e
+	out=$("$SC" restore "$(newest "$UHOME/.ssh/authorized_keys" 1)" 2>&1); rc=$?
+	set -e
+	[ $rc -eq 1 ] || fail "$OWNER's authorized_keys restored (exit $rc): $out"
+	one_line "$OWNER's authorized_keys" "$out"
+else
+	note "no non-root user's authorized_keys row: that refusal is skipped"
 fi
-[ "$("$SC" log -n 0 | wc -l)" = "$before" ] || fail "a refusal wrote a row"
+[ "$(count_touched)" = "$before" ] || fail "a refusal wrote a row"
 
 # --- 6-11. Writers -------------------------------------------------------
 step "6. new directory"
@@ -185,6 +218,7 @@ mkdir "$D" && printf 'one\n' >"$D/a.conf"
 wait_for 3 "a.conf rows" has_rows "$D/a.conf" 2
 [ "$(whats "$D/a.conf")" = "did not exist|created" ] || fail "a.conf: $(whats "$D/a.conf")"
 A_ID=$(newest "$D/a.conf" 1)
+[ -n "$A_ID" ] && [ "$("$SC" cat "$A_ID")" = one ] && [ "$(stat -c %a "$D/a.conf")" = 644 ] || fail "a.conf's created row"
 
 step "7. sed -i"
 sed -i s/one/two/ "$D/a.conf"
@@ -229,21 +263,24 @@ wait_for 5 "the second link row" has_rows "$D/x.service" 3
 # --- 12-13. Restores ------------------------------------------------------
 step "12. restore across processes, 5 times"
 for i in 1 2 3 4 5; do
-	"$SC" restore "$A_ID" >/dev/null
+	n=$(nrows "$D/a.conf")
+	"$SC" restore "$A_ID" >/dev/null || fail "round $i: sc restore $A_ID"
 	sleep 2
+	[ "$(nrows "$D/a.conf")" = $((n + 2)) ] || fail "round $i: $(($(nrows "$D/a.conf") - n)) new rows, want 2"
 	[ "$(rows "$D/a.conf" | awk 'NR<=2{print $4}' | paste -sd' ')" = "restore pre-restore" ] ||
 		fail "round $i: $(rows "$D/a.conf" | head -3)"
 	[ "$(cat "$D/a.conf")" = one ] && [ "$(stat -c %a "$D/a.conf")" = 644 ] || fail "round $i: content or mode"
 done
 
 step "13. undo a creation"
-out=$("$SC" restore "$X_DNE")
+[ -n "$X_DNE" ] || fail "no did-not-exist row for x.service"
+out=$("$SC" restore "$X_DNE") || fail "sc restore $X_DNE"
 grep -q '^removed ' <<<"$out" || fail "restore of did-not-exist: $out"
 [ ! -e "$D/x.service" ] && [ ! -L "$D/x.service" ] || fail "x.service still there"
 n=$(nrows "$D/x.service")
 sleep 2
 [ "$(newest "$D/x.service" 4)" = restore ] && [ "$(nrows "$D/x.service")" = "$n" ] || fail "an auto row after the restore"
-out=$("$SC" restore "$X_DNE")
+out=$("$SC" restore "$X_DNE") || fail "second sc restore $X_DNE"
 grep -q '^nothing to do' <<<"$out" || fail "second restore: $out"
 [ "$(nrows "$D/x.service")" = "$n" ] || fail "nothing to do wrote a row"
 
@@ -287,6 +324,9 @@ wait_for 300 "baseline: after the restart" baseline_done
 step "16. overflow"
 if [ $HAVE_PY = 1 ]; then
 	PID=$(systemctl show -p MainPID --value "$UNIT")
+	# MainPID is 0 while the unit is down; kill -STOP 0 would stop this
+	# script's own process group.
+	[ "${PID:-0}" -gt 0 ] && kill -0 "$PID" || fail "$UNIT has no running MainPID ($PID)"
 	kill -STOP "$PID"
 	python3 - "$D2/b.conf" "$D2/sub/s.conf" <<'EOF'
 import os, sys
@@ -317,9 +357,9 @@ if "$SC" log -n 0 | awk 'NR>1{print $5}' | grep -Eq '\.sc-tmp-|\.swp$|~$|/sed[^/
 fi
 [ "$(sum /etc/fstab)" = "$SUM_FSTAB" ] && [ "$(sum /etc/hosts)" = "$SUM_HOSTS" ] && [ "$(sum /etc/machine-id)" = "$SUM_MID" ] ||
 	fail "a watched file changed"
-if grep -rEs '^(After|Requires|Requisite|BindsTo|PartOf)=.*\bscd(-accept)?\.service' /etc/systemd /run/systemd/system /usr/lib/systemd | grep -v "^$UNITFILE:"; then
-	fail "a unit is ordered after or bound to scd"
-fi
+# Read errors must not hide a match (grep exits 2 then), so test the text.
+hits=$(grep -rEs '^(After|Requires|Requisite|BindsTo|PartOf)=.*\bscd(-accept)?\.service' /etc/systemd /run/systemd/system /usr/lib/systemd | grep -v "^$UNITFILE:" || true)
+[ -z "$hits" ] || fail "a unit is ordered after or bound to scd: $hits"
 
 step "19. PASS"
 echo "PASS"

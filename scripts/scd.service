@@ -7,10 +7,15 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # itself after scd or requires it.
 StartLimitIntervalSec=10min
 StartLimitBurst=5
+# Login homes on NFS or autofs must be mounted before the startup rescan,
+# or their authorized_keys would be recorded as deleted.
+After=remote-fs.target
 
 [Service]
 Type=exec
 ExecStart=/usr/local/sbin/sc watch
+# systemctl reload scd: a rescan (SIGHUP never stops the watcher).
+ExecReload=/bin/kill -HUP $MAINPID
 SyslogIdentifier=scd
 # A fatal Go runtime error prints one line instead of a goroutine dump.
 Environment=GOTRACEBACK=none
