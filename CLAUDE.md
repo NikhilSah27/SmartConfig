@@ -15,8 +15,8 @@ what is next.
   broken system. SQLite is modernc.org/sqlite, never mattn/go-sqlite3.
   One exception: `make race` runs the tests with CGO_ENABLED=1 for the race
   detector. The shipped binary is never built that way.
-- One binary, cmd/sc. Library code in internal/. No daemon until the milestone
-  that asks for it.
+- One binary, cmd/sc. Library code in internal/. The M2 watcher is the
+  subcommand `sc watch`, run by scripts/scd.service; no other daemon.
 - Data lives under $SC_HOME (default /var/lib/smartconfig). Tests always set
   SC_HOME to t.TempDir(). No test touches /etc or /var/lib.
 - Writing a config file back: temp file in the same directory, set mode and
@@ -32,7 +32,9 @@ what is next.
 
 ## Layout
 cmd/sc            the CLI (cobra); thin, calls into internal/
-internal/store    blobs + SQLite records: snapshot, list, get, restore
-internal/fsutil   atomic write, read mode/owner
-scripts/          smoke.sh and helpers a human runs in the VM
+internal/store    blobs + SQLite records: record, list, get, restore, migrations
+internal/fsutil   reads that never follow symlinks, atomic write, atomic symlink
+internal/scope    pure: which paths are recorded, tiers, fingerprint-only rules
+internal/watch    the watcher (sc watch): inotify, worker, rescans, limits
+scripts/          scd.service, smoke.sh, accept-m2.sh, build-sc-m1.sh
 docs/             WORKLOG (read first), plans, reviews, visual explainers

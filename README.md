@@ -12,8 +12,15 @@ Target: Ubuntu 24.04. Built one milestone at a time; see
 **Milestone 1 is done:** a single static Go binary, `sc`, that can snapshot a
 config file, list its history, print a snapshot, diff it against the file on
 disk, and restore it with its original mode and owner. Every restore can itself
-be undone. Milestones 2 to 7 (watcher daemon, checkers, rescue boot path,
-package, incident factory, local model) are planned.
+be undone.
+
+**Milestone 2 is built and reviewed, waiting for its acceptance and sign-off
+runs:** `sc watch` (run as the `scd` service) records every change under
+`/etc`, `/boot/grub` and each login's `~/.ssh` without anyone typing `sc`,
+including symlinks (systemd enable, disable, mask), deletions and new files.
+SSH host keys, `/etc/machine-id` and other secrets are kept as fingerprints
+only. Milestones 3 to 7 (checkers, rescue boot path, package, incident
+factory, local model) are planned.
 
 ## Build
 
@@ -24,9 +31,12 @@ half-broken system.
 ```sh
 make build      # -> bin/sc
 make test       # go test ./...
+make race       # tests under the race detector
 make vet
 make fmt        # fails if gofmt would change anything
-sudo make smoke # acceptance run against the real /etc/hosts (restores it)
+make m1-compat  # the M1 binary still works on an M2 store
+sudo make smoke # M1 acceptance run against the real /etc/hosts (restores it)
+make accept-m2  # M2 acceptance run in the VM (sudo; its own test paths only)
 ```
 
 ## Use
@@ -40,17 +50,49 @@ sudo ./bin/sc cat 2c6901                              # print a snapshot
 sudo ./bin/sc restore 2c6                             # put it back, atomically
 ```
 
+`sc log` shows `link`, `deleted` or `digest` in its SIZE column for symlinks,
+deletions and fingerprint-only files; `sc restore` puts links back and can
+undo the creation of a file (a "did not exist" row). Fingerprint-only files
+(SSH host keys, `/etc/machine-id`, TLS private keys) are never shown or
+restored.
+
 Ids are 6 hex characters; any unique prefix works. Data lives under
 `$SC_HOME` (default `/var/lib/smartconfig`): file contents in `objects/`,
 history in `changes.db` (SQLite, pure Go).
 
+## Watch every change (M2)
+
+```sh
+sudo ./bin/sc watch                  # foreground; Ctrl-C stops it (exit 0)
+./bin/sc watch --root ~/some/dir     # as a normal user, on a directory of your own
+```
+
+Installed by hand until the package milestone (not done on the dev VM before
+the M2 sign-off):
+
+```sh
+sudo install -m 0755 bin/sc /usr/local/sbin/sc
+sudo install -m 0644 scripts/scd.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now scd
+journalctl -u scd -p warning        # boot- and access-critical changes
+```
+
+`scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. What is
+watched is the built-in scope (`internal/scope/default.scope`): all of `/etc`
+minus generated files, caches and noise, `/boot/grub/grub.cfg` and
+`custom.cfg`, and each login's `authorized_keys`, `rc` and `environment`.
+Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
+priority. File contents never appear in the journal.
+
 ## Layout
 
 ```
-cmd/sc/            the CLI (cobra), one file per command
-internal/store/    blobs + SQLite records: snapshot, list, get, restore, diff
-internal/fsutil/   read with mode/owner, atomic write-back
-scripts/smoke.sh   acceptance run (sudo)
+cmd/sc/            the CLI (cobra), one file per command; sc watch is the daemon
+internal/store/    blobs + SQLite records: record, list, get, restore, diff, migrations
+internal/fsutil/   reads that never follow symlinks, atomic write-back and symlinks
+internal/scope/    which paths are watched, their tiers, fingerprint-only rules
+internal/watch/    the watcher: inotify, debounced worker, rescans, limits
+scripts/           scd.service, smoke.sh (M1) and accept-m2.sh (M2) acceptance runs
 docs/              worklog, plans, reviews, visual explainers
 ```
 

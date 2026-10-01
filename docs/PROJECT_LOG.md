@@ -21,7 +21,9 @@ Last updated: 2026-09-28, M1 tagged `m1` after four review rounds and five round
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
 
-Status: **M1 done and tagged `m1`** (store + CLI, hardened by four review
+Status (2026-10-01): **M2 built and reviewed** (steps 1-16; chunks A-D
+reviewed), waiting for its acceptance run and sign-off; see
+[WORKLOG.md](WORKLOG.md). Before that: **M1 done and tagged `m1`** (store + CLI, hardened by four review
 rounds and five rounds of fixes, see [reviews/](reviews/)). **M2 (watcher daemon) is next**; its plan
 ([M2_PLAN.md](M2_PLAN.md)) waits for approval. Live progress:
 [WORKLOG.md](WORKLOG.md).
@@ -187,9 +189,13 @@ original file of this VM.
 2. Press `e` on "Ubuntu", add ` init=/bin/bash` to the end of the `linux` line,
    press Ctrl-X.
 3. `mount -o remount,rw /`
-4. `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1` build, static, so
-   it works here; the repo's `bin/sc` may be a half-built M2 binary), or fix
-   the file with nano.
+4. Restore with a static `sc`, or fix the file with nano:
+   - once M2 is installed (sign-off S2): `/usr/local/sbin/sc restore <id>`,
+     the M2 binary, which also restores links and undoes creations;
+   - before that: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
+     build). On a store that M2 has migrated, `sc-m1` still restores file
+     rows and refuses link, deleted and fingerprint rows with one line
+     (`make m1-compat` proves this).
 5. `sync`, then `exec /sbin/init` or `reboot -f`.
 
 If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
@@ -213,12 +219,15 @@ fastest way back from a completely broken system.
 
 Open Claude Code in the checkout and say:
 
-> Read CLAUDE.md, MILESTONES.md and docs/PROJECT_LOG.md, then start
-> milestone 2. Show me the plan before writing code.
+> Read CLAUDE.md, then docs/WORKLOG.md (its "Now" section says what is in
+> progress), docs/M2_PLAN.md and its Appendix C, then continue.
 
-Rules that carry over from the M1 brief: plan first; implement in small
-steps with a commit each; run `go test ./...`, `go vet ./...` and gofmt
-before calling anything done; stop and ask if the spec is contradictory.
+Rules that carry over: plan first; one step at a time, each with its tests
+and mutation checks, a commit, a WORKLOG line and a push; run gofmt, vet and
+the tests as user, under `make race` and as root before calling anything
+done; stop and ask before touching the real /etc, /boot, store or systemd
+state, and before changing an approved plan.
+[JOURNEY.md](JOURNEY.md) tells the story so far and why each path was chosen.
 
 The full Claude Code transcript of the M1 session is kept only on the dev VM
 (`~/.claude/projects/-home-vboxuser-code-smartconfig/`), not in this public
