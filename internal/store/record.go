@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"smartconfig/internal/fsutil"
@@ -55,8 +56,16 @@ var testHookRecordInTx func()
 func (s *Store) SetFingerprintOnly(f func(path string) bool) { s.fingerprint = f }
 
 // FingerprintOnly reports whether only path's sha256, mode and owner may
-// be stored.
-func (s *Store) FingerprintOnly(path string) bool { return s.fingerprint(path) }
+// be stored. The rule is applied to the path as given and to the path with
+// its directories resolved, so /proc/self/root/etc/machine-id, or a path
+// through a symlink to /, is caught too.
+func (s *Store) FingerprintOnly(path string) bool {
+	if s.fingerprint(path) {
+		return true
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	return err == nil && s.fingerprint(filepath.Join(dir, filepath.Base(path)))
+}
 
 // Record stores up to MaxBatch observations (plan 5.4). Observations equal
 // to their path's newest row are dropped first, without a lock, unless

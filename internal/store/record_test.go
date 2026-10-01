@@ -417,3 +417,27 @@ func TestRecordRechecksUnderLock(t *testing.T) {
 	}
 	wantHistory(t, s, p, "file first seen")
 }
+
+// The fingerprint rule also holds for a path through a symlinked directory
+// (chunk B review D1): its content is never stored.
+func TestRecordDigestThroughSymlinkedDir(t *testing.T) {
+	s, dir := setup(t)
+	real := filepath.Join(dir, "etc")
+	os.Mkdir(real, 0o755)
+	key := filepath.Join(real, "machine-id")
+	write(t, key, "289a1e\n", 0o444)
+	s.SetFingerprintOnly(func(p string) bool { return p == key })
+	os.Symlink(dir, filepath.Join(dir, "rootlink"))
+	for _, p := range []string{
+		filepath.Join(dir, "rootlink", "etc", "machine-id"),
+		"/proc/self/root" + key,
+	} {
+		c, _, err := s.Snapshot(p, OriginManual, "")
+		if err != nil || c.Kind != KindDigest {
+			t.Fatalf("%s: %+v %v", p, c, err)
+		}
+		if _, err := os.Stat(s.blobPath(c.Blob)); !os.IsNotExist(err) {
+			t.Fatalf("%s: content stored", p)
+		}
+	}
+}
