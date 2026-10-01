@@ -229,8 +229,16 @@ func autoIntent(last, c *Change, created bool) string {
 	switch {
 	case c.Kind == KindLink && c.Target != last.Target:
 		parts = append(parts, "link -> "+c.Target)
-	case c.Kind != KindLink && (c.Blob != last.Blob || c.Kind != last.Kind):
-		parts = append(parts, "changed")
+	case c.Kind != KindLink:
+		if c.Blob != last.Blob {
+			parts = append(parts, "changed")
+		}
+		switch {
+		case c.Kind == KindDigest && last.Kind == KindFile:
+			parts = append(parts, "now fingerprint only")
+		case c.Kind == KindFile && last.Kind == KindDigest:
+			parts = append(parts, "now with content")
+		}
 	}
 	if c.Mode != last.Mode {
 		parts = append(parts, fmt.Sprintf("mode %s->%s", octal(last.Mode), octal(c.Mode)))

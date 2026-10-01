@@ -441,3 +441,20 @@ func TestRecordDigestThroughSymlinkedDir(t *testing.T) {
 		}
 	}
 }
+
+// A path that becomes fingerprint-only (an M1 row of a host key) says so,
+// and "changed" only when the content changed (chunk B review).
+func TestRecordKindChangeIntent(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "machine-id")
+	write(t, p, "a\n", 0o644)
+	s.SetFingerprintOnly(func(string) bool { return false })
+	record(t, s, observe(t, p))
+	s.SetFingerprintOnly(func(q string) bool { return q == p })
+	record(t, s, observe(t, p))
+	write(t, p, "b\n", 0o644)
+	record(t, s, observe(t, p))
+	s.SetFingerprintOnly(func(string) bool { return false })
+	record(t, s, observe(t, p))
+	wantHistory(t, s, p, "file first seen", "digest now fingerprint only", "digest changed", "file now with content")
+}
