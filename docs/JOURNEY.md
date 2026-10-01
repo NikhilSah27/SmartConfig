@@ -5,7 +5,7 @@ we have moved away from the plan. For the day-to-day log see
 [WORKLOG.md](WORKLOG.md); for decisions and recovery, [PROJECT_LOG.md](PROJECT_LOG.md).
 Every fact here comes from those files, the reviews and git history.
 
-Last updated: 2026-10-01, M2 steps 1-10, chunks A, B and C reviewed.
+Last updated: 2026-10-01, M2 steps 1-13, chunks A-D reviewed.
 
 ## 1. The idea
 
@@ -135,6 +135,17 @@ all three were fixed. Then:
   symlinked directory was stored with its content. Fixed, with four small
   fixes and ten test gaps closed.
 
+- **Steps 11-13 (chunk D), the watcher engine:** inotify readers, a
+  debounced worker, proof of absence, rescans, overflow handling (tested
+  against a real kernel overflow), disk and user-file limits, and a crash
+  test that kills a watcher mid-baseline. Its full review (three
+  reviewers) found the most serious bug so far: as a normal user, a
+  directory named `authorized_keys` in `~/.ssh` and a symlink swap made
+  the root watcher store a root-only file. It is fixed twice over (scope
+  and an O_NOFOLLOW read at every level), and the attack is now a
+  permanent test. The same review found an endless loop, a crash, a hang
+  after a panic and a rescan race, all fixed with tests.
+
 ## 5. Where we moved away from the plan
 
 All changes since approval, with reasons, are kept in one place:
@@ -151,6 +162,10 @@ All changes since approval, with reasons, are kept in one place:
 | C7 | Record alternatives; fingerprint private keys and secrets | Owner, after reviewing the excluded list |
 | C8 | Fingerprint host-key temp names; more consumer directories in block D | Chunk C review findings D1-D6 |
 | C9 | Record `~/.ssh/rc` and `environment`; fingerprint dropbear, WireGuard, apt auth and LUKS key files | Owner, on two questions from the chunk C review |
+| C10 | Step 6 reuses M1's `Meta.Stamp` and `LstatStamp` | No second copy of an API the store already uses |
+| C11 | Computed intents only for watcher rows | `sc snapshot -m` stays what the user typed |
+| C12 | `Obs.Suffix`; the CLI turns log priorities into journald or time prefixes | Plan had no field for the suffixes |
+| C13 | A rescan for a moved root waits `Cap` | A root moved away and back was dropped for an hour |
 
 ## 6. Lessons so far
 
@@ -160,7 +175,11 @@ All changes since approval, with reasons, are kept in one place:
 - **Concurrency must be tested the way it happens.** Goroutines in one process
   hid a lock bug that separate processes showed at once.
 - **Independent review pays.** Every review round has found something the
-  author's own tests did not.
+  author's own tests did not; the chunk D security review found a way for
+  a normal user to read root's files through the watcher.
+- **Attack your own tests.** Several tests passed whatever the code did
+  (a stall placed too late, a barrier that missed moved directories, a
+  panic test whose reader was never blocked). Mutation checks found each.
 - **A check that cannot fail is no check.** A pipe through `tail` once hid
   a failing test; the checks now run with `pipefail`.
 - **Check the real machine, read-only.** Running the scope against the real
@@ -168,5 +187,6 @@ All changes since approval, with reasons, are kept in one place:
 
 ## 7. Where we are
 
-M1 done. M2: steps 1-10 of 17 done, plus the scope changes; chunks A, B
-and C reviewed and closed. Next: chunk D, the watcher engine (steps 11-13).
+M1 done. M2: steps 1-13 of 17 done, plus the scope changes; chunks A-D
+reviewed and closed. Next: chunk E: `sc watch`, the systemd unit, the
+acceptance script and docs (steps 14-17), then the sign-off runs.
