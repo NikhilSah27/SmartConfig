@@ -28,16 +28,14 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: waiting for you.** M2 is built and every chunk (A-E) is reviewed
-and closed. Next are the sign-off runs of plan section 13, each with your
-OK: the acceptance run
-(`make accept-m2`, as your user: it asks for sudo itself), the M1 smoke run, the real store (S2), the
-owner scenario, a reboot, failure paths and a 24-hour soak. Step 17
-("M2 done", tag `m2`) comes last. Chunks A,
-B and C are reviewed and closed. Waiting for your OK: the M1 smoke run
-(`sudo ./scripts/smoke.sh`, edits the real /etc/hosts and puts it back). From now on one thing at a
-time: no review runs while the next chunk is built (your call,
-2026-09-30).
+**Now: M2 sign-off S1, waiting for you.** M2 is built and every chunk
+(A-E) is reviewed and closed. The acceptance run passed (2026-10-02).
+Waiting for your OK: the M1 smoke run (`sudo ./scripts/smoke.sh`, edits
+the real /etc/hosts and puts it back), which closes S1. Then the other
+sign-off runs of plan section 13, each with your OK: the real store (S2),
+the owner scenario, a reboot, failure paths and a 24-hour soak. Step 17
+("M2 done", tag `m2`) comes last. From now on one thing at a time: no
+review runs while the next chunk is built (your call, 2026-09-30).
 
 **Still waiting for you:**
 
@@ -426,3 +424,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   lines are logged at err `d56237f`. Docs warn that the M2 `sc` upgrades an
   M1 store on first use `0bdf909`. Plan note C14. Checks clean as user (5
   watcher runs), race and root; `make m1-compat` passes.
+
+### 2026-10-02
+
+- **M2 sign-off S1, checks and acceptance** (on `d20ae38`, your OK):
+  gofmt, vet, `go test ./...` as user and as root, `make race` all clean;
+  `file bin/sc` says statically linked; `make m1-compat` passes.
+  `make accept-m2` PASS, all 19 steps (baseline 14 s after the restart,
+  `integrity_check` ok). Its test paths, runtime unit and scratch store
+  were gone afterwards. Left in S1: the M1 smoke run.
