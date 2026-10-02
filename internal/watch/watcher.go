@@ -609,11 +609,13 @@ func (w *Watcher) requestRescanLocked(reason string) {
 
 // rootChangedLocked asks for a rescan once a moved or removed root has
 // had Cap to settle: a root moved away and back (or a ~/.ssh replaced by
-// a new one) is then found in place (caller holds mu).
+// a new one) is then found in place. Only the first change of a burst
+// sets the delay: a root that keeps moving (a user renaming ~/.ssh in a
+// loop) must not hold back every rescan (caller holds mu).
 func (w *Watcher) rootChangedLocked() {
 	w.requestRescanLocked(reasonRescan)
-	if t := time.Now().Add(w.cfg.Cap); t.After(w.rescanAfter) {
-		w.rescanAfter = t
+	if now := time.Now(); !now.Before(w.rescanAfter) {
+		w.rescanAfter = now.Add(w.cfg.Cap)
 	}
 }
 

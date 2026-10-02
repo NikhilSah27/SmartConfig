@@ -169,6 +169,56 @@ func TestRescanRateLimit(t *testing.T) {
 	}
 }
 
+// A root that keeps moving (a user renaming ~/.ssh away and back in a
+// loop) delays a rescan by Cap once, not for as long as the loop runs: a
+// change only a rescan can see (a write through a hard link) is found
+// while the loop is still going.
+func TestRootMovesCannotStarveRescans(t *testing.T) {
+	e := newEnv(t)
+	conf := filepath.Join(e.root, "conf")
+	put(t, conf, "v1\n", 0o644)
+	outside := filepath.Join(filepath.Dir(e.root), "outside-link")
+	if err := os.Link(conf, outside); err != nil {
+		t.Fatal(err)
+	}
+	var n atomic.Int32
+	testHookRescan = func(string) { n.Add(1) }
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	e.waitFor("conf", func() bool { return len(e.history(conf)) == 1 })
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	ssh, away := filepath.Join(e.user, ".ssh"), filepath.Join(e.user, ".x")
+	go func() { // a move every 200 ms, well inside Cap (1 s)
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
+			os.Rename(ssh, away)
+			os.Rename(away, ssh)
+		}
+	}()
+	defer func() { close(stop); <-done }()
+	start := n.Load()
+	f, err := os.OpenFile(outside, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("v2 through a hard link\n")
+	f.Close()
+	e.waitForWithin(4*time.Second, "a rescan while the root keeps moving", func() bool {
+		return len(e.history(conf)) == 2
+	})
+	if n.Load() == start {
+		t.Fatal("conf changed without a rescan")
+	}
+	e.want(conf, "file first seen", "file changed (found by rescan)")
+}
+
 // Roots change: a new login in passwd, a root that appears late, and a
 // root moved away and back.
 func TestRootChanges(t *testing.T) {
