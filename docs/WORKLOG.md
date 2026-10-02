@@ -28,14 +28,13 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S4, the reboot test, waiting for you.** M2 is built
-and every chunk (A-E) is reviewed and closed. S1, S2 and S3 are done
-(2026-10-02): `scd` is installed and enabled for real, the real store is
-migrated, and the owner scenario passed. Next, S4: reboot the VM (you,
-since it ends the Claude session), then check that `systemd-analyze
-critical-chain` and `blame` show nothing waiting on scd and that scd is
-running. Then failure paths (S5) and a 24-hour soak (S6), each after a
-fresh snapshot and your OK. Step 17 ("M2 done", tag `m2`) comes last.
+**Now: M2 sign-off S5, failure paths, waiting for you.** M2 is built and
+every chunk (A-E) is reviewed and closed. S1 to S4 are done (2026-10-02):
+`scd` is installed and enabled for real, the real store is migrated, the
+owner scenario passed, and the reboot test passed. Next, S5 after a fresh
+snapshot and your OK: `kill -9` scd during its startup rescan and during
+an apt burst (the deliberate `apt upgrade` of S6). Then the 24-hour soak
+(S6). Step 17 ("M2 done", tag `m2`) comes last.
 To undo S2: `systemctl disable --now scd`, remove
 `/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
 is in `changes.db.m1-backup` and `/var/backups/smartconfig`. From now on
@@ -479,3 +478,25 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   After: `/etc` against `manifest-pre-s2.txt` differs only by the scd
   unit and its link; integrity ok, 1545 rows (11 new, all expected);
   scd active, 0 restarts, no err lines.
+- **M2 sign-off S4 closed, the reboot test** (Claude scheduled the reboot
+  with `systemd-run --on-active=30 systemctl reboot`, your OK):
+  - Shutdown clean: scd stopped in under a second, `reboot.target`
+    reached.
+  - **Incident on the first boot after it (not scd, as far as the logs
+    show):** the boot itself was normal (graphical.target at 10.0 s; scd
+    baseline 0/0/0 done at 7 s and silent afterwards). You logged in at
+    24 s; the desktop then stayed black. The journal shows the GNOME
+    desktop-icons extension (DING) relaunched 10 times in about 35 s (once
+    on a normal boot), no reason logged, no gnome-shell crash. You reset
+    the VM at about 60 s (journal cut mid-stream, "uncleanly shut down"
+    on the next boot). The next boot was fine. Nothing scd touches
+    changed: `/etc` against `manifest-pre-s2.txt` differs only by the scd
+    unit, its link and `cups/subscriptions.conf{,.O}` (rewritten by cupsd
+    at 22:15, excluded by `default.scope` line 87). Side result: the store
+    was open under a running scd at the hard reset and is intact
+    (integrity ok, 1545 rows).
+  - Checks on the good boot: 16.2 s to graphical.target (14.6 s and
+    10.0 s on the two boots before); scd is not in `critical-chain`, 116
+    ms in `blame` (the exec only); nothing is ordered after it except
+    `shutdown.target` and `multi-user.target`. scd active, 0 restarts,
+    25 MB; baseline 0 first seen, 0 changed, 0 deleted (3.1 s).
