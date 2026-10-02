@@ -561,3 +561,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   PROJECT_LOG (status, VM state, recovery guide now points at
   `/usr/local/sbin/sc` with `sc-m1` as fallback), NEXT_STEPS (2.4 ticked,
   soak deferred). Tag `m2`.
+- **`m2` installed:** `/usr/local/sbin/sc` replaced by the build of tag
+  `m2` (sha256 `03fbc30d…`, static; was `a0bee866…` from `595b440`), scd
+  restarted: baseline 0 first seen, 0 changed, 0 deleted (2.2 s),
+  integrity ok, 2121 rows, 15 MB. CI green on `112bceb` (tag `m2`).
