@@ -28,14 +28,18 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S2, waiting for you.** M2 is built and every chunk
-(A-E) is reviewed and closed. S1 is done (2026-10-02): checks, the
-acceptance run and the M1 smoke run all pass. Waiting for your yes (gate
-G1): S2, the real store. A rehearsal on a copy first, then install the
-binary and `scd.service` and `systemctl enable --now scd`, which migrates
-the real store. Then the owner scenario, a reboot, failure paths and a
-24-hour soak (each needs a fresh VirtualBox snapshot and your OK). Step 17
-("M2 done", tag `m2`) comes last. From now on one thing at a time: no
+**Now: M2 sign-off S3, waiting for you.** M2 is built and every chunk
+(A-E) is reviewed and closed. S1 and S2 are done (2026-10-02): `scd` is
+installed and enabled for real, and the real store is migrated. Waiting
+for a fresh VirtualBox snapshot and your OK (gate G2): S3, the owner
+scenario by hand (nano on `sshd_config`, `chmod -x
+/etc/grub.d/41_custom`, `systemctl mask`, an edit while scd is stopped, a
+restore). Then a reboot, failure paths and a 24-hour soak, each after a
+fresh snapshot and your OK. Step 17 ("M2 done", tag `m2`) comes last.
+To undo S2: `systemctl disable --now scd`, remove
+`/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
+is in `changes.db.m1-backup` and `/var/backups/smartconfig`. From now on
+one thing at a time: no
 review runs while the next chunk is built (your call, 2026-09-30).
 
 **Still waiting for you:**
@@ -437,3 +441,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **M2 sign-off S1 closed:** `sudo ./scripts/smoke.sh` PASS. `/etc/hosts`
   is back byte for byte (same sha256, 0644 root:root), no scratch store
   left.
+- **M2 sign-off S2 closed, the real store** (your yes):
+  1. Backups in `/var/backups/smartconfig` present; `store-m1.tar` lists,
+     `sc-m1` runs. New: `manifest-pre-s2.txt` and `sha256-pre-s2.txt`,
+     `/etc` and `/boot/grub` just before the install.
+  2. Rehearsal on a copy: the 4 rows keep their ids, `changes.db.m1-backup`
+     made, integrity ok, user_version 1; `sc-m1` still reads the migrated
+     copy. The real store was untouched; the copy was deleted.
+  3. Installed `bin/sc` from `595b440` (sha256 `a0bee866…f307`, static)
+     to `/usr/local/sbin/sc` and `scripts/scd.service`;
+     `systemd-analyze verify` clean; `systemctl enable --now scd`.
+     Journal: watching `/etc`, `/boot/grub`, 2 `.ssh` dirs (329
+     directories); baseline 1530 first seen, 0 changed, 0 deleted, 6.9 s;
+     no warnings, 0 restarts, 21 MB.
+  4. Real store after: 1534 rows (1142 file, 381 link, 7 digest auto rows
+     plus the 4 M1 rows with their ids), integrity ok, journal mode
+     delete, 7.1 MB; `changes.db.m1-backup` kept; `sc-m1` reads it.
+  5. `/etc` against the manifest: only `scd.service` and its
+     `multi-user.target.wants` link are new; nothing else changed.
