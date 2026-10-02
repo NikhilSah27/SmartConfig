@@ -28,15 +28,27 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 done (tag `m2`, 2026-10-02).** Waiting for you: the VirtualBox
-snapshot `m2-accepted`. Next session, first: the deferred soak check (S6)
-on what scd has run by then: uptime, restarts, memory, log volume,
-unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
-`/var/backups/smartconfig`. Then the M2 follow-ups (MILESTONES "M2 notes")
-and planning M3. Kernel 7.0.0-38 is installed and boots at your next
-restart. To remove the watcher: README "Watch every change"; keep the
-store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
-drop every M2 row). From now on
+**Now: M2 follow-ups** (your "go ahead", 2026-10-02). M2 is done (tag
+`m2`). Waiting for you: the VirtualBox snapshot `m2-accepted`. The
+follow-ups from the final review, one at a time, each with a test, checks,
+commit and push; none touches the running scd (installing a new build needs
+your yes):
+1. at startup, skip a home root that is not a real directory (instead of failing);
+2. `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
+3. re-walk after a directory swap (`RENAME_EXCHANGE`);
+4. remove stale watches after an overflow;
+5. trim directory listings after a walk;
+6. count orphan objects against the per-file limit for home files;
+7. report stale `.NAME.sc-tmp-*` files;
+8. needs your OK on the design first: a rate limit for a constantly
+   rewritten system file, and a keyed id for digest rows.
+
+Next session, first: the deferred soak check (S6), on what scd has run by
+then: uptime, restarts, memory, log volume, unexplained rows, and `/etc`
+against `manifest-post-s5apt.txt` in `/var/backups/smartconfig`. Kernel
+7.0.0-38 boots at your next restart. To remove the watcher: README "Watch
+every change"; keep the store (`sc-m1` still reads it; copying
+`changes.db.m1-backup` back would drop every M2 row). From now on
 one thing at a time: no
 review runs while the next chunk is built (your call, 2026-09-30).
 
