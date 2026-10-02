@@ -2,7 +2,8 @@
 
 - [x] M1 store + CLI: snapshot, log, cat, diff, restore — done 2026-09-27,
       hardened by four review rounds 2026-09-27/28 (tag `m1`)
-- [ ] M2 watcher daemon: scd with inotify, auto-snapshot edits made with any editor
+- [x] M2 watcher daemon: scd with inotify, auto-snapshot edits made with any editor
+      — done 2026-10-02 (tag `m2`); the 24-hour soak is deferred to the next session
 - [ ] M3 file graph + checkers: tiers, real validators, regex rules with canned
       explanations, sc edit and sc check
 - [ ] M4 rescue path: GRUB entry, rescue.target service printing sc status,
@@ -11,7 +12,8 @@
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M2.
+Current: M3, not planned yet. Before it: the deferred M2 soak check and the
+M2 follow-ups below.
 
 ## M1 notes
 
@@ -106,7 +108,48 @@ see `docs/reviews/`) led to these behaviours. Each has a test.
 - logrotate reads hidden files in /etc/logrotate.d, including sc's
   `.NAME.sc-tmp-*` during a restore's few milliseconds; no suffix avoids it.
 - kill -9 during a restore can leave a `.NAME.sc-tmp-*` file next to the
-  target. M2's watcher is planned to clear stale ones at start.
+  target. M2 was planned to clear stale ones at start; it does not yet (an
+  M2 follow-up), and the watcher ignores those names.
 - Restoring a file owned by another user, or into a directory that is not
   root's, goes through paths that a hostile user could swap; M1 is for root
   on root-owned config. M2 handles user-owned paths (plan step 6).
+
+## M2 notes
+
+`sc watch`, run as `scd.service`, records every change under `/etc`,
+`/boot/grub` and each login's `authorized_keys`, `rc` and `environment`.
+That covers edits by any tool, mode and owner changes, symlinks, deletions,
+creations and changes made while it was stopped. Plan:
+[docs/M2_PLAN.md](docs/M2_PLAN.md). Sign-off runs and the final review:
+[docs/WORKLOG.md](docs/WORKLOG.md) (2026-10-02) and
+[docs/reviews/2026-10-02-m2-final.md](docs/reviews/2026-10-02-m2-final.md).
+
+Signed off on the dev VM: acceptance and smoke runs, the real store
+migrated, the owner scenario, a reboot, and `kill -9` during the startup
+rescan and in the middle of a 190-file dpkg burst. The 24-hour soak was
+deferred by the owner. The next session checks what scd has run by then.
+
+### Deliberate limits
+
+- Nothing is pruned. The store stops taking new content at 256 MiB free
+  disk and logs that once. This VM adds about 0 rows a day in normal use.
+- A tier only sets the journald priority of a row's line: 1-2 warning,
+  3 notice, 4 info. Alerts and checks are M3.
+- `first seen` rows get no journal line of their own, only the count in
+  the baseline summary. That includes a file created while scd was down.
+- Reading the journal needs `sudo` (or the `adm` group).
+- A new login's `~/.ssh` is picked up by the hourly rescan or a passwd
+  change, not at once.
+
+### M2 follow-ups (from the final review, all low or medium)
+
+- Rate-limit a system file that a program rewrites constantly (medium):
+  nothing caps rows, objects or journal lines except the free-space floor.
+- Digest rows: use a keyed id, so a journal reader cannot test guesses
+  at a low-entropy secret.
+- Watches: re-walk after a directory swap (`RENAME_EXCHANGE`), remove
+  stale watches after an overflow, add `deleted` rows when a root moves
+  away, and trim directory listings after a walk.
+- Home files: count orphan objects against the per-file limit. At
+  startup, skip a home root that is not a real directory.
+- Clean up or report stale `.NAME.sc-tmp-*` files.

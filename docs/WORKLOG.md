@@ -28,18 +28,15 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S7, the final review.** M2 is built and every chunk
-(A-E) is reviewed and closed. S1 to S5 are done (2026-10-02). S6, the
-24-hour soak, is deferred (your call, 2026-10-02, short on time): scd
-stays installed and running in normal use, and the next session starts
-by checking what it has run by then (uptime, restarts, memory, log volume,
-unexplained rows, `/etc` against `manifest-post-s5apt.txt`); problems
-become a follow-up fix. S7: final review of the whole milestone, fresh
-clone (done), step 17 (docs, tag `m2`), then your snapshot `m2-accepted`.
-Kernel 7.0.0-38 is installed, booted at your next restart.
-To undo S2: `systemctl disable --now scd`, remove
-`/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
-is in `changes.db.m1-backup` and `/var/backups/smartconfig`. From now on
+**Now: M2 done (tag `m2`, 2026-10-02).** Waiting for you: the VirtualBox
+snapshot `m2-accepted`. Next session, first: the deferred soak check (S6)
+on what scd has run by then: uptime, restarts, memory, log volume,
+unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
+`/var/backups/smartconfig`. Then the M2 follow-ups (MILESTONES "M2 notes")
+and planning M3. Kernel 7.0.0-38 is installed and boots at your next
+restart. To remove the watcher: README "Watch every change"; keep the
+store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
+drop every M2 row). From now on
 one thing at a time: no
 review runs while the next chunk is built (your call, 2026-09-30).
 
@@ -543,3 +540,24 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
 - **M2 sign-off S7, fresh clone:** `git clone` from GitHub at `49c6d13`:
   gofmt, vet and `go test ./...` clean, `bin/sc` statically linked. CI
   green on the same commit (user, root, race, static build).
+- **M2 final review closed**
+  ([reviews/2026-10-02-m2-final.md](reviews/2026-10-02-m2-final.md)): three
+  reviewers (security, integrity, operations). No high-severity finding;
+  every finding reproduced first, one only partly.
+  - **Medium, fixed `9cee575`:** a user renaming `~/.ssh` in a loop
+    held back every rescan except the startup one.
+  - **Medium, docs:** fixed in step 17.
+  - **Medium, deferred:** a system file rewritten constantly is not
+    rate-limited (no such writer on this VM).
+  - **Low, fixed `3349449`:** snapd's `user/*.wants/snap.*` links are now
+    excluded.
+  - **Low, deferred:** the rest, listed under "M2 follow-ups" in
+    MILESTONES.
+  - Checks clean as user, root and race; `go test -count=5
+    ./internal/watch/...` passes; the scope test against this VM's real
+    `/etc` listing passes.
+- **M2 step 17:** MILESTONES (M2 done, M2 notes, follow-ups, Current: M3),
+  README (status, `sudo journalctl`, retention, how to remove the watcher),
+  PROJECT_LOG (status, VM state, recovery guide now points at
+  `/usr/local/sbin/sc` with `sc-m1` as fallback), NEXT_STEPS (2.4 ticked,
+  soak deferred). Tag `m2`.

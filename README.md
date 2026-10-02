@@ -14,9 +14,9 @@ config file, list its history, print a snapshot, diff it against the file on
 disk, and restore it with its original mode and owner. Every restore can itself
 be undone.
 
-**Milestone 2 is built and reviewed, waiting for its acceptance and sign-off
-runs:** `sc watch` (run as the `scd` service) records every change under
-`/etc`, `/boot/grub` and each login's `~/.ssh` without anyone typing `sc`,
+**Milestone 2 is done** (tag `m2`, 2026-10-02): `sc watch` (run as the
+`scd` service) records every change under `/etc`, `/boot/grub` and each
+login's `~/.ssh` without anyone typing `sc`,
 including symlinks (systemd enable, disable, mask), deletions and new files.
 SSH host keys, `/etc/machine-id` and other secrets are kept as fingerprints
 only. Milestones 3 to 7 (checkers, rescue boot path, package, incident
@@ -71,14 +71,13 @@ sudo ./bin/sc watch                  # foreground; Ctrl-C stops it (exit 0)
 ./bin/sc watch --root ~/some/dir     # as a normal user, on a directory of your own
 ```
 
-Installed by hand until the package milestone (not done on the dev VM before
-the M2 sign-off):
+Installed by hand until the package milestone:
 
 ```sh
 sudo install -m 0755 bin/sc /usr/local/sbin/sc
 sudo install -m 0644 scripts/scd.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now scd
-journalctl -u scd -p warning        # boot- and access-critical changes
+sudo journalctl -u scd -p warning   # boot- and access-critical changes (needs sudo)
 ```
 
 `scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. What is
@@ -87,6 +86,19 @@ minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 `custom.cfg`, and each login's `authorized_keys`, `rc` and `environment`.
 Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
 priority. File contents never appear in the journal.
+
+Nothing is pruned yet. When the disk has less than 256 MiB free, scd stops
+storing new content and logs that once.
+
+To remove the watcher, keep the store: the M1 binary
+(`/var/backups/smartconfig/sc-m1` on the dev VM) still reads it and restores
+file rows.
+
+```sh
+sudo systemctl disable --now scd
+sudo rm /etc/systemd/system/scd.service /usr/local/sbin/sc
+sudo systemctl daemon-reload
+```
 
 ## Layout
 

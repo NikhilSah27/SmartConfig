@@ -164,11 +164,11 @@ The step numbers of the approved plan win. The chunks only group them.
 
 ### 2.4 M2 is done when all of these hold
 
-- [ ] Every plan step is committed and every chunk review is closed.
-- [ ] Checks are clean as user and as root (plus `make race` if approved).
+- [x] Every plan step is committed and every chunk review is closed.
+- [x] Checks are clean as user and as root (plus `make race` if approved).
       `file bin/sc` says statically linked.
-- [ ] `sudo ./scripts/accept-m2.sh` and `sudo ./scripts/smoke.sh` pass.
-- [ ] The owner scenario, run by hand after a fresh snapshot:
+- [x] `sudo ./scripts/accept-m2.sh` and `sudo ./scripts/smoke.sh` pass.
+- [x] The owner scenario, run by hand after a fresh snapshot:
   - edit `/etc/ssh/sshd_config` with nano and never type `sc`: `sc log`
     shows the change and the old version;
   - `chmod -x /etc/grub.d/41_custom` shows as a mode-only row (then put it
@@ -178,22 +178,23 @@ The step numbers of the approved plan win. The chunks only group them.
   - `systemctl mask` of a harmless unit shows as a link row (then unmask);
   - an edit made while scd was stopped appears once it starts;
   - a restore shows as a restore, with no extra automatic row.
-- [ ] Reboot test, with your OK: `scd.service` enabled for real, the VM
+- [x] Reboot test, with your OK: `scd.service` enabled for real, the VM
       rebooted. `systemd-analyze critical-chain` and `blame` show nothing
       waiting on scd, and scd is running.
-- [ ] Failure paths: `kill -9` scd during an apt burst and during its
+- [x] Failure paths: `kill -9` scd during an apt burst and during its
       startup rescan. The unit restarts it, the missed change is recorded
       exactly once, and `PRAGMA integrity_check` reports ok. A static check
       shows no unit is ordered `After=` or `Requires=` scd.
-- [ ] A 24-hour soak that includes one `apt-daily-upgrade` run, plus a
+- [ ] (Deferred 2026-10-02, checked next session.) A 24-hour soak that
+      includes one `apt-daily-upgrade` run, plus a
       deliberate `apt upgrade` of the 13 pending updates while scd watches
       (apparmor alone owns 248 files under `/etc`). Pass means no crash, no
       flood, no unexplained rows, and bounded memory and CPU. The `/etc`
       manifest diff lists only expected changes.
-- [ ] A final review of the whole milestone leaves no open high-severity
+- [x] A final review of the whole milestone leaves no open high-severity
       finding.
-- [ ] A fresh clone from GitHub builds and tests clean.
-- [ ] Docs updated: MILESTONES (M2 notes and the next "Current"), README,
+- [x] A fresh clone from GitHub builds and tests clean.
+- [x] Docs updated: MILESTONES (M2 notes and the next "Current"), README,
       PROJECT_LOG, this page. Tag `m2`.
 - [ ] You take the snapshot `m2-accepted` and sign off.
 

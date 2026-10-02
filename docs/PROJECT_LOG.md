@@ -4,8 +4,8 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-01, M2 built and reviewed (steps 1-16), waiting for its
-acceptance and sign-off runs. M1 was tagged `m1` on 2026-09-28.
+Last updated: 2026-10-02, M2 done and tagged `m2` (the 24-hour soak is
+deferred to the next session). M1 was tagged `m1` on 2026-09-28.
 
 ---
 
@@ -22,8 +22,8 @@ acceptance and sign-off runs. M1 was tagged `m1` on 2026-09-28.
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
 
-Status (2026-10-01): **M2 built and reviewed** (steps 1-16, chunks A-E),
-waiting for its acceptance run and sign-off; plan:
+Status (2026-10-02): **M2 done and tagged `m2`**. `scd` is installed and
+enabled on the dev VM, and the soak check is due next session. Plan:
 [M2_PLAN.md](M2_PLAN.md), live progress: [WORKLOG.md](WORKLOG.md). Before
 that: **M1 done and tagged `m1`** (store + CLI, hardened by four review rounds
 and five rounds of fixes, see [reviews/](reviews/)).
@@ -125,12 +125,13 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 
 | Item | Value |
 |------|-------|
-| OS | Ubuntu 24.04.5 LTS, kernel 7.0.0-34-generic, systemd 255, GRUB 2.12 |
+| OS | Ubuntu 24.04.5 LTS, kernel 7.0.0-34-generic running, 7.0.0-38 installed (boots at the next restart), systemd 255, GRUB 2.12 |
 | Go | 1.22.2 from apt; builds use 1.26.8, which go.mod requires (cached in `~/go/pkg/mod`) |
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
-| SmartConfig store | `/var/lib/smartconfig`, 4 rows for `/etc/fstab` from the film run (`2c6901` is the original) |
+| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (about 2,100 rows then); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
+| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc`; `sudo journalctl -u scd` |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
 | Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
@@ -174,17 +175,15 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-SC=/var/backups/smartconfig/sc-m1   # until M2 is installed (sign-off S2); then /usr/local/sbin/sc
+SC=/usr/local/sbin/sc               # if it is gone: /var/backups/smartconfig/sc-m1 (file rows only)
 sudo $SC log /etc/fstab             # find the last good id
 sudo $SC diff <id>                  # confirm what changed
 sudo $SC restore <id>               # put it back; the broken state is saved too
 sudo systemctl daemon-reload        # after touching fstab
 ```
 
-Do not run the repo's `bin/sc` (the M2 build) on `/var/lib/smartconfig`
-before sign-off S2: any command upgrades the store to schema 1 on first use
-(keeping `changes.db.m1-backup`), and plan gate G1 says that happens only
-after the backups and your yes.
+`sc-m1` reads the migrated store too. It restores file rows and refuses
+link, deleted and fingerprint rows with one line.
 
 For `/etc/fstab` specifically, `2c6901` in `/var/lib/smartconfig` is the
 original file of this VM.
@@ -196,12 +195,12 @@ original file of this VM.
    press Ctrl-X.
 3. `mount -o remount,rw /`
 4. Restore with a static `sc`, or fix the file with nano:
-   - once M2 is installed (sign-off S2): `/usr/local/sbin/sc restore <id>`,
-     the M2 binary, which also restores links and undoes creations;
-   - before that: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
-     build). On a store that M2 has migrated, `sc-m1` still restores file
-     rows and refuses link, deleted and fingerprint rows with one line
-     (`make m1-compat` proves this).
+   - `/usr/local/sbin/sc restore <id>`, the M2 binary, which also restores
+     links and undoes creations;
+   - if it is gone: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
+     build). It still restores file rows on the migrated store and refuses
+     link, deleted and fingerprint rows with one line (`make m1-compat`
+     proves this).
 5. `sync`, then `exec /sbin/init` or `reboot -f`.
 
 If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
