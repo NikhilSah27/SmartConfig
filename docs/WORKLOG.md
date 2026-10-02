@@ -502,7 +502,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     ms in `blame` (the exec only); nothing is ordered after it except
     `shutdown.target` and `multi-user.target`. scd active, 0 restarts,
     25 MB; baseline 0 first seen, 0 changed, 0 deleted (3.1 s).
-
 - **M2 sign-off S5 closed, failure paths** (after your snapshot; scripts
   and logs in `~/smartconfig-work/signoff/`):
   - **Kill during the startup rescan.** scd stopped, `/etc/hosts` edited
