@@ -28,15 +28,15 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S6, the 24-hour soak, waiting for you.** M2 is built
-and every chunk (A-E) is reviewed and closed. S1 to S5 are done
-(2026-10-02): `scd` is installed and enabled for real, the real store is
-migrated, and the owner scenario, the reboot test and the failure paths
-passed. Next, S6: the VM stays up 24 hours with scd watching (one
-`apt-daily-upgrade` run in it), then no crash, no flood, no unexplained
-rows, bounded memory and CPU, and an `/etc` manifest diff with only
-expected changes. Kernel 7.0.0-38 is installed but not booted yet. Then
-S7 (final review, fresh clone, step 17, tag `m2`).
+**Now: M2 sign-off S7, the final review.** M2 is built and every chunk
+(A-E) is reviewed and closed. S1 to S5 are done (2026-10-02). S6, the
+24-hour soak, is deferred (your call, 2026-10-02, short on time): scd
+stays installed and running in normal use, and the next session starts
+by checking what it has run by then (uptime, restarts, memory, log volume,
+unexplained rows, `/etc` against `manifest-post-s5apt.txt`); problems
+become a follow-up fix. S7: final review of the whole milestone, fresh
+clone (done), step 17 (docs, tag `m2`), then your snapshot `m2-accepted`.
+Kernel 7.0.0-38 is installed, booted at your next restart.
 To undo S2: `systemctl disable --now scd`, remove
 `/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
 is in `changes.db.m1-backup` and `/var/backups/smartconfig`. From now on
@@ -537,3 +537,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     before its baseline summary, not even the count is logged. The row is
     in the store. The existence-flag alerts deferred to M3 (plan 15)
     should cover this case.
+- **M2 sign-off S6 deferred** (your call: short on time). It needs no time
+  from you: scd keeps running in normal use, and the soak checks run at
+  the start of the next session on whatever it has run by then.
+- **M2 sign-off S7, fresh clone:** `git clone` from GitHub at `49c6d13`:
+  gofmt, vet and `go test ./...` clean, `bin/sc` statically linked. CI
+  green on the same commit (user, root, race, static build).
