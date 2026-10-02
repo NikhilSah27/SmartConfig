@@ -28,13 +28,13 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S3, waiting for you.** M2 is built and every chunk
-(A-E) is reviewed and closed. S1 and S2 are done (2026-10-02): `scd` is
-installed and enabled for real, and the real store is migrated. Waiting
-for a fresh VirtualBox snapshot and your OK (gate G2): S3, the owner
-scenario by hand (nano on `sshd_config`, `chmod -x
-/etc/grub.d/41_custom`, `systemctl mask`, an edit while scd is stopped, a
-restore). Then a reboot, failure paths and a 24-hour soak, each after a
+**Now: M2 sign-off S4, the reboot test, waiting for you.** M2 is built
+and every chunk (A-E) is reviewed and closed. S1, S2 and S3 are done
+(2026-10-02): `scd` is installed and enabled for real, the real store is
+migrated, and the owner scenario passed. Next, S4: reboot the VM (you,
+since it ends the Claude session), then check that `systemd-analyze
+critical-chain` and `blame` show nothing waiting on scd and that scd is
+running. Then failure paths (S5) and a 24-hour soak (S6), each after a
 fresh snapshot and your OK. Step 17 ("M2 done", tag `m2`) comes last.
 To undo S2: `systemctl disable --now scd`, remove
 `/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
@@ -459,3 +459,23 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
      delete, 7.1 MB; `changes.db.m1-backup` kept; `sc-m1` reads it.
   5. `/etc` against the manifest: only `scd.service` and its
      `multi-user.target.wants` link are new; nothing else changed.
+- **M2 sign-off S3 closed, the owner scenario** (after your snapshot;
+  run by Claude, nano driven through a pty so it writes as nano does):
+  1. nano adds a comment line to `/etc/ssh/sshd_config` (written in
+     place, same inode), no `sc` typed: one row, `T2 changed (fa203e)` at
+     journald warning; `sc diff 868df4` shows the old version.
+  2. `chmod -x /etc/grub.d/41_custom`, then `+x`: two mode-only rows,
+     `mode 0755->0644` and back, T1, content unchanged.
+  3. `systemctl mask rsync.service` (disabled, inactive), then unmask: a
+     `did not exist` row, a link row `created` (`sc cat` prints
+     `/dev/null`), then `deleted`; T1.
+  4. `systemctl stop scd`, a comment line added to `/etc/hosts`, start:
+     `baseline: 0 first seen, 1 changed` (400 ms), the row says `changed
+     while not watching`, T3 at notice.
+  5. `sc restore` of both files with scd running: a pre-restore and a
+     restore row each, no journal line and no automatic row in the next
+     8 s. Both files back byte for byte (`/etc/hosts` sha256 as before),
+     `sshd -t` ok.
+  After: `/etc` against `manifest-pre-s2.txt` differs only by the scd
+  unit and its link; integrity ok, 1545 rows (11 new, all expected);
+  scd active, 0 restarts, no err lines.
