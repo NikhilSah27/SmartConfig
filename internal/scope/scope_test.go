@@ -182,6 +182,7 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 		"/home/u/.ssh/rc/x", "/root/.ssh/environment/deep/er",
 		"/etc/tmpxdvph4n_/resolv.conf", "/etc/dconf/db/ibus",
 		"/etc/systemd/system/snap-firefox-1.mount", "/etc/udev/rules.d/70-snap.firefox.rules",
+		"/etc/systemd/user/default.target.wants/snap.snapd-desktop-integration.snapd-desktop-integration.service",
 		"/etc/ld.so.cache", "/etc/ssl/certs/ca-certificates.crt", "/etc/security/opasswd",
 		"/etc/brlapi.key", "/etc/.git/config",
 		"/etc/systemd/system-generators/foo.bak", "/etc/systemd/system-generators/foo.dpkg-new",
@@ -390,6 +391,7 @@ var snapRuntime = []string{
 	"/etc/systemd/system/*.wants/snap.*",
 	"/etc/systemd/system/snapd.mounts.target.wants/**",
 	"/etc/systemd/user/snap.*",
+	"/etc/systemd/user/*.wants/snap.*",
 	"/etc/udev/rules.d/70-snap.*.rules",
 	"/etc/security/opasswd",
 }

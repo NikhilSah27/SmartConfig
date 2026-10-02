@@ -83,6 +83,7 @@ exclude /etc/systemd/system/snap{-,.}*
 exclude /etc/systemd/system/*.wants/snap{-,.}*
 exclude /etc/systemd/system/snapd.mounts.target.wants/**
 exclude /etc/systemd/user/snap.*
+exclude /etc/systemd/user/*.wants/snap.*
 exclude /etc/udev/rules.d/70-snap.*.rules
 exclude /etc/cups/{printers,classes,subscriptions}.conf*
 exclude /etc/cups/ssl/**
