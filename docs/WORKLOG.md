@@ -28,13 +28,15 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 sign-off S5, failure paths, waiting for you.** M2 is built and
-every chunk (A-E) is reviewed and closed. S1 to S4 are done (2026-10-02):
-`scd` is installed and enabled for real, the real store is migrated, the
-owner scenario passed, and the reboot test passed. Next, S5 after a fresh
-snapshot and your OK: `kill -9` scd during its startup rescan and during
-an apt burst (the deliberate `apt upgrade` of S6). Then the 24-hour soak
-(S6). Step 17 ("M2 done", tag `m2`) comes last.
+**Now: M2 sign-off S6, the 24-hour soak, waiting for you.** M2 is built
+and every chunk (A-E) is reviewed and closed. S1 to S5 are done
+(2026-10-02): `scd` is installed and enabled for real, the real store is
+migrated, and the owner scenario, the reboot test and the failure paths
+passed. Next, S6: the VM stays up 24 hours with scd watching (one
+`apt-daily-upgrade` run in it), then no crash, no flood, no unexplained
+rows, bounded memory and CPU, and an `/etc` manifest diff with only
+expected changes. Kernel 7.0.0-38 is installed but not booted yet. Then
+S7 (final review, fresh clone, step 17, tag `m2`).
 To undo S2: `systemctl disable --now scd`, remove
 `/etc/systemd/system/scd.service` and `/usr/local/sbin/sc`; the M1 store
 is in `changes.db.m1-backup` and `/var/backups/smartconfig`. From now on
@@ -500,3 +502,39 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     ms in `blame` (the exec only); nothing is ordered after it except
     `shutdown.target` and `multi-user.target`. scd active, 0 restarts,
     25 MB; baseline 0 first seen, 0 changed, 0 deleted (3.1 s).
+
+- **M2 sign-off S5 closed, failure paths** (after your snapshot; scripts
+  and logs in `~/smartconfig-work/signoff/`):
+  - **Kill during the startup rescan.** scd stopped, `/etc/hosts` edited
+    and `/etc/sc-s5-test.conf` created, page cache dropped, scd started
+    and `kill -9`ed right after its `watching` line, before its baseline
+    line. systemd restarted it 10 s later (`NRestarts=1`). The killed
+    instance had already committed the new file as `first seen`; the new
+    one recorded `/etc/hosts` as `changed while not watching` and nothing
+    twice (2 new rows). Undone afterwards (`sc restore`, `rm`).
+  - **The apt upgrade, your "all 31":** 25 upgraded, among them kernel
+    7.0.0-38 (not booted yet), gnome-shell, apparmor, Xorg; 6 mesa
+    packages are phased (10%) and held back by apt. Across `/etc` and
+    `/boot/grub` it changed only `/boot/grub/grub.cfg` (manifest diff), and
+    scd recorded it once (`cc5cff`). No burst, so the kill could not
+    land in one.
+  - **Kill during a dpkg burst instead:** `logcheck-database` (190
+    conffiles under `/etc/logcheck`, no maintainer scripts, no service)
+    installed, then purged with `kill -9` after the first change line.
+    Install: 190 `did not exist` plus 190 `created` rows, each newest row
+    matches the disk. Purge: killed after 100 of the 190 deletions; the
+    restart recorded the other 90 as `deleted while not watching`:
+    exactly 190 rows, every newest row matches the disk, no two identical
+    automatic rows in a row, integrity ok, `NRestarts=2`. `/etc` is the
+    same as after the upgrade (the 3 other files in `/etc/logcheck`
+    belong to rsyslog, gpg-agent and cracklib-runtime).
+  - Static check of acceptance step 18 on the real unit: no unit is
+    ordered after or bound to `scd.service`.
+  - Test-script lesson: `journalctl -f | grep -m N` only ends when
+    journalctl writes again, so after a one-second burst it hung until
+    its timeout and the first kill never fired. The scripts now poll.
+  - For M3: a file created while scd is down is a `first seen` row, which
+    gets no journal line of its own (plan 6, 7.6); if scd is killed
+    before its baseline summary, not even the count is logged. The row is
+    in the store. The existence-flag alerts deferred to M3 (plan 15)
+    should cover this case.
