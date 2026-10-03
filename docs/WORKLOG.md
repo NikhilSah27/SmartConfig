@@ -39,8 +39,15 @@ fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers 
 separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
 fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). Step 14 (`7ccb3d9`).
-**In progress:** step 13 (the second set of checkers) by two parallel
-agents; then the chunk D review.
+**Paused (usage limit, 2026-10-03):** step 13a (netplan, udev) is in;
+step 13b (passwd, group, sysctl) was being built by an agent in the
+worktree `~/smartconfig-work/../scratchpad/wt/pwsys` (session scratch,
+may be gone): rebuild or redo it. Uncommitted in the checkout, on
+purpose: `scripts/accept-m3.sh` and its `make accept-m3` target (step
+15); it names the 13b rules (`passwd-root`, sysctl), so it is committed
+after 13b. Its step 1 (`sc check --as`) passes as a user for every
+checker built so far. Then: the chunk D review, docs (README, MILESTONES,
+CLAUDE.md), and the sign-off runs (root, your OK, after the soak check).
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
