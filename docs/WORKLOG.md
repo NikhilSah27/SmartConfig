@@ -39,6 +39,7 @@ and the tag. Your choice:
 1. If a snapshot taken after 23:54 UTC exists (`m2-accepted`), restore it.
 2. If not, redo on this VM, each with your yes: install the `m2` build,
    then the `apt upgrade` and a new post-upgrade manifest.
+Your pick: 2, both. `m2` is reinstalled; the `apt upgrade` is next.
 The soak check below waits until then. Details in the log, 2026-10-03.
 
 **Now: M2 follow-ups** (your "go ahead", 2026-10-02). M2 is done (tag
@@ -616,3 +617,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - After: store integrity ok, 1545 rows; `/etc` and `/boot/grub` match
     `manifest-pre-s5.txt` except `cups/subscriptions.conf{,.O}` (cupsd,
     excluded).
+- **`m2` reinstalled** (your yes): built at tag `m2` in a clean checkout,
+  sha256 `03fbc30d…`, the same binary as before the rollback; installed to
+  `/usr/local/sbin/sc`, scd restarted: baseline 0 first seen, 0 changed,
+  0 deleted (555 ms), 0 restarts, 13 MB; store integrity ok, 1545 rows.
