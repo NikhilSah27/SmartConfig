@@ -1010,3 +1010,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `FingerprintOnly`. Scope lines go on their own line (80 columns).
   Checks: build, gofmt, vet, `go test ./...`, the new tests as root:
   clean.
+- **`sc check --as PATH FILE`, `c53180f`** (plan change C7): checks a
+  candidate as if it were at PATH, before it is copied there; rules about
+  the file on disk at PATH do not apply. It lets the acceptance run give
+  every checker fabricated content as root with the real validators,
+  without writing a broken fstab, sudoers, netplan or passwd anywhere.
