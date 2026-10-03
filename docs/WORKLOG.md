@@ -35,11 +35,14 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 the pre-S5 snapshot; the `m2` install, the `apt upgrade` and the
 post-upgrade manifest were redone (S5's results stand, log 2026-10-02).
 
-Next session, first: the soak check (S6) on what scd has run by then,
-ideally 24 h on this build: uptime, restarts, memory, log volume,
+**The soak (S6) runs alongside M3** (your call, 2026-10-03): until its
+check, no new scd install and no `make smoke` or `make accept-m2`;
+reboots are fine. Next: your VM settings and snapshot, then the M3 plan
+for your approval. The soak check, once scd has run about 24 h on this
+build: uptime, restarts, memory, log volume,
 unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
 `/var/backups/smartconfig`. Kernel 7.0.0-38 boots at your next restart.
-Then M3. Before M3: make the timing-bound watch tests
+Also before M3 is built: make the timing-bound watch tests
 (`TestRescanUnderBusyEvents`, the overflow tests) less sensitive to a
 slow VM. To remove the watcher: README "Watch every change"; keep the
 store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
