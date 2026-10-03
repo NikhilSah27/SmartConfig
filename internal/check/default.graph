@@ -1,0 +1,7 @@
+# SmartConfig file graph (M3), built into sc.
+# Lines:
+#   check NAME GLOB...    these files are read by checker NAME
+#   apply NAME TEXT       when a saved change of NAME's files takes effect
+#   mode  GLOB OCTAL      mode of a file sc edit creates (default 0644)
+# check and mode: the FIRST matching line wins. Globs are the scope's.
+# A checker's lines are added with the step that builds it.

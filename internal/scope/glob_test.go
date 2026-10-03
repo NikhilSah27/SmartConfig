@@ -117,3 +117,20 @@ func TestGlobExpandOrder(t *testing.T) {
 		t.Fatalf("String() = %q", g)
 	}
 }
+
+// The exported Glob is the same language as the scope's lines.
+func TestExportedGlob(t *testing.T) {
+	g, err := CompileGlob("/etc/systemd/system/*.{service,timer}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.Match("/etc/systemd/system/a.timer") || g.Match("/etc/systemd/system/d/a.timer") || g.Match("/etc/systemd/system/a.mount") {
+		t.Error("match")
+	}
+	if g.String() != "/etc/systemd/system/*.{service,timer}" {
+		t.Errorf("String() = %q", g.String())
+	}
+	if _, err := CompileGlob("etc/x"); err == nil {
+		t.Error("relative pattern accepted")
+	}
+}

@@ -201,3 +201,21 @@ func matchSegs(pat, name []string) bool {
 }
 
 func (g *glob) String() string { return g.text }
+
+// Glob is a compiled pattern of the same glob language, for sc's other
+// built-in tables (the M3 file graph).
+type Glob struct{ g *glob }
+
+// CompileGlob parses and validates pattern.
+func CompileGlob(pattern string) (*Glob, error) {
+	g, err := compileGlob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	return &Glob{g}, nil
+}
+
+// Match reports whether p, an absolute clean path, matches the pattern.
+func (g *Glob) Match(p string) bool { return g.g.match(p) }
+
+func (g *Glob) String() string { return g.g.String() }
