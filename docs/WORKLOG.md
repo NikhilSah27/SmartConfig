@@ -1015,3 +1015,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   the file on disk at PATH do not apply. It lets the acceptance run give
   every checker fabricated content as root with the real validators,
   without writing a broken fstab, sudoers, netplan or passwd anywhere.
+- **M3 step 13a, `check: netplan and udev`, `a73dfde`** (parallel agent,
+  reviewed and integrated here): netplan merges the file with the
+  machine's other netplan files in a scratch root and runs netplan's
+  generator with `--root-dir` (traced as root here: it starts only
+  `systemctl is-system-running` and writes only under the scratch root);
+  `netplan-invalid` blocker, texts never repeat a value (Wi-Fi
+  passwords). The Runner takes the generator's full path from a
+  one-entry list. udev: `udevadm verify --no-style`, `udev-invalid`
+  (error) and the new `udev-notice` (warning). Checks: gofmt, vet, the
+  package as user, as root and under race: clean. Step 13b (passwd,
+  group, sysctl) follows when its agent reports.
