@@ -28,46 +28,31 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**VM back at the M2 state (2026-10-03).** At about 00:01 UTC the VM came
-back from the pre-S5 snapshot (22:22 UTC), which undid everything done on
-it after that. Redone with your yes: the `m2` build reinstalled, the
-`apt upgrade` rerun, the post-upgrade manifest saved again. S5 was not
-rerun; its results are in the log for 2026-10-02. The store has 1546
-rows (2121 before the rollback; the S5 test rows are gone). Details in
-the log, 2026-10-03.
+**Now: M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
+(tag `m2`). All 8 follow-ups from the final review are in (log,
+2026-10-03), and the build of `b6ab3cc` runs as scd since 14:27 UTC (the
+`m2` binary is kept as `sc-m2`). Earlier that day the VM came back from
+the pre-S5 snapshot; the `m2` install, the `apt upgrade` and the
+post-upgrade manifest were redone (S5's results stand, log 2026-10-02).
 
-**Now: M2 follow-ups** (your "go ahead", 2026-10-02). M2 is done (tag
-`m2`). Waiting for you: the VirtualBox snapshot `m2-accepted`. The
-follow-ups from the final review, one at a time, each with a test, checks,
-commit and push; none touches the running scd (installing a new build needs
-your yes):
-1. done (`5b57aaf`): at startup, skip a home root that is not a real directory (instead of failing);
-2. done (`bd8fad9`): `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
-3. done (`c0cfe77`): re-walk after a directory swap (`RENAME_EXCHANGE`);
-4. done (`465b30d`): remove stale watches after an overflow;
-5. done (`d76a295`): trim directory listings after a walk;
-6. done (`2a8b686`): count orphan objects against the per-file limit for home files;
-7. done (`7463e5d`): report stale `.NAME.sc-tmp-*` files;
-8. your picks (2026-10-03): a rate limit for a constantly rewritten
-   system file, 20 rows an hour as now, then at most one every 5 min
-   (the newest state, marked `(rate-limited)`, one warning line when it
-   starts; every tier; `.ssh` files keep their 60 s rule), done (`064bf68`);
-   random ids for digest rows, done (`4ec437a`). Install once, after 8.
-
-Next session, first: the deferred soak check (S6), on what scd has run by
-then: uptime, restarts, memory, log volume, unexplained rows, and `/etc`
-against `manifest-post-s5apt.txt` in `/var/backups/smartconfig`. Kernel
-7.0.0-38 boots at your next restart. To remove the watcher: README "Watch
-every change"; keep the store (`sc-m1` still reads it; copying
-`changes.db.m1-backup` back would drop every M2 row). From now on
-one thing at a time: no
-review runs while the next chunk is built (your call, 2026-09-30).
+Next session, first: the soak check (S6) on what scd has run by then,
+ideally 24 h on this build: uptime, restarts, memory, log volume,
+unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
+`/var/backups/smartconfig`. Kernel 7.0.0-38 boots at your next restart.
+Then M3. Before M3: make the timing-bound watch tests
+(`TestRescanUnderBusyEvents`, the overflow tests) less sensitive to a
+slow VM. To remove the watcher: README "Watch every change"; keep the
+store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
+drop every M2 row). One thing at a time: no review runs while the next
+step is built (your call, 2026-09-30).
 
 **Still waiting for you:**
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
   controller (black screens after login, log 2026-10-03).
+- [ ] A VirtualBox snapshot of this state (after the VM settings, if you
+  change them), so a restore by mistake no longer undoes M2.
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
