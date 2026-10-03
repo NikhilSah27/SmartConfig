@@ -18,3 +18,10 @@ check shsyntax /etc/default/grub
 apply shsyntax after update-grub, at the next boot
 check grubcfg /boot/grub/{grub.cfg,custom.cfg}
 apply grubcfg at the next boot
+check nsswitch /etc/nsswitch.conf
+apply nsswitch at once, for every new lookup
+check preload /etc/ld.so.preload
+apply preload at once, for every program started from now on
+check flag /etc/nologin /etc/ssh/sshd_not_to_be_run
+check hosts /etc/hosts
+apply hosts at once

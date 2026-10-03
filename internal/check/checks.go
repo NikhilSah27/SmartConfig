@@ -43,6 +43,10 @@ var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []st
 	"unit":     checkUnit,
 	"shsyntax": checkShSyntax,
 	"grubcfg":  checkGrubCfg,
+	"nsswitch": checkNsswitch,
+	"preload":  checkPreload,
+	"flag":     checkFlag,
+	"hosts":    checkHosts,
 }
 
 // Check runs the checker the graph names for path on data, which need not

@@ -113,6 +113,10 @@ var graphSamples = map[string][]string{
 	"unit":     {"/etc/systemd/system/my.service", "/etc/systemd/system/my.timer"},
 	"shsyntax": {"/etc/default/grub"},
 	"grubcfg":  {"/boot/grub/grub.cfg", "/boot/grub/custom.cfg"},
+	"nsswitch": {"/etc/nsswitch.conf"},
+	"preload":  {"/etc/ld.so.preload"},
+	"flag":     {"/etc/nologin", "/etc/ssh/sshd_not_to_be_run"},
+	"hosts":    {"/etc/hosts"},
 }
 
 // The built-in graph parses, every checker in it has samples, each sample
