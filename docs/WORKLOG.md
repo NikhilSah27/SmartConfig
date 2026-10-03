@@ -39,21 +39,10 @@ fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers 
 separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
 fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). Step 14 (`7ccb3d9`).
-**Paused (usage limit, 2026-10-03):** step 13a (netplan, udev) is in;
-step 13b (passwd, group, sysctl) was being built by an agent in the
-worktree `~/smartconfig-work/../scratchpad/wt/pwsys` (session scratch,
-may be gone): rebuild or redo it. Uncommitted in the checkout, on
-purpose: `scripts/accept-m3.sh` and its `make accept-m3` target (step
-15); it names the 13b rules (`passwd-root`, sysctl), so it is committed
-after 13b. Its step 1 (`sc check --as`) passes as a user for every
-checker built so far. Then: the chunk D review, docs (README, MILESTONES,
-CLAUDE.md), and the sign-off runs (root, your OK, after the soak check).
-Your call (2026-10-03): several agents where that stays accurate, so the
-independent checkers of chunk C are built in parallel in separate
-worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
-before the M2 soak check and your yes. Your picks: M3 (checkers) before
-M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
-plan in the session, not a multi-agent workflow.
+Step 13 is in (`a73dfde`, `2e4d4ee`) and the acceptance script is
+committed, not run (`2ff038b`). **Next: the chunk D review** (steps
+12-14, `--as`, the acceptance script); then docs (step 15) and the
+sign-off runs (root, your OK, after the soak check).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1033,3 +1022,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   (error) and the new `udev-notice` (warning). Checks: gofmt, vet, the
   package as user, as root and under race: clean. Step 13b (passwd,
   group, sysctl) follows when its agent reports.
+- **M3 step 13b, `check: passwd, group and sysctl`, `2e4d4ee`** (parallel
+  agent, stopped at the usage limit before it reported; its worktree
+  survived). It had left one mutation of its own self-check applied in
+  `sysctl.go`: restored from its backup, and the mutation confirmed to
+  fail a test; its temporary capture test removed. Reviewed here without
+  its report: pwck/grpck run read-only on the copy and a made-up shadow
+  file (the real hashes are never read; traced as root: no writes, no
+  lock), severities from glibc's parsing, missing home directories are
+  no finding, quoted lines never reach a finding; `passwd-root`,
+  `passwd-shell-missing`. sysctl `--dry-run` traced as root: no writes.
+  The real passwd, group, sysctl.conf and sysctl.d files check clean.
+  Checks: gofmt, vet, the package as user, as root and under race.
+- **`scripts/accept-m3.sh`, `2ff038b`:** committed now that every rule it
+  names exists; its step 1 (`sc check --as`, all checkers) passes as a
+  user. The rest needs root and writes a test unit under
+  `/etc/systemd/system`: sign-off S1, with your OK.
