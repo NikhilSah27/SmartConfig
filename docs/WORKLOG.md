@@ -48,9 +48,9 @@ fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
 already have). S1, S2 and S3 are done, and S4's final review is
 closed ([reviews/2026-10-03-m3-final.md](reviews/2026-10-03-m3-final.md),
 fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
-`accept-m3` passes on the fixed build. **Next: your OK to install the
-fixed build as scd; then the `m3` tag.** Then the M4 plan (rescue path)
-for your approval.
+`accept-m3` passes on the fixed build. **M3 is done: tag `m3`**
+(2026-10-03); the fixed build runs as scd. **Next: the M4 plan** (rescue
+path), drafted in the session, for your approval.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1163,3 +1163,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - `accept-m3.sh`, with cases for the new rules, passed again as root
     on `bb31f3e` with scd stopped and started again around it.
   - `sc check` as root on the real system: no problems in 24 files.
+- **M3 done, tag `m3`** (your yes: "install and tag"). The fixed build
+  (code of `bb31f3e`, sha256 `cf5ba078…`) is installed as
+  `/usr/local/sbin/sc`; the S2 build is kept as
+  `/var/backups/smartconfig/sc-m3pre`. scd restarted at 21:25 UTC:
+  baseline 0 first seen, 0 changed, 0 deleted, 14 MB. `sudo sc check`:
+  no problems in 24 files. The annotated tag `m3` is on `c253cfd` and
+  pushed.

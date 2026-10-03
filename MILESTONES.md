@@ -4,18 +4,17 @@
       hardened by four review rounds 2026-09-27/28 (tag `m1`)
 - [x] M2 watcher daemon: scd with inotify, auto-snapshot edits made with any editor
       — done 2026-10-02 (tag `m2`); the 24-hour soak is deferred to the next session
-- [ ] M3 file graph + checkers: tiers, real validators, regex rules with canned
-      explanations, sc edit and sc check
+- [x] M3 file graph + checkers: tiers, real validators, regex rules with canned
+      explanations, sc edit and sc check — done 2026-10-03 (tag `m3`)
 - [ ] M4 rescue path: GRUB entry, rescue.target service printing sc status,
       boot-ok verification, restore from read-only root
 - [ ] M5 package: .deb with nfpm, install on a clean VM
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M3, plan approved 2026-10-03 (`docs/M3_PLAN.md`), built and
-reviewed in four chunks. Its sign-off runs (root, your OK) follow the M2
-soak check, which runs alongside it (your call, 2026-10-03). The M2
-follow-ups below are done.
+Current: M4, the rescue path; its plan is drafted next, for your
+approval. M3 is done (tag `m3`, 2026-10-03); its follow-ups are listed
+below. The M2 soak was closed after 5.6 h (your call).
 
 ## M1 notes
 

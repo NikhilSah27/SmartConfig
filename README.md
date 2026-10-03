@@ -21,12 +21,12 @@ including symlinks (systemd enable, disable, mask), deletions and new files.
 SSH host keys, `/etc/machine-id` and other secrets are kept as fingerprints
 only.
 
-**Milestone 3 is built, not yet signed off** (plan
+**Milestone 3 is done** (tag `m3`, 2026-10-03; plan
 [docs/M3_PLAN.md](docs/M3_PLAN.md)): checkers. `sc check` finds the
 problems in a config file that stop a boot or lock you out, `sc edit`
 checks an edit before it replaces the file, scd checks every change it
-records, and `sc scope` explains what SmartConfig does with a path. The
-sign-off runs on the dev VM are next. Milestones 4 to 7 (rescue boot path,
+records, and `sc scope` explains what SmartConfig does with a path.
+Milestones 4 to 7 (rescue boot path,
 package, incident factory, local model) are planned.
 
 ## Build
