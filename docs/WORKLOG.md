@@ -33,7 +33,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
 one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built and reviewed
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
-fixes `a2e325f`). **Next: step 5** (chunk B), `sc check`. Gate G2 stands: nothing is installed or run on the real system
+fixes `a2e325f`). Step 5 (`afa9403`). **Next: step 6** (chunk B), `store:
+Replace`. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -852,3 +853,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   killed while the tool is still a zombie. Plan change C3. Checks: build,
   gofmt, vet, `go test ./...`, the package as root and 3 times under
   race, static: clean.
+- **M3 step 5, `sc check`, `afa9403`:** the command of plan 6.1: a table
+  (severity, file, line, rule, one sentence), `-v` for explanations and
+  the validators' own lines, exit 2 for a blocker or an error. No
+  argument: every regular file the graph has a checker for
+  (`Graph.Files`); an id checks that saved version. What could not be
+  checked is a `note:` line. Plan change C4: a user without write access
+  to `$SC_HOME` gets a private scratch directory, so a readable file is
+  checked without sudo. Tried read-only on the real `/etc/fstab` as a
+  user (scratch in a temp `SC_HOME`): no problems, one note (not root,
+  types not compared). A test found a crash on a pattern with no fixed
+  directory (`**/name`); fixed before the commit. Checks: build, gofmt,
+  vet, `go test ./...`, `check` and `cmd/sc` as root, race on the new
+  tests, `make m1-compat`: clean.
