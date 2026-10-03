@@ -1,0 +1,3 @@
+/SCRATCH/70-local.rules:1 Unknown user 'sc-nosuchuser', ignoring.
+/SCRATCH/70-local.rules:1 Unknown group 'sc-nosuchgroup', ignoring.
+/SCRATCH/70-local.rules: udev rules check failed.

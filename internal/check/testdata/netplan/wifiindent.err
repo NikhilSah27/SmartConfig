@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:9:10: Invalid YAML: inconsistent indentation:
+         password: "sc-SECRET-pass"
+         ^

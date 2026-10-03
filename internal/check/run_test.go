@@ -71,10 +71,28 @@ func TestRunNotFound(t *testing.T) {
 	if res, err := r.Run(context.Background(), "", "noexec"); err != nil || res.Found {
 		t.Fatalf("not executable: %+v %v", res, err)
 	}
-	for _, name := range []string{"", "../fake", "/bin/true", "a/b"} {
+	for _, name := range []string{"", "../fake", "/bin/true", "a/b", "/usr/libexec/netplan/fake", "/usr/libexec/netplan/../netplan/generate"} {
 		if _, err := r.Run(context.Background(), "", name); err == nil {
 			t.Errorf("%q accepted", name)
 		}
+	}
+}
+
+// A tool of fullPathTools is named by its full path; in a test, Dirs
+// stands in for its directory. (The real netplan generator is never run
+// here without --root-dir: as root it would rewrite /run.)
+func TestRunFullPath(t *testing.T) {
+	r := tool(t, "generate", "echo \"ran $1\"\n")
+	res, err := r.Run(context.Background(), "", "/usr/libexec/netplan/generate", "--root-dir")
+	if err != nil || !res.Found || string(res.Out) != "ran --root-dir\n" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if res, err := r.Run(context.Background(), "", "generate"); err != nil || !res.Found {
+		t.Fatalf("by name: %+v %v", res, err)
+	}
+	res, err = Runner{Dirs: []string{t.TempDir()}}.Run(context.Background(), "", "/usr/libexec/netplan/generate")
+	if err != nil || res.Found {
+		t.Fatalf("not in Dirs: %+v %v", res, err)
 	}
 }
 

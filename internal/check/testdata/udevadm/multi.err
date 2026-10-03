@@ -1,0 +1,5 @@
+/SCRATCH/70-local.rules:1 Invalid key 'ACTON'.
+/SCRATCH/70-local.rules:2 Invalid operator for SUBSYSTEM.
+/SCRATCH/70-local.rules:4 GOTO="nowhere" has no matching label, ignoring.
+/SCRATCH/70-local.rules:4 The line has no effect any more, dropping.
+/SCRATCH/70-local.rules: udev rules check failed.

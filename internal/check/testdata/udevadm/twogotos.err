@@ -1,0 +1,3 @@
+/SCRATCH/70-local.rules:1 Contains multiple GOTO keys, ignoring GOTO="b".
+/SCRATCH/70-local.rules:3 style: LABEL="b" is unused.
+/SCRATCH/70-local.rules: udev rules check failed.

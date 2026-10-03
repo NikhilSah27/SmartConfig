@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,10 @@ import (
 
 // toolDirs is where validators are looked up, never through $PATH.
 var toolDirs = []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+
+// fullPathTools are the validators that live outside toolDirs. A checker
+// names one by its full path, and it is looked up there only.
+var fullPathTools = []string{"/usr/libexec/netplan/generate"}
 
 // Runner starts validators (plan 5.3). It is the only place in sc that
 // runs another program on a file's content.
@@ -36,21 +41,29 @@ type Result struct {
 	TimedOut  bool   // killed after Timeout, with its process group
 }
 
-// Run starts tool with args in dir and waits for it. The arguments go as
+// Run starts tool with args in dir and waits for it. tool is a name looked
+// up in Dirs, or one of fullPathTools (with Dirs set, which only tests do,
+// that too is looked up there, by its base name). The arguments go as
 // a list, never through a shell; the environment is LC_ALL=C and a fixed
 // PATH; stdin is /dev/null. A tool that is not installed, exits non-zero or
 // times out is a Result, not an error.
 func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Result, error) {
-	if tool == "" || strings.ContainsRune(tool, '/') {
-		return Result{}, fmt.Errorf("run %q: not a tool name", tool)
-	}
-	dirs := r.Dirs
+	name, dirs := tool, r.Dirs
 	if dirs == nil {
 		dirs = toolDirs
 	}
+	switch {
+	case slices.Contains(fullPathTools, tool):
+		name = filepath.Base(tool)
+		if r.Dirs == nil {
+			dirs = []string{filepath.Dir(tool)}
+		}
+	case tool == "" || strings.ContainsRune(tool, '/'):
+		return Result{}, fmt.Errorf("run %q: not a tool name", tool)
+	}
 	path := ""
 	for _, d := range dirs {
-		p := filepath.Join(d, tool)
+		p := filepath.Join(d, name)
 		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
 			path = p
 			break

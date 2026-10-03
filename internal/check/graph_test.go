@@ -134,6 +134,8 @@ var graphSamples = map[string][]string{
 	"preload":  {"/etc/ld.so.preload"},
 	"flag":     {"/etc/nologin", "/etc/ssh/sshd_not_to_be_run"},
 	"hosts":    {"/etc/hosts"},
+	"netplan":  {"/etc/netplan/60-local.yaml"},
+	"udev":     {"/etc/udev/rules.d/70-local.rules"},
 }
 
 // The built-in graph parses, every checker in it has samples, each sample

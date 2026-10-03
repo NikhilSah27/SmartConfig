@@ -25,3 +25,7 @@ apply preload at once, for every program started from now on
 check flag /etc/nologin /etc/ssh/sshd_not_to_be_run
 check hosts /etc/hosts
 apply hosts at once
+check netplan /etc/netplan/*.yaml
+apply netplan after netplan apply, or at the next boot
+check udev /etc/udev/rules.d/*.rules
+apply udev for device events from then on (devices already present: udevadm trigger, or the next boot)

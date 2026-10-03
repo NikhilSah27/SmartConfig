@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:1:1: Error in network definition: expected mapping (check indentation)
+just a string
+^

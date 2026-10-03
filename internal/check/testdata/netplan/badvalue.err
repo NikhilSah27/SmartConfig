@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:5:14: Error in network definition: invalid boolean value 'maybe'
+      dhcp4: maybe
+             ^

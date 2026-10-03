@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:5:18: Error in network definition: malformed address '10.0.0.500/24', must be X.X.X.X/NN or X:X:X:X:X:X:X:X/NN
+      addresses: [10.0.0.500/24]
+                 ^

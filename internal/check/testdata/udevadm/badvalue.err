@@ -1,0 +1,2 @@
+/SCRATCH/70-local.rules:1 Invalid value "/bin/echo $foo" for RUN (char 11: invalid substitution type), ignoring.
+/SCRATCH/70-local.rules: udev rules check failed.

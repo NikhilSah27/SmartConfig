@@ -19,6 +19,7 @@ type Checks struct {
 	exists      func(path string) bool            // nil: the path exists here; tests fake the machine
 	lstat       func(string) (os.FileInfo, error) // nil: os.Lstat; tests fake the machine
 	sshdHostKey string                            // tests: a throwaway host key for sshd -t when not root
+	netplanRoot string                            // "": /; tests fake the machine's {lib,etc,run}/netplan
 }
 
 // Report is the result of checking one file.
@@ -50,6 +51,8 @@ var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []st
 	"preload":  checkPreload,
 	"flag":     checkFlag,
 	"hosts":    checkHosts,
+	"netplan":  checkNetplan,
+	"udev":     checkUdev,
 }
 
 // Check runs the checker the graph names for path on data, which need not

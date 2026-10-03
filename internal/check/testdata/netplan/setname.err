@@ -1,0 +1,1 @@
+/SCRATCH/root/etc/netplan/60-local.yaml: Error in network definition: enp0s3: 'set-name:' requires 'match:' properties

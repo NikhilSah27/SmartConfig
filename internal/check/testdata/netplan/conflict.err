@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:4:5: Error in network definition: Updated definition 'enp0s3' changes device type
+    enp0s3:
+    ^

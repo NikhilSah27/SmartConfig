@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:5:19: Error in network definition: bond0: interface 'enp0s3' is already assigned to bridge br0
+      interfaces: [enp0s3]
+                  ^

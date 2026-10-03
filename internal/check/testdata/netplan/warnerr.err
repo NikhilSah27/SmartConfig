@@ -1,0 +1,6 @@
+
+** (generate:112689): WARNING **: 18:27:01.806: `gateway4` has been deprecated, use default routes instead.
+See the 'Default routes' section of the documentation for more details.
+/SCRATCH/root/etc/netplan/60-local.yaml:8:7: Error in network definition: unknown key 'dhcp44'
+      dhcp44: true
+      ^

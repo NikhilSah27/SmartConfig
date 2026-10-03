@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:2:1: Invalid YAML: tabs are not allowed for indent:
+	version: 2
+^

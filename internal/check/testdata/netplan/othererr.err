@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/50-base.yaml:5:7: Error in network definition: unknown key 'dhcp44'
+      dhcp44: true
+      ^

@@ -1,0 +1,3 @@
+/SCRATCH/70-local.rules:1 Invalid value for OPTIONS key, ignoring: 'bogus_option'
+/SCRATCH/70-local.rules:1 The line has no effect, ignoring.
+/SCRATCH/70-local.rules: udev rules check failed.

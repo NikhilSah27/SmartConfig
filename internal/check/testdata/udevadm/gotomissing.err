@@ -1,0 +1,3 @@
+/SCRATCH/70-local.rules:1 GOTO="nowhere" has no matching label, ignoring.
+/SCRATCH/70-local.rules:1 The line has no effect any more, dropping.
+/SCRATCH/70-local.rules: udev rules check failed.

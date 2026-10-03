@@ -1,0 +1,3 @@
+/SCRATCH/root/etc/netplan/60-local.yaml:7:6: Invalid YAML: inconsistent indentation:
+     dhcp6: false
+     ^
