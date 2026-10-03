@@ -702,6 +702,13 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 			delete(w.dirs, old) // the same inode under a new name
 			delete(w.listings, old)
 		}
+		if prev, ok := w.dirs[dir]; ok && (prev.in != in || prev.wd != wd) {
+			// Another directory was watched under this name, and the event
+			// that it moved away was lost (an overflow): drop its watch, or
+			// its events would be filed under this name.
+			prev.in.RmWatch(prev.wd)
+			delete(w.wds[prev.in], prev.wd)
+		}
 		w.wds[in][wd] = dir
 		// The current generation, not the one the walk started with: a
 		// reader's walk overlapping a rescan must not leave a watch the

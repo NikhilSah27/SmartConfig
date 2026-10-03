@@ -120,6 +120,51 @@ func TestOverflowIsolation(t *testing.T) {
 	}
 }
 
+// An overflow loses a directory's move away and the new directory made at
+// its name. The rescan that watches the new one drops the old one's
+// watch: events in the old directory are no longer filed under the new
+// one, where a name created there entered the new one's listing and took
+// the proof of absence from a later file of that name (final review).
+func TestOverflowDropsStaleWatch(t *testing.T) {
+	limit := queueLimit(t)
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	put(t, r("a"), "a", 0o644)
+	put(t, r("b"), "b", 0o644)
+	os.Mkdir(r("d"), 0o755)
+	var w atomic.Pointer[Watcher]
+	arm, release := stallReader(t, func() *Inotify { return w.Load().sys })
+	e.start()
+	t.Cleanup(release)
+	w.Store(e.w)
+	arm()
+	os.WriteFile(r("poke"), nil, 0o644) // the reader returns once, then stalls
+	time.Sleep(50 * time.Millisecond)
+	flood(t, r("a"), r("b"), limit+4000)
+	away := filepath.Join(filepath.Dir(e.root), "d-away")
+	os.Rename(r("d"), away) // lost with the flood
+	os.Mkdir(r("d"), 0o755)
+	put(t, r("late"), "late\n", 0o644)
+	release()
+	e.waitFor("the rescan", func() bool { return len(e.history(r("late"))) > 0 })
+
+	e.w.mu.Lock()
+	for in, m := range e.w.wds {
+		for wd, p := range m {
+			if ref, ok := e.w.dirs[p]; !ok || ref.in != in || ref.wd != wd {
+				t.Errorf("stale watch %d on %s", wd, p)
+			}
+		}
+	}
+	e.w.mu.Unlock()
+
+	put(t, filepath.Join(away, "g"), "old\n", 0o644)
+	e.barrier()
+	put(t, r("d/g"), "new\n", 0o644)
+	e.waitFor("d/g", func() bool { return len(e.history(r("d/g"))) > 0 })
+	e.want(r("d/g"), "deleted did not exist", "file created")
+}
+
 // With a short RescanEvery, a write through a hard link from a directory
 // nobody watches (no event) is found by the periodic rescan.
 func TestPeriodicRescan(t *testing.T) {
