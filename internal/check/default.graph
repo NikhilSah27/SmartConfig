@@ -29,3 +29,9 @@ check netplan /etc/netplan/*.yaml
 apply netplan after netplan apply, or at the next boot
 check udev /etc/udev/rules.d/*.rules
 apply udev for device events from then on (devices already present: udevadm trigger, or the next boot)
+check passwd /etc/passwd
+apply passwd at once, for every new lookup
+check group /etc/group
+apply group at once, for every new lookup (a user's groups at their next login)
+check sysctl /etc/sysctl.conf /etc/sysctl.d/*.conf
+apply sysctl at the next boot (now: sysctl --system)

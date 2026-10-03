@@ -1,0 +1,9 @@
+duplicate password entry
+delete line 'alice:x:1001:0:Alice:/tmp:/bin/sh'? No
+duplicate password entry
+delete line 'bob:x:1002:0:Bob:/tmp:/bin/sh'? No
+duplicate password entry
+delete line 'alice:x:1003:0:Alice again:/tmp:/bin/sh'? No
+duplicate password entry
+delete line 'bob:x:1002:0:Bob:/tmp:/bin/sh'? No
+pwck: no changes

@@ -1,0 +1,3 @@
+invalid user name '1234': use --badname to ignore
+invalid user name '  alice': use --badname to ignore
+pwck: no changes

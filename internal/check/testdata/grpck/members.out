@@ -1,0 +1,7 @@
+group sudo: no user scnouser
+delete member 'scnouser'? No
+group scgrp: no user 
+delete member ''? No
+group scsp: no user  root
+delete member ' root'? No
+grpck: no changes

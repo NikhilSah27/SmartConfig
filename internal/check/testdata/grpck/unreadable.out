@@ -1,0 +1,15 @@
+invalid group file entry
+delete line 'junk line with hunter2'? No
+invalid group file entry
+delete line ''? No
+invalid group file entry
+delete line '# a comment'? No
+invalid group file entry
+delete line 'scgrp:x:abc:'? No
+invalid group file entry
+delete line 'sudo:x:twentyseven:root'? No
+no matching group file entry in /SCRATCH/group
+delete line 'scgrp:!::'? No
+no matching group file entry in /SCRATCH/group
+delete line 'sudo:!::'? No
+grpck: no changes

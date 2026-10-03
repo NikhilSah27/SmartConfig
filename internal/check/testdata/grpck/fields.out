@@ -1,0 +1,7 @@
+invalid group file entry
+delete line 'scgrp:x:1001::extra'? No
+group scother: no user 2
+delete member '2'? No
+no matching group file entry in /SCRATCH/gshadow
+add group 'scother' in /SCRATCH/gshadow? No
+grpck: no changes

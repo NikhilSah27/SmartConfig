@@ -1,0 +1,7 @@
+vm.swappiness = 60
+kernel.printk = 4 4 1 7
+net.ipv4.conf.default.rp_filter = 2
+net.ipv4.conf.enp0s3.rp_filter = 2
+net.ipv4.conf.lo.rp_filter = 2
+kernel.domainname = 
+vm.swappiness = 60

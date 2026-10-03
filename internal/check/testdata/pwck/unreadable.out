@@ -1,0 +1,15 @@
+invalid password file entry
+delete line 'junk line with hunter2'? No
+invalid password file entry
+delete line ''? No
+invalid password file entry
+delete line '# a comment'? No
+invalid password file entry
+delete line 'carol:x:abc:0:Carol:/tmp:/bin/sh'? No
+invalid password file entry
+delete line 'dave:x:-1:0:Dave:/tmp:/bin/sh'? No
+no matching password file entry in /SCRATCH/passwd
+delete line 'carol:*:::::::'? No
+no matching password file entry in /SCRATCH/passwd
+delete line 'dave:*:::::::'? No
+pwck: no changes

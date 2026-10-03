@@ -53,6 +53,9 @@ var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []st
 	"hosts":    checkHosts,
 	"netplan":  checkNetplan,
 	"udev":     checkUdev,
+	"passwd":   checkPasswd,
+	"group":    checkGroup,
+	"sysctl":   checkSysctl,
 }
 
 // Check runs the checker the graph names for path on data, which need not

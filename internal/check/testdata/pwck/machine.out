@@ -1,0 +1,5 @@
+user 'erin': no group 4242
+user 'frank': directory '/sc-no-such-home' does not exist
+user 'grace': program '/bin/sc-no-such-shell' does not exist
+user 'sc-daemon': program '/usr/local/sbin/nologin' does not exist
+pwck: no changes

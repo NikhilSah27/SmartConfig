@@ -1,0 +1,3 @@
+user 'root': program '/bin/bash' does not exist
+user 'alice': program '/bin/sh' does not exist
+pwck: no changes

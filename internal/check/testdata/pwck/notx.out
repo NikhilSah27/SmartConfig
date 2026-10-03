@@ -1,0 +1,4 @@
+user heidi has an entry in /SCRATCH/shadow, but its password field in /SCRATCH/passwd is not set to 'x'
+user ivan has an entry in /SCRATCH/shadow, but its password field in /SCRATCH/passwd is not set to 'x'
+user judy has an entry in /SCRATCH/shadow, but its password field in /SCRATCH/passwd is not set to 'x'
+pwck: no changes

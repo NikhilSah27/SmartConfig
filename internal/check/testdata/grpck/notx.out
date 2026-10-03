@@ -1,0 +1,2 @@
+group sudo has an entry in /SCRATCH/gshadow, but its password field in /SCRATCH/group is not set to 'x'
+grpck: no changes

@@ -136,6 +136,9 @@ var graphSamples = map[string][]string{
 	"hosts":    {"/etc/hosts"},
 	"netplan":  {"/etc/netplan/60-local.yaml"},
 	"udev":     {"/etc/udev/rules.d/70-local.rules"},
+	"passwd":   {"/etc/passwd"},
+	"group":    {"/etc/group"},
+	"sysctl":   {"/etc/sysctl.conf", "/etc/sysctl.d/99-local.conf"},
 }
 
 // The built-in graph parses, every checker in it has samples, each sample

@@ -1,0 +1,5 @@
+invalid password file entry
+delete line 'root:x:0:zero:root:/root:/bin/bash'? No
+no matching password file entry in /SCRATCH/passwd
+delete line 'root:*:::::::'? No
+pwck: no changes

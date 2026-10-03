@@ -1,0 +1,5 @@
+duplicate group entry
+delete line 'scgrp:x:1001:'? No
+duplicate group entry
+delete line 'scgrp:x:1002:'? No
+grpck: no changes
