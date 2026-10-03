@@ -88,7 +88,9 @@ Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
 priority. File contents never appear in the journal.
 
 Nothing is pruned yet. When the disk has less than 256 MiB free, scd stops
-storing new content and logs that once.
+storing new content and logs that once. A file that a program rewrites
+without pause gets 20 rows, then one every 5 minutes with its newest
+content, marked `(rate-limited)`, and one warning line.
 
 To remove the watcher, keep the store: the M1 binary
 (`/var/backups/smartconfig/sc-m1` on the dev VM) still reads it and restores

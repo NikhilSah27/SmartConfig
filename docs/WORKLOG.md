@@ -51,8 +51,8 @@ your yes):
 8. your picks (2026-10-03): a rate limit for a constantly rewritten
    system file, 20 rows an hour as now, then at most one every 5 min
    (the newest state, marked `(rate-limited)`, one warning line when it
-   starts; every tier; `.ssh` files keep their 60 s rule); random ids for
-   digest rows, done (`4ec437a`). Install once, after 8.
+   starts; every tier; `.ssh` files keep their 60 s rule), done (`064bf68`);
+   random ids for digest rows, done (`4ec437a`). Install once, after 8.
 
 Next session, first: the deferred soak check (S6), on what scd has run by
 then: uptime, restarts, memory, log volume, unexplained rows, and `/etc`
@@ -757,3 +757,23 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     watch package passes on `6c1f306` (37.8 s) and on this code (44.9 s,
     8 more tests), and `TestOverflow` alone passes 10 of 10 on both at
     0.6 s. `gnome-shell` averages over half a CPU (software rendering).
+- **M2 follow-up 8b, rate limit, done `064bf68`** (your pick): every change of
+  a system file got a row, so one rewritten every second meant about
+  86,000 rows, objects and journal lines a day. Each system file now has
+  a row budget: 20 rows, one more earned every 5 min. With none left the
+  next row waits, then records the newest state with ` (rate-limited)`;
+  the first wait logs `PATH changes constantly: recording it at most
+  every 5 min, the newest state` at warning. Budgets back to full are
+  dropped at each rescan, so the next flood warns again. `.ssh` files keep
+  their 60 s rule; restore rows are not counted (written by `sc`). A file
+  rewritten without pause now gets about 300 rows a day. Plan 6.3 and
+  C16, README, MILESTONES updated. New test `TestPathRateLimit`; the test
+  setup gives other tests a budget of 1000 (`TestRestoreWhileWatching`
+  changes one file 20 times and waited 5 min for the 21st row).
+  `accept-m2.sh` checked by reading: no file gets more than a few
+  watcher rows (its restores are `sc` rows; its 20,000 chmods run while
+  scd is stopped). Checks: build, gofmt, vet, `go test ./...` as user,
+  `internal/watch`, `internal/store` and `cmd/sc` as root, `make race`:
+  all clean. Not installed.
+- **All M2 follow-ups are done.** Next: install the new build (your pick:
+  once, after 8), then the soak check (S6).

@@ -144,8 +144,8 @@ deferred by the owner. The next session checks what scd has run by then.
 
 ### M2 follow-ups (from the final review, all low or medium)
 
-- Rate-limit a system file that a program rewrites constantly (medium):
-  nothing caps rows, objects or journal lines except the free-space floor.
+- Rate limit for a system file a program rewrites constantly: done, 20
+  rows, then one every 5 min with the newest state (`064bf68`).
 - Digest rows: done, they get a random id, so a journal reader cannot
   test guesses at a low-entropy secret (`4ec437a`).
 - Watches, all done: `deleted` rows when a login `.ssh` moves away
