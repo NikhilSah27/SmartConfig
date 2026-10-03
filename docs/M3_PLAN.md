@@ -1,6 +1,6 @@
 # M3 plan: checkers, `sc check` and `sc edit`
 
-Status: **draft for your approval** (2026-10-03). No M3 code is written until you approve it. Drafted by Claude in the session (your pick), from the roadmap, the M2 plan's deferred list and probes on this VM (Appendix A).
+Status: **approved 2026-10-03** ("great go ahead": every recommendation in section 14). Drafted by Claude in the session (your pick), from the roadmap, the M2 plan's deferred list and probes on this VM (Appendix A).
 
 ## 0. Summary
 

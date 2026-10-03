@@ -28,9 +28,12 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: the M3 plan waits for your approval** ([M3_PLAN.md](M3_PLAN.md),
-2026-10-03; 7 questions in its section 14, each with a recommendation; no
-M3 code until you approve). Your picks: M3 (checkers) before
+**Now: M3 is being built** ([M3_PLAN.md](M3_PLAN.md), approved 2026-10-03,
+"great go ahead": all 7 recommendations of its section 14, which also
+passes gate G1, scd may run validators as root). 16 steps in five chunks,
+one at a time. **In progress: step 1** (chunk A), `check: findings, rules,
+runner`. Gate G2 stands: nothing is installed or run on the real system
+before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
 
@@ -796,3 +799,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   accepts a misspelt option and reports a missing disk as an error even
   with `nofail`, so our rules set the severity. Waiting for you: the 7
   questions in section 14.
+- **M3 plan approved** ("great go ahead"): all 7 recommendations (scope,
+  both checker sets, scd runs validators, "save anyway" prompt, no store
+  change, one review per chunk plus a final one, sign-off after the soak
+  check). Step 1 starts.
