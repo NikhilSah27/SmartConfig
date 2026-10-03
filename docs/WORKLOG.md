@@ -43,11 +43,12 @@ Step 13 is in (`a73dfde`, `2e4d4ee`) and the acceptance script is
 committed, not run (`2ff038b`). Chunk D is reviewed
 ([reviews/2026-10-03-m3-chunk-d.md](reviews/2026-10-03-m3-chunk-d.md),
 fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
-**M3 is built. Next: the sign-off runs** (plan section 11), each with
-your OK, after the M2 soak check and a fresh snapshot: S1 `make
-accept-m3` (it refuses to run next to the real scd, so scd is stopped
-for it); S2 install the M3 build and review `sc check` on the real
-system with you; S3 the owner scenario; S4 final review and tag `m3`.
+**M3 is built. Now: the sign-off runs** (plan section 11; your call,
+2026-10-03: close the M2 soak now and sign off, on the snapshot you
+already have). S1 `make accept-m3` (scd is stopped for it and started
+again after); then, each with your OK, S2 install the M3 build and review
+`sc check` on the real system with you; S3 the owner scenario; S4 final
+review and tag `m3`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -56,9 +57,8 @@ system with you; S3 the owner scenario; S4 final review and tag `m3`.
 the pre-S5 snapshot; the `m2` install, the `apt upgrade` and the
 post-upgrade manifest were redone (S5's results stand, log 2026-10-02).
 
-**The soak (S6) runs alongside M3** (your call, 2026-10-03): until its
-check, no new scd install and no `make smoke` or `make accept-m2`;
-reboots are fine. Next: your VM settings and snapshot, then the M3 plan
+**The soak (S6) is closed** (your call, 2026-10-03, after 5.6 h instead
+of 24; log). It passed on what it saw. Next: your VM settings and snapshot, then the M3 plan
 for your approval. The soak check, once scd has run about 24 h on this
 build: uptime, restarts, memory, log volume,
 unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
@@ -1076,3 +1076,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - CLAUDE.md: `accept-m3.sh` added to the layout.
 
   Every relative link resolves.
+- **M2 sign-off S6 closed after 5.6 h** (your call: finish M3 now). scd
+  on the `b6ab3cc` build from 14:27 to 20:04 UTC:
+  - Health: 0 restarts, 16 MB of memory (21.6 MB peak), 8.9 s of CPU.
+  - Journal: 2 lines, the start and the baseline (0 first seen,
+    0 changed, 0 deleted, 368 ms). Nothing at warning or above.
+  - Store: integrity ok, 1546 rows, the same as after the S5 upgrade.
+    No new row and none unexplained.
+  - `/etc` and `/boot/grub` against `manifest-post-s5apt.txt`: only
+    `cups/subscriptions.conf{,.O}` changed (cupsd rewrites them; the
+    scope leaves them out).
+
+  Not covered: `apt-daily-upgrade` did not run (skipped: the VM reports
+  no AC power), and the deliberate `apt upgrade` was S5's rerun, before
+  this build. A longer run and an apt run under scd come with M3's
+  install.
