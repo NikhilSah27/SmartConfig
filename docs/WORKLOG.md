@@ -44,7 +44,7 @@ your yes):
 1. done (`5b57aaf`): at startup, skip a home root that is not a real directory (instead of failing);
 2. done (`bd8fad9`): `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
 3. done (`c0cfe77`): re-walk after a directory swap (`RENAME_EXCHANGE`);
-4. remove stale watches after an overflow;
+4. done (`465b30d`): remove stale watches after an overflow;
 5. trim directory listings after a walk;
 6. count orphan objects against the per-file limit for home files;
 7. report stale `.NAME.sc-tmp-*` files;
@@ -679,3 +679,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   Checks: build, gofmt, vet, `go test ./...` as user, `internal/watch`
   and `cmd/sc` as root, the test 5 times under race, `make race`: all
   clean. Not installed.
+- **M2 follow-up 4, stale watch after an overflow, fixed `465b30d`:** when an
+  overflow lost a directory's move away and a new directory was made at
+  its name, the rescan watched the new one and left the old one's watch
+  filed under the same name. A name created in the old directory then
+  entered the new one's listing, and a later file of that name was
+  recorded `first seen` instead of `did not exist` and `created`
+  (reproduced). `walk` now removes another watch it finds under the name
+  it watches. The review's other symptom (a subdirectory moved away in
+  the old directory unwatching the new one's) was already covered by
+  `c0cfe77`'s re-walk. New test `TestOverflowDropsStaleWatch` (a real
+  overflow; also checks that every watch is its path's). Checks: build,
+  gofmt, vet, `go test ./...` as user, `internal/watch` and `cmd/sc` as
+  root, the test 5 times under race, `make race`: all clean. Not
+  installed.
