@@ -139,6 +139,7 @@ type Watcher struct {
 	lastScan    time.Time
 	logged      map[string]bool      // one-time log lines
 	roots       []string             // usable roots of the last rescan
+	gone        []string             // login .ssh roots gone at the last rescan
 	baseline    *baseline            // startup counts, nil once logged
 	sshSet      map[string]bool      // login .ssh roots of the last rescan
 	userRows    map[string]time.Time // last row of each user-owned home file
@@ -195,7 +196,7 @@ func New(cfg Config) (*Watcher, error) {
 		logged: map[string]bool{}, poke: make(chan struct{}, 1),
 		sshSet: map[string]bool{}, userRows: map[string]time.Time{},
 	}
-	roots, _, machine := w.usableRoots(sc)
+	roots, _, _, machine := w.usableRoots(sc)
 	w.scope = machine
 	if testHookRootsListed != nil {
 		testHookRootsListed()
@@ -250,8 +251,11 @@ func (w *Watcher) sshRoots() []string {
 // usableRoots computes the roots (plan 6.2 step 1) and updates the scope
 // with the login roots. A root is used only if lstat shows a real
 // directory; a missing or symlinked one is skipped and logged once. The
-// scope's roots (or cfg.Roots) and the login .ssh roots come back apart.
-func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login []string, machine *scope.Scope) {
+// scope's roots (or cfg.Roots) and the login .ssh roots come back apart,
+// and so do the login roots that are gone: missing, a symlink or not a
+// directory. Their recorded files get deleted rows; a scope root that is
+// gone gets none, since a separate /boot may only be unmounted.
+func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login, gone []string, machine *scope.Scope) {
 	ssh := w.sshRoots()
 	candidates := w.cfg.Roots
 	if candidates == nil {
@@ -260,31 +264,37 @@ func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login []string, machine *
 	extra := append([]string(nil), ssh...)
 	extra = append(extra, w.cfg.Roots...)
 	machine = sc.With(w.cfg.Home, extra)
-	usable := func(r string) bool {
+	usable := func(r string) (ok, isGone bool) {
 		fi, err := os.Lstat(r)
 		switch {
 		case err != nil:
 			w.logOnce("root "+r, prioInfo, fmt.Sprintf("not watching %s: %v", show(r), errText(err)))
+			return false, fsutil.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR)
 		case fi.Mode()&os.ModeSymlink != 0:
 			w.logOnce("root "+r, prioWarning, fmt.Sprintf("not watching %s: it is a symlink", show(r)))
 		case !fi.IsDir():
 			w.logOnce("root "+r, prioWarning, fmt.Sprintf("not watching %s: not a directory", show(r)))
 		default:
-			return true
+			return true, false
 		}
-		return false
+		return false, true
 	}
 	for _, r := range candidates {
-		if r = filepath.Clean(r); usable(r) {
+		r = filepath.Clean(r)
+		if ok, _ := usable(r); ok {
 			fixed = append(fixed, r)
 		}
 	}
 	for _, r := range ssh {
-		if r = filepath.Clean(r); usable(r) {
+		r = filepath.Clean(r)
+		switch ok, isGone := usable(r); {
+		case ok:
 			login = append(login, r)
+		case isGone:
+			gone = append(gone, r)
 		}
 	}
-	return fixed, login, machine
+	return fixed, login, gone, machine
 }
 
 func errText(err error) string {
@@ -534,12 +544,15 @@ func (w *Watcher) currentGen() int {
 }
 
 // rootOfLocked returns the root d.path lies under (the longest), or ""
-// (caller holds mu).
+// (caller holds mu). A login root that is gone counts: reading below it
+// finds the file absent, or refuses the symlink that took its place.
 func (w *Watcher) rootOfLocked(p string) string {
 	best := ""
-	for _, r := range w.roots {
-		if strings.HasPrefix(p, r+"/") && len(r) > len(best) {
-			best = r
+	for _, rs := range [][]string{w.roots, w.gone} {
+		for _, r := range rs {
+			if strings.HasPrefix(p, r+"/") && len(r) > len(best) {
+				best = r
+			}
 		}
 	}
 	return best
@@ -734,7 +747,7 @@ func (w *Watcher) rescan(reason string) {
 		w.logOnce("scope", prioErr, err.Error())
 		return
 	}
-	fixed, login, machine := w.usableRoots(base)
+	fixed, login, gone, machine := w.usableRoots(base)
 	roots := append(fixed, login...)
 	var keep []string
 	for _, r := range roots {
@@ -754,6 +767,7 @@ func (w *Watcher) rescan(reason string) {
 	w.gen++
 	gen := w.gen
 	w.roots = keep
+	w.gone = gone
 	w.lastScan = time.Now()
 	w.mu.Unlock()
 	dirs := 0
@@ -770,7 +784,7 @@ func (w *Watcher) rescan(reason string) {
 	}
 	w.mu.Lock()
 	for _, p := range live {
-		if w.scope.Recorded(p) && underAny(p, keep) {
+		if w.scope.Recorded(p) && (underAny(p, keep) || underAny(p, gone)) {
 			w.markLocked(p, reason, false, false)
 		}
 	}

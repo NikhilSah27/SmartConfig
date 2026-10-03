@@ -266,6 +266,53 @@ func TestRootChanges(t *testing.T) {
 	e.waitFor("an edit after the move", func() bool { return len(e.history(filepath.Join(e.root, "after"))) > 0 })
 }
 
+// A login .ssh moved away gives its files deleted rows at the rescan that
+// follows, and so does one swapped for a symlink; a new .ssh brings them
+// back as new files.
+func TestLoginRootGone(t *testing.T) {
+	e := newEnv(t)
+	ssh := filepath.Join(e.user, ".ssh")
+	keys := filepath.Join(ssh, "authorized_keys")
+	put(t, keys, "ssh-ed25519 A\n", 0o600)
+	e.start()
+	os.Rename(ssh, ssh+".old")
+	e.waitFor("the deleted row", func() bool { return len(e.history(keys)) == 2 })
+	e.want(keys, "file first seen", "deleted deleted (found by rescan)")
+
+	os.Mkdir(ssh, 0o700)
+	put(t, keys, "ssh-ed25519 B\n", 0o600)
+	e.w.requestRescan()
+	e.waitFor("the new key", func() bool { return len(e.history(keys)) == 3 })
+
+	os.Rename(ssh, ssh+".new")
+	os.Symlink(ssh+".new", ssh)
+	e.waitFor("the deleted row through a symlink", func() bool { return len(e.history(keys)) == 4 })
+	e.want(keys, "file first seen", "deleted deleted (found by rescan)",
+		"file created (found by rescan)", "deleted deleted (found by rescan)")
+}
+
+// While scd is down, a login .ssh moved away gives deleted rows at start.
+// A scope root moved away gives none: a separate /boot may only be
+// unmounted (mount tracking is M4).
+func TestRootGoneAtStartup(t *testing.T) {
+	e := newEnv(t)
+	ssh := filepath.Join(e.user, ".ssh")
+	keys, conf := filepath.Join(ssh, "authorized_keys"), filepath.Join(e.root, "conf")
+	put(t, keys, "ssh-ed25519 A\n", 0o600)
+	put(t, conf, "x\n", 0o644)
+	e.start()
+	e.stop()
+	os.Rename(ssh, ssh+".old")
+	os.Rename(e.root, e.root+".away")
+	e.start()
+	e.waitFor("the second baseline", func() bool { return strings.Count(e.log.String(), "baseline: ") == 2 })
+	e.want(keys, "file first seen", "deleted deleted while not watching")
+	e.want(conf, "file first seen")
+	if !strings.Contains(e.log.String(), "baseline: 0 first seen, 0 changed and 1 deleted while not watching") {
+		t.Fatalf("baseline:\n%s", e.log.String())
+	}
+}
+
 // add_watch fails (ENOSPC) for one directory: logged once, and a change
 // there is found by the next rescan.
 func TestWatchLimit(t *testing.T) {
