@@ -77,13 +77,34 @@ func runCheckAs(cmd *cobra.Command, path, file string, verbose bool) error {
 	if err != nil {
 		return err
 	}
-	return runTargets(cmd, []checkTarget{{p + " (from " + file + ")", p, data, true}}, nil, 0, verbose)
+	c, cleanup, err := newChecks()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return runTargets(cmd, c, []checkTarget{{p + " (from " + file + ")", p, data, true}}, nil, 0, verbose)
+}
+
+// newChecks returns the checks sc check runs, with a scratch directory
+// for their copies, and its cleanup.
+func newChecks() (*check.Checks, func(), error) {
+	home, cleanup, err := scratchHome()
+	if err != nil {
+		return nil, nil, err
+	}
+	c := &check.Checks{Home: home}
+	if testHookChecks != nil {
+		testHookChecks(c)
+	}
+	return c, cleanup, nil
 }
 
 // readCandidate reads a file to check with --as, refusing what sc would
 // not keep (more than 8 MB) and anything that is not a regular file.
+// O_NONBLOCK: a FIFO with no writer opens at once and is then refused,
+// where a plain open would wait for a writer.
 func readCandidate(file string) ([]byte, error) {
-	f, err := os.Open(file)
+	f, err := os.OpenFile(file, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -109,19 +130,16 @@ type checkTarget struct {
 }
 
 func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
-	c := &check.Checks{} // for the graph the tests give
-	if testHookChecks != nil {
-		testHookChecks(c)
+	c, cleanup, err := newChecks()
+	if err != nil {
+		return err
 	}
+	defer cleanup()
 	var targets []checkTarget
 	var notes []string
 	unchecked := 0 // files with a checker that could not be read
 	if len(args) == 0 {
-		g := c.Graph
-		if g == nil {
-			g = check.DefaultGraph()
-		}
-		for _, p := range g.Files() {
+		for _, p := range c.GraphInUse().Files() {
 			if !recordedFile(p) {
 				continue // an editor or package backup (x~, x.dpkg-old): not a config file sc keeps
 			}
@@ -139,7 +157,6 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		}
 	}
 	var s *store.Store
-	var err error
 	for _, a := range args {
 		if isRowID(a) {
 			if s == nil {
@@ -176,21 +193,12 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		targets = append(targets, checkTarget{p, p, st.Data, false})
 	}
 
-	return runTargets(cmd, targets, notes, unchecked, verbose)
+	return runTargets(cmd, c, targets, notes, unchecked, verbose)
 }
 
-// runTargets checks targets and prints the table, the notes and the
-// summary; notes and unchecked come from gathering the targets.
-func runTargets(cmd *cobra.Command, targets []checkTarget, notes []string, unchecked int, verbose bool) error {
-	home, cleanup, err := scratchHome()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	c := &check.Checks{Home: home}
-	if testHookChecks != nil {
-		testHookChecks(c)
-	}
+// runTargets checks targets with c and prints the table, the notes and
+// the summary; notes and unchecked come from gathering the targets.
+func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, notes []string, unchecked int, verbose bool) error {
 	out := cmd.OutOrStdout()
 	var rows []findingRow
 	checked := 0

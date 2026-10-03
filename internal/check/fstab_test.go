@@ -31,7 +31,8 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 		set[p] = true
 	}
 	return &Checks{Home: filepath.Join(t.TempDir(), "schome"), Run: Runner{Dirs: []string{dir}},
-		exists: func(p string) bool { return set[p] }}, args
+		nsswitchPath: filepath.Join(dir, "no-nsswitch.conf"), // no nss-systemd: the worse case
+		exists:       func(p string) bool { return set[p] }}, args
 }
 
 // brief is "line rule severity" for each finding.

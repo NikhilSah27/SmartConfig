@@ -197,3 +197,34 @@ func TestCheckQueueBound(t *testing.T) {
 		t.Errorf("fstab3 was checked: %q", e.lines(tabs[2]))
 	}
 }
+
+// The version before is not checked again when the last check was of it,
+// so a change runs the validator once; and a check that fails on the
+// version before still checks the new one and reports what it finds.
+func TestCheckRunsOnce(t *testing.T) {
+	e := newEnv(t)
+	tools := t.TempDir()
+	runs := filepath.Join(tools, "runs")
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\necho x >> "+runs+"\n"), 0o755)
+	tab := filepath.Join(e.root, "fstab")
+	put(t, tab, goodTab, 0o644)
+	withChecks(t, e, "fstab", tools)
+	var checked atomic.Int32
+	testHookChecked = func(string) { checked.Add(1) }
+	t.Cleanup(func() { testHookChecked = nil })
+	e.start()
+	count := func() int { b, _ := os.ReadFile(runs); return strings.Count(string(b), "x") }
+	put(t, tab, badTab, 0o644) // the first check: the version before and this one
+	e.waitFor("the first check", func() bool { return checked.Load() == 1 })
+	if n := count(); n != 2 {
+		t.Fatalf("first check: %d validator runs, want 2", n)
+	}
+	put(t, tab, goodTab, 0o644) // the version before was the last one checked
+	e.waitFor("the second check", func() bool { return checked.Load() == 2 })
+	if n := count(); n != 3 {
+		t.Fatalf("second check: %d validator runs in all, want 3", n)
+	}
+	if len(e.lines(": check: ok again")) != 1 {
+		t.Fatalf("log:\n%s", e.log.String())
+	}
+}

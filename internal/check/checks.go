@@ -16,10 +16,11 @@ type Checks struct {
 	Home  string // $SC_HOME: scratch copies go under Home/tmp
 	Run   Runner
 
-	exists      func(path string) bool            // nil: the path exists here; tests fake the machine
-	lstat       func(string) (os.FileInfo, error) // nil: os.Lstat; tests fake the machine
-	sshdHostKey string                            // tests: a throwaway host key for sshd -t when not root
-	netplanRoot string                            // "": /; tests fake the machine's {lib,etc,run}/netplan
+	exists       func(path string) bool            // nil: the path exists here; tests fake the machine
+	lstat        func(string) (os.FileInfo, error) // nil: os.Lstat; tests fake the machine
+	sshdHostKey  string                            // tests: a throwaway host key for sshd -t when not root
+	netplanRoot  string                            // "": /; tests fake the machine's {lib,etc,run}/netplan
+	nsswitchPath string                            // "": /etc/nsswitch.conf; tests fake the machine
 }
 
 // Report is the result of checking one file.
@@ -71,12 +72,17 @@ func (c *Checks) CheckSaved(ctx context.Context, path string, data []byte) (Repo
 	return c.check(ctx, input{path: path, data: data, saved: true})
 }
 
+// GraphInUse is the graph the checks use: Graph, or DefaultGraph().
+func (c *Checks) GraphInUse() *Graph {
+	if c.Graph != nil {
+		return c.Graph
+	}
+	return DefaultGraph()
+}
+
 func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 	path, data := in.path, in.data
-	g := c.Graph
-	if g == nil {
-		g = DefaultGraph()
-	}
+	g := c.GraphInUse()
 	name := g.Checker(path)
 	if name == "" {
 		return Report{}, nil

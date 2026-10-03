@@ -5,6 +5,7 @@ package fsutil
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -224,3 +225,13 @@ func (p *Pending) Discard() {
 
 // IsNotExist reports whether err means the file does not exist.
 func IsNotExist(err error) bool { return errors.Is(err, os.ErrNotExist) }
+
+// ErrText is err without the operation and path an *fs.PathError
+// repeats: "permission denied", for a message that names the path itself.
+func ErrText(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}

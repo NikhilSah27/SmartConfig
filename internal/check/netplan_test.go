@@ -228,6 +228,41 @@ func TestNetplanUnreadable(t *testing.T) {
 	}
 }
 
+// With a file sc could not read left out of the merge, an error that may
+// come from it is a note, not a finding: an interface it defines, one it
+// assigns, a type it gives, a definition or a writer it completes. An
+// error in the file's own lines is still a finding.
+func TestNetplanUnreadableMerge(t *testing.T) {
+	unread := "could not read /etc/netplan/40-dir.yaml (is a directory), which netplan merges with this file: the check is incomplete"
+	partial := "netplan reports an error that may come from a file sc could not read; run sc check as root"
+	for _, tc := range []struct{ golden, file, want string }{
+		{"mergealone", npBridge, ""},
+		{"alonebad", npHead + "  bonds:\n    bond0:\n      interfaces: [enp0s3]\n", ""},
+		{"conflict", npHead + "  bonds:\n    enp0s3:\n      interfaces: []\n", ""},
+		{"setname", npHead + "  ethernets:\n    enp0s3:\n      set-name: lan0\n", ""},
+		{"wifishort", npWifi + "          password: \"sc-S\"\n", ""},
+		{"unknownkey", npUnknown, "5 netplan-invalid blocker"},
+	} {
+		c := netplanMachine(t, nil)
+		os.MkdirAll(filepath.Join(c.netplanRoot, "etc/netplan/40-dir.yaml"), 0o755)
+		goldenTool(t, c, "generate", "testdata/netplan/"+tc.golden, 1)
+		rep, err := c.Check(context.Background(), netplanPath, []byte(tc.file))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.golden, err)
+		}
+		if tc.want != "" {
+			if len(rep.Findings) != 1 || fmt.Sprintf("%d %s %s", rep.Findings[0].Line, rep.Findings[0].Rule, rep.Findings[0].Severity) != tc.want ||
+				strings.Join(rep.Notes, "|") != unread {
+				t.Errorf("%s: %+v, want %s", tc.golden, rep, tc.want)
+			}
+			continue
+		}
+		if len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != unread+"|"+partial {
+			t.Errorf("%s: %+v", tc.golden, rep)
+		}
+	}
+}
+
 // A writer's error, which names no file, is this file's when the other
 // files alone do not give it: the generator runs a second time, on them.
 func TestNetplanWriterError(t *testing.T) {

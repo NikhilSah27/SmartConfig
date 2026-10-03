@@ -104,7 +104,12 @@ as /etc/nologin 0 flag-nologin "maintenance\n"
 # The second set (step 13).
 as /etc/netplan/90-accept.yaml 0 - "network:\n  version: 2\n"
 as /etc/netplan/90-accept.yaml 2 netplan-invalid "network:\n  version: 2\n  ethernets:\n    eth9:\n      dhcp4: maybe\n"
-as /etc/passwd 2 passwd-root "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"
+as /etc/passwd 2 passwd-root "root:x:1000:0:root:/root:/bin/bash\n"
+# No root line: nss-systemd (passwd: files systemd, as on stock Ubuntu)
+# supplies root, so only a warning.
+if grep -Eq '^passwd:.*[[:space:]]systemd([[:space:]]|$)' /etc/nsswitch.conf; then
+	as /etc/passwd 0 passwd-root "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"
+fi
 as /etc/sysctl.d/90-accept.conf 0 - "vm.swappiness = 60\n"
 as /etc/udev/rules.d/90-accept.rules 0 - 'SUBSYSTEM=="net", ACTION=="add", NAME="eth9"\n'
 as /etc/udev/rules.d/90-accept.rules 2 udev-invalid 'SUBSYSTEM="net", ACTON=="add"\n'

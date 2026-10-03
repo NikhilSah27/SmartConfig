@@ -6,18 +6,20 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+
+	"smartconfig/internal/scope"
 )
 
 func init() {
 	rules = append(rules,
 		Rule{"passwd-root", Blocker, `/etc/passwd has no line glibc can read that gives root uid 0. sudo and
-su look root up by name: without that line they fail, and with another
-uid they run commands as that uid instead. Ubuntu locks the root
-password, so no other way to root is left.
+su look root up by name: with another uid they run commands as that uid.
+With no root line, nss-systemd (passwd: files systemd) supplies root and
+sudo still works (a warning); without it, sudo and su fail.
 Put the root line back first: root:x:0:0:root:/root:/bin/bash.`},
 		Rule{"passwd-invalid", Error, `pwck rejects a line of /etc/passwd. glibc skips a line it cannot read
 (an id that is not a number, too few fields), so that user does not
@@ -58,10 +60,6 @@ var (
 	// What grpck says about the gshadow file sc makes up for it.
 	grpckShadow = regexp.MustCompile(`^(?:no matching group file entry in .*|invalid shadow group file entry|duplicate shadow group entry|shadow group .*: no (?:administrative )?user .*|'.*' is a member of the '.*' group in .* but not in .*)$`)
 )
-
-// noLoginShells are the shells (by base name) of accounts that are not
-// meant to log in, as the scope has them.
-var noLoginShells = map[string]bool{"nologin": true, "false": true, "sync": true, "halt": true, "shutdown": true}
 
 // sudoGroups are the groups Ubuntu's /etc/sudoers gives sudo to.
 var sudoGroups = map[string]bool{"sudo": true, "admin": true}
@@ -138,8 +136,11 @@ func glibcEntry(l string, fields int, ids ...int) (f []string, ok bool) {
 }
 
 // passwdRoot is the passwd-root rule. glibc gives the name root the first
-// line it can read with that name, and that line must have uid 0.
-func passwdRoot(data []byte) []Finding {
+// line it can read with that name, and that line must have uid 0. With no
+// such line, glibc asks the next service of nsswitch.conf's passwd line:
+// nss-systemd supplies root with uid 0 (checked on the dev VM: getent,
+// sudo and su all work), so then it is a warning (synth).
+func passwdRoot(data []byte, synth bool) []Finding {
 	broken := 0 // the first line named root that glibc cannot read
 	for i, l := range ckSplit(data) {
 		f, ok := glibcEntry(l, 7, 2, 3)
@@ -158,11 +159,34 @@ func passwdRoot(data []byte) []Finding {
 		}
 		return nil
 	}
+	if synth {
+		f := Finding{Rule: "passwd-root", Severity: Warning, Text: "no line defines root: nss-systemd supplies it, so sudo and su still work"}
+		if broken > 0 {
+			f.Line, f.Key = broken, lineKey(data, broken)
+			f.Text = "glibc cannot read root's line: nss-systemd supplies root, so sudo and su still work"
+		}
+		return []Finding{f}
+	}
 	if broken > 0 {
 		return []Finding{{Rule: "passwd-root", Severity: Blocker, Line: broken, Key: lineKey(data, broken),
 			Text: "glibc cannot read root's line, so root does not exist: sudo and su fail"}}
 	}
 	return []Finding{{Rule: "passwd-root", Severity: Blocker, Text: "no line defines root, so root does not exist: sudo and su fail"}}
+}
+
+// synthesizesRoot reports whether nsswitch.conf's passwd line names
+// systemd, whose module supplies root when /etc/passwd has none. An
+// unreadable nsswitch.conf counts as no: the worse case is reported.
+func (c *Checks) synthesizesRoot() bool {
+	p := c.nsswitchPath
+	if p == "" {
+		p = "/etc/nsswitch.conf"
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	return slices.Contains(parseNsswitch(data)["passwd"].services, "systemd")
 }
 
 // ckMessage is one message of pwck or grpck. A question that follows it
@@ -435,7 +459,7 @@ func pwckMore(s *ckLines, key func(int) string, msg string) ([]Finding, bool) {
 		n := s.named(m[1])
 		f := Finding{Rule: "passwd-shell-missing", Severity: Error, Line: n, Raw: msg, Key: key(n),
 			Text: fmt.Sprintf("the shell %s of user %s does not exist on this machine, so %s cannot log in", quoteOdd(shell), user, user)}
-		if noLoginShells[path.Base(strings.TrimSpace(shell))] {
+		if scope.NoLogin(shell) {
 			f.Severity = Warning
 			f.Text = fmt.Sprintf("the shell %s of user %s does not exist on this machine", quoteOdd(shell), user)
 		}
@@ -500,7 +524,7 @@ func lineAt(lines []string, n int) string {
 // the copy and a made-up shadow file. A broken root line is reported once,
 // by passwd-root.
 func checkPasswd(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
-	out := passwdRoot(in.data)
+	out := passwdRoot(in.data, c.synthesizesRoot())
 	skip := 0
 	if len(out) > 0 {
 		skip = out[0].Line

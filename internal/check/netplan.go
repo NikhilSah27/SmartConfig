@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"smartconfig/internal/fsutil"
 )
 
 func init() {
@@ -69,6 +71,14 @@ func checkNetplan(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		return nil, []string{"netplan does not read this file (it reads *.yaml, not names that start with a dot); it was not checked"}, nil
 	}
 	others, notes := c.netplanOthers(in.path)
+	// Files sc could not read are left out of the merge: an error that
+	// may come from one of them is no finding of this file.
+	incomplete := slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, "could not ") })
+	maybeOthers := func(msg string) bool {
+		return incomplete && (strings.HasSuffix(msg, " is not defined") || strings.Contains(msg, " is already assigned to ") ||
+			strings.HasSuffix(msg, " changes device type"))
+	}
+	partial := "netplan reports an error that may come from a file sc could not read; run sc check as root"
 	scratch := filepath.Dir(in.file)
 	root := filepath.Join(scratch, "root")
 	if err := netplanTree(root, append([]netplanFile{{in.path, in.data}}, others...)); err != nil {
@@ -91,6 +101,9 @@ func checkNetplan(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		if m[1] != in.path {
 			return nil, append(notes, fmt.Sprintf("netplan stops at an error in %s, line %d: this file was not checked to the end", m[1], n)), nil
 		}
+		if maybeOthers(m[4]) {
+			return nil, append(notes, partial), nil
+		}
 		return []Finding{{Rule: "netplan-invalid", Severity: Blocker, Line: n, Raw: l,
 			Text: netplanText(m[4]), Key: lineKey(in.data, n) + " " + m[4]}}, notes, nil
 	}
@@ -98,11 +111,17 @@ func checkNetplan(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		if m[1] != in.path {
 			return nil, append(notes, fmt.Sprintf("netplan rejects a definition in %s: this file was not checked to the end", m[1])), nil
 		}
+		if incomplete {
+			return nil, append(notes, partial), nil
+		}
 		return []Finding{{Rule: "netplan-invalid", Severity: Blocker, Line: netplanDefLine(in.data, m[2]), Raw: l,
 			Text: "netplan rejects this device's definition as a whole", Key: m[2]}}, notes, nil
 	}
 	if strings.HasPrefix(l, "ERROR: cannot create ") {
 		return nil, append(notes, "netplan's generator could not write its output in sc's scratch directory; the file was not checked to the end"), nil
+	}
+	if incomplete {
+		return nil, append(notes, partial), nil
 	}
 	f := Finding{Rule: "netplan-invalid", Severity: Blocker, Raw: l, Key: l,
 		Text: "netplan reads the file but cannot generate a network configuration from it"}
@@ -142,7 +161,7 @@ func (c *Checks) netplanOthers(path string) (others []netplanFile, notes []strin
 		entries, err := os.ReadDir(filepath.Join(base, d))
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				notes = append(notes, fmt.Sprintf("could not list /%s (%s), whose files netplan merges with this one: the check is incomplete", d, netplanErrReason(err)))
+				notes = append(notes, fmt.Sprintf("could not list /%s (%s), whose files netplan merges with this one: the check is incomplete", d, fsutil.ErrText(err)))
 			}
 			continue
 		}
@@ -160,22 +179,13 @@ func (c *Checks) netplanOthers(path string) (others []netplanFile, notes []strin
 			}
 			data, err := os.ReadFile(filepath.Join(base, d, n))
 			if err != nil {
-				notes = append(notes, fmt.Sprintf("could not read %s (%s), which netplan merges with this file: the check is incomplete", p, netplanErrReason(err)))
+				notes = append(notes, fmt.Sprintf("could not read %s (%s), which netplan merges with this file: the check is incomplete", p, fsutil.ErrText(err)))
 				continue
 			}
 			others = append(others, netplanFile{p, data})
 		}
 	}
 	return others, notes
-}
-
-// netplanErrReason is err without the path an *fs.PathError repeats.
-func netplanErrReason(err error) string {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		return pe.Err.Error()
-	}
-	return err.Error()
 }
 
 // netplanTree writes files under root, each at its own path below it, as

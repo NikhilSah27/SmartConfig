@@ -175,6 +175,26 @@ func TestPasswdRoot(t *testing.T) {
 		{name: "another uid 0 user is fine", data: pwRoot + "toor:x:0:0::/root:/bin/sh\n", note: noPwck},
 		{name: "no newline at the end", data: strings.TrimSuffix(pwRoot, "\n"), note: noPwck},
 	})
+	// With nss-systemd on the passwd line, a missing or unreadable root
+	// line is a warning: root still resolves (checked on the dev VM). A
+	// root line with another uid is still a blocker: glibc stops at it.
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	for _, tc := range []struct{ nsswitch, data, want, text string }{
+		{"passwd: files systemd\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root warning",
+			"no line defines root: nss-systemd supplies it, so sudo and su still work"},
+		{"passwd: files systemd\n", "root:x:0:zero:root:/root:/bin/bash\n", "1 passwd-root warning",
+			"glibc cannot read root's line: nss-systemd supplies root, so sudo and su still work"},
+		{"passwd: files systemd\n", "root:x:1000:0:root:/root:/bin/bash\n", "1 passwd-root blocker", ""},
+		{"passwd: files\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root blocker", ""},
+		{"passwd: files sss\ngroup: files systemd\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root blocker", ""},
+	} {
+		c.nsswitchPath = filepath.Join(t.TempDir(), "nsswitch.conf")
+		os.WriteFile(c.nsswitchPath, []byte(tc.nsswitch), 0o644)
+		rep, err := c.Check(context.Background(), "/etc/passwd", []byte(tc.data))
+		if err != nil || brief(rep.Findings) != tc.want || (tc.text != "" && rep.Findings[0].Text != tc.text) {
+			t.Errorf("%q, %q: %q %v", tc.nsswitch, tc.data, brief(rep.Findings), err)
+		}
+	}
 }
 
 // glibcEntry and glibcID against what glibc 2.39's fgetpwent and fgetgrent

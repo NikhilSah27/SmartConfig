@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"smartconfig/internal/check"
 	"smartconfig/internal/scope"
@@ -202,6 +204,21 @@ func TestCheckCLISkipsUnrecorded(t *testing.T) {
 	}
 }
 
+// One set of checks both picks the files and checks them: the graph is
+// worked out once.
+func TestCheckCLIOneChecks(t *testing.T) {
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	hook, n := testHookChecks, 0
+	testHookChecks = func(c *check.Checks) { n++; hook(c) }
+	for _, args := range [][]string{{"check"}, {"check", fstab}, {"check", "--as", fstab, fstab}} {
+		n = 0
+		if r := sc(t, args...); r.code != 0 || n != 1 {
+			t.Errorf("%q: %d sets of checks: %+v", args, n, r)
+		}
+	}
+}
+
 // --as checks a file's content as if it were at the path given: the
 // path's checker runs, the file at that path is not read, and rules about
 // the file on disk do not apply.
@@ -231,5 +248,23 @@ func TestCheckCLIAs(t *testing.T) {
 	}
 	if r := sc(t, "check", "--as", filepath.Join(dir, "nochecker"), cand); r.code != 0 || !strings.Contains(r.stdout, "no checker reads this file") {
 		t.Errorf("no checker: %+v", r)
+	}
+	// A FIFO with no writer is refused at once, not waited on.
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan result, 1)
+	go func() { done <- sc(t, "check", "--as", fstab, fifo) }()
+	select {
+	case r := <-done:
+		if r.code != 1 || r.stderr != "sc: "+fifo+" is not a regular file\n" {
+			t.Errorf("fifo: %+v", r)
+		}
+	case <-time.After(10 * time.Second):
+		if f, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			f.Close() // lets the open return
+		}
+		t.Fatal("sc check --as waited on a FIFO")
 	}
 }

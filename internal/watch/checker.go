@@ -150,16 +150,24 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		w.logOnce("check blob "+p, prioErr, fmt.Sprintf("check: %s: %v", show(p), err))
 		return
 	}
+	// The content before: what the last check of p found, when that was
+	// this version, else a check of it now. If that fails, every finding of
+	// the new content counts as new: better a known problem said again
+	// than a new one not said.
 	var had []check.Finding
 	if before != nil && before.Kind == store.KindFile {
-		data, err := w.st.Blob(before.Blob)
-		if err == nil {
+		if c, ok := w.lastFound(p, before.Blob); ok {
+			had = c
+		} else if data, err := w.st.Blob(before.Blob); err == nil {
 			rep, err := w.checks.Check(ctx, p, data)
-			if err != nil {
-				w.logOnce("check "+p, prioErr, fmt.Sprintf("check: %s: %v", show(p), err))
+			switch {
+			case ctx.Err() != nil:
 				return
+			case err != nil:
+				w.logOnce("check before "+p, prioNotice, fmt.Sprintf("check: %s: the version before could not be checked (%v); all findings are reported", show(p), err))
+			default:
+				had = rep.Findings
 			}
-			had = rep.Findings
 		}
 	}
 	rep, err := w.checks.Check(ctx, p, after)
@@ -169,6 +177,7 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		}
 		return
 	}
+	w.rememberFound(p, last.Blob, rep.Findings)
 	tier := w.tierOf(p)
 	// A file reported before: clean of what was reported, it is ok again.
 	w.mu.Lock()
@@ -214,6 +223,31 @@ func oneLine(s string) string {
 		return strconv.Quote(s)
 	}
 	return s
+}
+
+// found is what the last check of a path found in one version of it.
+type found struct {
+	blob     string
+	findings []check.Finding
+}
+
+// lastFound returns what the last check of p found, if it checked the
+// version with blob: the next change compares with it without running the
+// validator on it again.
+func (w *Watcher) lastFound(p, blob string) ([]check.Finding, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	f, ok := w.lastChecked[p]
+	return f.findings, ok && f.blob == blob
+}
+
+func (w *Watcher) rememberFound(p, blob string, fs []check.Finding) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.lastChecked) >= maxLogged {
+		w.lastChecked = map[string]found{} // a flood of names cannot grow it
+	}
+	w.lastChecked[p] = found{blob, fs}
 }
 
 // maxCheckLines bounds the journal lines of one check.

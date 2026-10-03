@@ -195,8 +195,7 @@ func TestDefaultScopeSynthetic(t *testing.T) {
 	}
 	for _, p := range kept {
 		if !s.Recorded(p) {
-			_, line := s.decide(p)
-			t.Errorf("%s is not recorded (line %d)", p, line)
+			t.Errorf("%s is not recorded (line %d)", p, s.decide(p).line)
 		}
 	}
 	for _, p := range excluded {
@@ -231,8 +230,7 @@ func TestTier12NeverExcluded(t *testing.T) {
 	s := machine()
 	for _, p := range tier12 {
 		if !s.Recorded(p) {
-			_, line := s.decide(p)
-			t.Errorf("%s is excluded by line %d", p, line)
+			t.Errorf("%s is excluded by line %d", p, s.decide(p).line)
 		}
 		if tr := s.Tier(p); tr > 2 {
 			t.Errorf("%s is tier %d", p, tr)

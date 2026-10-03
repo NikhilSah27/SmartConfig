@@ -119,10 +119,7 @@ func runEdit(cmd *cobra.Command, arg string) (err error) {
 	if testHookChecks != nil {
 		testHookChecks(c)
 	}
-	g := c.Graph
-	if g == nil {
-		g = check.DefaultGraph()
-	}
+	g := c.GraphInUse()
 	answers := bufio.NewReader(editStdin)
 	intent := "sc edit"
 	var after []byte

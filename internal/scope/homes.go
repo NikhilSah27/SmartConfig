@@ -10,6 +10,11 @@ var noLogin = map[string]bool{
 	"nologin": true, "false": true, "sync": true, "halt": true, "shutdown": true,
 }
 
+// NoLogin reports whether shell, a passwd shell field, is one of an
+// account that cannot log in: nologin, false, sync, halt or shutdown, by
+// base name. An empty shell means /bin/sh, so it can.
+func NoLogin(shell string) bool { return noLogin[path.Base(strings.TrimSpace(shell))] }
+
 // LoginHomes returns the home directory of each account in passwd (the
 // bytes of /etc/passwd) that can log in, in file order. Accounts whose
 // shell's base name is nologin, false, sync, halt or shutdown are skipped
@@ -23,8 +28,8 @@ func LoginHomes(passwd []byte) []string {
 		if len(f) != 7 || strings.HasPrefix(l, "#") {
 			continue
 		}
-		home, shell := f[5], strings.TrimSpace(f[6])
-		if noLogin[path.Base(shell)] || !strings.HasPrefix(home, "/") {
+		home := f[5]
+		if NoLogin(f[6]) || !strings.HasPrefix(home, "/") {
 			continue
 		}
 		home = path.Clean(home)

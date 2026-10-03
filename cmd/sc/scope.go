@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"smartconfig/internal/check"
+	"smartconfig/internal/fsutil"
 	"smartconfig/internal/scope"
 	"smartconfig/internal/store"
 )
@@ -28,7 +31,7 @@ which line of the built-in scope decides, how loudly a change is logged
 and when a saved change takes effect.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sc := machineScope()
+			m := machineScope()
 			g := check.DefaultGraph()
 			out := cmd.OutOrStdout()
 			for i, a := range args {
@@ -39,17 +42,24 @@ and when a saved change takes effect.`,
 				if i > 0 {
 					fmt.Fprintln(out)
 				}
-				explainPath(out, sc.Explain(p), g)
+				explainPath(out, m.Explain(p), m, g)
 			}
 			return nil
 		},
 	}
 }
 
-// machineScope is the built-in scope as scd uses it on this machine: with
-// each login's .ssh as a root and sc's own data directory left out. The
-// .ssh roots are listed whether or not they exist.
-func machineScope() *scope.Scope {
+// machine is the built-in scope as scd uses it on this machine, with
+// what lstat says of its roots.
+type machine struct {
+	*scope.Scope
+	unused map[string]string // a root scd does not watch: why
+	unseen map[string]bool   // a root sc may not look at; scd, as root, may
+}
+
+// machineScope is the scope with each login's .ssh as a root and sc's own
+// data directory left out. Like scd it looks at each root with lstat.
+func machineScope() machine {
 	var ssh []string
 	if b, err := os.ReadFile(passwdPath); err == nil {
 		for _, h := range scope.LoginHomes(b) {
@@ -57,13 +67,31 @@ func machineScope() *scope.Scope {
 		}
 	}
 	home, _ := filepath.Abs(store.Home())
-	return scope.Default().With(home, ssh)
+	sc := scope.Default().With(home, ssh)
+	m := machine{sc, map[string]string{}, map[string]bool{}}
+	for _, r := range sc.Roots() {
+		fi, err := os.Lstat(r)
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			m.unseen[r] = true
+		case fsutil.IsNotExist(err):
+			m.unused[r] = "it does not exist"
+		case err != nil:
+			m.unused[r] = fsutil.ErrText(err)
+		case fi.Mode()&os.ModeSymlink != 0:
+			m.unused[r] = "it is a symlink"
+		case !fi.IsDir():
+			m.unused[r] = "it is not a directory"
+		}
+	}
+	return m
 }
 
 var tierNames = map[int]string{1: "boot", 2: "access", 3: "network", 4: "other"}
 
-// explainPath prints what w and g say about one path, one property a line.
-func explainPath(out io.Writer, w scope.Why, g *check.Graph) {
+// explainPath prints what w, m and g say about one path, one property a
+// line.
+func explainPath(out io.Writer, w scope.Why, m machine, g *check.Graph) {
 	// A scope line's text can be long: it goes on a line of its own.
 	at := func(l scope.Line) string { return fmt.Sprintf("scope line %d:\n            %s", l.N, l.Text) }
 	fmt.Fprintln(out, show(w.Path))
@@ -71,11 +99,17 @@ func explainPath(out io.Writer, w scope.Why, g *check.Graph) {
 	case w.Own:
 		fmt.Fprintln(out, "  recorded: no, it is in sc's own data directory")
 	case w.Root == "":
-		fmt.Fprintf(out, "  recorded: no, it is outside every watched directory:\n            %s\n", strings.Join(machineRoots(), ", "))
+		fmt.Fprintf(out, "  recorded: no, it is outside every watched directory:\n            %s\n", strings.Join(m.watched(), ", "))
 	case !w.Recorded && w.At != w.Path:
 		fmt.Fprintf(out, "  recorded: no, %s is left out by %s\n", show(w.At), at(w.Rule))
 	case !w.Recorded:
 		fmt.Fprintf(out, "  recorded: no, left out by %s\n", at(w.Rule))
+	case m.unused[w.Root] != "":
+		// As scd: a root that is not a real directory is not watched.
+		fmt.Fprintf(out, "  recorded: no, scd does not watch %s: %s\n", show(w.Root), m.unused[w.Root])
+		w.Recorded = false
+	case m.unseen[w.Root]:
+		fmt.Fprintf(out, "  recorded: yes if scd watches %s, which sc cannot look at\n            (permission denied); run sc scope as root to be sure\n", show(w.Root))
 	case w.Rule.N != 0:
 		fmt.Fprintf(out, "  recorded: yes, under %s, kept by %s\n", w.Root, at(w.Rule))
 	default:
@@ -101,5 +135,14 @@ func explainPath(out io.Writer, w scope.Why, g *check.Graph) {
 	}
 }
 
-// machineRoots lists the directories scd watches on this machine.
-func machineRoots() []string { return machineScope().Roots() }
+// watched lists the directories scd watches on this machine, with those
+// sc cannot look at.
+func (m machine) watched() []string {
+	var out []string
+	for _, r := range m.Roots() {
+		if m.unused[r] == "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}

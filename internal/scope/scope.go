@@ -153,40 +153,54 @@ func (s *Scope) Roots() []string { return append([]string(nil), s.roots...) }
 // and neither p nor any directory between that root and p is excluded. A
 // root itself is never excluded. p must be a clean absolute path.
 func (s *Scope) Recorded(p string) bool {
-	ok, _ := s.decide(p)
-	return ok
+	return s.decide(p).recorded
 }
 
-// decide is Recorded, also returning the line of the exclude rule that
-// drops p (0 when p is recorded, -1 when it lies outside every root or
-// under sc's data directory).
-func (s *Scope) decide(p string) (bool, int) {
+// decision is what decide finds about a path.
+type decision struct {
+	recorded bool
+	own      bool   // under sc's own data directory
+	root     string // the root it lies under; "" when under none
+	line     int    // the include or exclude line that decided, 0 when none
+	at       string // the path that line matched: p, or a directory above it
+}
+
+// decide says whether p is recorded and which line decides it. Recorded
+// (scd) and Explain (sc scope) both use it, so they cannot disagree.
+func (s *Scope) decide(p string) decision {
+	var d decision
 	if !cleanAbs(p) {
-		return false, -1
+		return d
 	}
 	if s.scHome != "" && under(p, s.scHome) {
-		return false, -1
+		d.own = true
+		return d
 	}
-	root := ""
 	for _, r := range s.roots {
-		if under(p, r) && len(r) > len(root) {
-			root = r
+		if under(p, r) && len(r) > len(d.root) {
+			d.root = r
 		}
 	}
-	if root == "" {
-		return false, -1
+	if d.root == "" {
+		return d
 	}
 	// Walk down from the root, so the first excluded directory ends the
 	// walk: a deep path under it costs one check, not one per level.
-	for i := len(root) + 1; i <= len(p); i++ {
+	for i := len(d.root) + 1; i <= len(p); i++ {
 		if i < len(p) && p[i] != '/' {
 			continue
 		}
-		if ok, line := s.self(p[:i]); !ok {
-			return false, line
+		ok, line := s.self(p[:i])
+		if !ok {
+			d.line, d.at = line, p[:i]
+			return d
+		}
+		if i == len(p) && line != 0 {
+			d.line, d.at = line, p // an include line keeps p itself
 		}
 	}
-	return true, 0
+	d.recorded = true
+	return d
 }
 
 // under reports whether p is dir or lies below it.
@@ -236,41 +250,29 @@ func (s *Scope) Explain(p string) Why {
 		return w
 	}
 	w.Path = p
-	for _, r := range s.rules {
-		switch {
-		case r.verb == "tier" && w.TierRule.N == 0 && r.g.match(p):
-			w.Tier, w.TierRule = r.tier, s.line(r)
-		case r.verb == "digest" && !w.Digest && r.g.match(p):
-			w.Digest, w.DigRule = true, s.line(r)
-		}
+	if r := s.first("tier", p); r != nil {
+		w.Tier, w.TierRule = r.tier, s.line(*r)
 	}
-	if s.scHome != "" && under(p, s.scHome) {
-		w.Own = true
-		return w
+	if r := s.first("digest", p); r != nil {
+		w.Digest, w.DigRule = true, s.line(*r)
 	}
-	for _, r := range s.roots {
-		if under(p, r) && len(r) > len(w.Root) {
-			w.Root = r
-		}
+	d := s.decide(p)
+	w.Recorded, w.Own, w.Root = d.recorded, d.own, d.root
+	if d.line != 0 {
+		w.Rule, w.At = s.lineAt(d.line), d.at
 	}
-	if w.Root == "" {
-		return w
-	}
-	for i := len(w.Root) + 1; i <= len(p); i++ {
-		if i < len(p) && p[i] != '/' {
-			continue
-		}
-		ok, n := s.self(p[:i])
-		if !ok {
-			w.Rule, w.At = s.lineAt(n), p[:i]
-			return w
-		}
-		if i == len(p) && n != 0 {
-			w.Rule, w.At = s.lineAt(n), p
-		}
-	}
-	w.Recorded = true
 	return w
+}
+
+// first returns the first line of verb ("tier" or "digest") whose pattern
+// matches p, or nil.
+func (s *Scope) first(verb, p string) *rule {
+	for i := range s.rules {
+		if s.rules[i].verb == verb && s.rules[i].g.match(p) {
+			return &s.rules[i]
+		}
+	}
+	return nil
 }
 
 func (s *Scope) line(r rule) Line {
@@ -294,10 +296,8 @@ func (s *Scope) lineAt(n int) Line {
 // line, else 4 (1 boot, 2 access, 3 network). p is cleaned first.
 func (s *Scope) Tier(p string) int {
 	p, _ = clean(p)
-	for _, r := range s.rules {
-		if r.verb == "tier" && r.g.match(p) {
-			return r.tier
-		}
+	if r := s.first("tier", p); r != nil {
+		return r.tier
 	}
 	return 4
 }
@@ -315,10 +315,5 @@ func (s *Scope) FingerprintOnly(p string) bool {
 	if !ok {
 		return true
 	}
-	for _, r := range s.rules {
-		if r.verb == "digest" && r.g.match(p) {
-			return true
-		}
-	}
-	return false
+	return s.first("digest", p) != nil
 }

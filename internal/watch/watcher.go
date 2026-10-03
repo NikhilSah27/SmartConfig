@@ -158,13 +158,14 @@ type Watcher struct {
 	userRows    map[string]time.Time // last row of each user-owned home file
 	rates       map[string]*pathRate // row budgets of system files that spent some
 
-	checks     *check.Checks              // the checks after a recorded change
-	checkGraph *check.Graph               // which files have a checker
-	checkQ     *checkQueue                // paths waiting for the checker
-	failing    map[string][]check.Finding // what was reported per path, until it is gone
-	lowSpace   bool                       // under the free-space floor
-	nEvent     int                        // dirty entries marked by events (the MaxDirty bound)
-	stopping   atomic.Bool                // Run is stopping: walks end early
+	checks      *check.Checks              // the checks after a recorded change
+	checkGraph  *check.Graph               // which files have a checker
+	checkQ      *checkQueue                // paths waiting for the checker
+	failing     map[string][]check.Finding // what was reported per path, until it is gone
+	lastChecked map[string]found           // what the last check of each path found
+	lowSpace    bool                       // under the free-space floor
+	nEvent      int                        // dirty entries marked by events (the MaxDirty bound)
+	stopping    atomic.Bool                // Run is stopping: walks end early
 
 	poke chan struct{}
 }
@@ -252,10 +253,8 @@ func New(cfg Config) (*Watcher, error) {
 	if w.checks == nil {
 		w.checks = &check.Checks{Home: cfg.Home}
 	}
-	if w.checkGraph = w.checks.Graph; w.checkGraph == nil {
-		w.checkGraph = check.DefaultGraph()
-	}
-	w.checkQ, w.failing = newCheckQueue(cfg.CheckQueue), map[string][]check.Finding{}
+	w.checkGraph = w.checks.GraphInUse()
+	w.checkQ, w.failing, w.lastChecked = newCheckQueue(cfg.CheckQueue), map[string][]check.Finding{}, map[string]found{}
 	return w, nil
 }
 
@@ -296,7 +295,7 @@ func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login, gone []string, mac
 		fi, err := os.Lstat(r)
 		switch {
 		case err != nil:
-			w.logOnce("root "+r, prioInfo, fmt.Sprintf("not watching %s: %v", show(r), errText(err)))
+			w.logOnce("root "+r, prioInfo, fmt.Sprintf("not watching %s: %v", show(r), fsutil.ErrText(err)))
 			return false, fsutil.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR)
 		case fi.Mode()&os.ModeSymlink != 0:
 			w.logOnce("root "+r, prioWarning, fmt.Sprintf("not watching %s: it is a symlink", show(r)))
@@ -323,14 +322,6 @@ func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login, gone []string, mac
 		}
 	}
 	return fixed, login, gone, machine
-}
-
-func errText(err error) string {
-	var pe *os.PathError
-	if errors.As(err, &pe) {
-		return pe.Err.Error()
-	}
-	return err.Error()
 }
 
 // checkHome refuses an SC_HOME that equals or lies below a root (plan 6.2
@@ -371,7 +362,7 @@ func resolveMissing(p string) (string, error) {
 	}
 	r, err := filepath.EvalSymlinks(cur)
 	if err != nil {
-		return "", fmt.Errorf("SC_HOME %s: %s does not resolve: %v", p, cur, errText(err))
+		return "", fmt.Errorf("SC_HOME %s: %s does not resolve: %v", p, cur, fsutil.ErrText(err))
 	}
 	return filepath.Join(append([]string{r}, rest...)...), nil
 }
@@ -382,7 +373,7 @@ func lockHome(home string) (*os.File, error) {
 	p := filepath.Join(home, "scd.lock")
 	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %v", p, errText(err))
+		return nil, fmt.Errorf("open %s: %v", p, fsutil.ErrText(err))
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		b, _ := os.ReadFile(p)
@@ -724,7 +715,7 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 		// and still walk the directory, so every rescan reads it.
 		w.mu.Unlock()
 		w.logOnce(fmt.Sprintf("watch %d %s", gen, err), prioErr,
-			fmt.Sprintf("cannot watch %s: %v (rescans still read it)", show(dir), errText(err)))
+			fmt.Sprintf("cannot watch %s: %v (rescans still read it)", show(dir), fsutil.ErrText(err)))
 		w.mu.Lock()
 	default:
 		if old, ok := w.wds[in][wd]; ok && old != dir {
