@@ -31,8 +31,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 **Now: M3 is being built** ([M3_PLAN.md](M3_PLAN.md), approved 2026-10-03,
 "great go ahead": all 7 recommendations of its section 14, which also
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
-one at a time. **In progress: step 1** (chunk A), `check: findings, rules,
-runner`. Gate G2 stands: nothing is installed or run on the real system
+one at a time. Done: step 1 (`45df7da`). **In progress: step 2** (chunk A), `check: file
+graph`. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -803,3 +803,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   both checker sets, scd runs validators, "save anyway" prompt, no store
   change, one review per chunk plus a final one, sign-off after the soak
   check). Step 1 starts.
+- **M3 step 1, `check: findings, rules, runner`, `45df7da`:** new package
+  `internal/check`. `Finding` and `Severity`; the rules table (empty: each
+  checker adds its rules with its step); `Runner`, the one place that
+  starts a validator (fixed tool directories, never $PATH; argument list,
+  no shell; `LC_ALL=C` and a fixed PATH; stdin /dev/null; 10 s timeout
+  that kills the process group; 64 KiB output cap; a missing tool is a
+  result, not an error); `Scratch`, the private copy under
+  `$SC_HOME/tmp`. Found while testing: `os/exec` reports a leftover
+  child only when the tool exits 0, so the group is killed after every
+  run. A mutation (kill the tool only, not its group) fails
+  `TestRunTimeoutKillsGroup`. Checks: build, gofmt, vet, `go test ./...`
+  as user, the package as root and 3 times under race, static: clean.
