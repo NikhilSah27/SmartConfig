@@ -38,8 +38,9 @@ fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): ch
 fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers in
 separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
-fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). **Next: chunk D**
-(steps 12-14).
+fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). **In
+progress:** step 13 (the second set of checkers) by two parallel agents;
+then step 14, `sc scope`.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -985,3 +986,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   upper bounds (a full kernel queue to work through; sc watch's 10 s
   rescan gap). Watch package: three race runs in a row clean; `make
   race` clean.
+- **M3 step 12, `watch: check after a recorded change`, `580e1d1`:** after an
+  automatic file row, the worker queues the path for one checker
+  goroutine (a bounded set, 100 paths) and never waits. The checker
+  compares the newest content with the content before the first queued
+  change and logs only what was added (`T1 /etc/fstab: check: blocker
+  RULE, line N: SENTENCE (ID)` at err; errors at warning; warnings at
+  notice; 5 lines at most), and `check: ok again` when a reported file is
+  clean. No validator output reaches the journal. Not checked: deleted,
+  link and digest rows, restore and edit rows, the startup baseline. A
+  full queue drops the path with one line. Tests: the lines and their
+  priorities, no repeat, ok again, quiet cases, a slow validator does
+  not hold up rows, the queue bound (3 times, and under race). Checks:
+  build, gofmt, vet, `go test ./...`, `watch` and `cmd/sc` as root,
+  `watch` under race: clean. Not installed (gate G2).
