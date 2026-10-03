@@ -430,6 +430,39 @@ func TestWalkTrimsListing(t *testing.T) {
 	e.want(r("x"), "deleted did not exist", "file created")
 }
 
+// A temp file that a killed sc restore left next to its target is reported
+// once by the walks, and left alone: never removed, never recorded. A
+// fresh one may be a restore at work and is not reported.
+func TestStaleTempReported(t *testing.T) {
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	old, fresh := r(".hosts.sc-tmp-123"), r(".conf.sc-tmp-456")
+	put(t, old, "half a restore\n", 0o600)
+	hour := time.Now().Add(-time.Hour)
+	os.Chtimes(old, hour, hour)
+	put(t, fresh, "a restore at work\n", 0o600)
+	var n atomic.Int32
+	testHookRescan = func(string) { n.Add(1) }
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	start := n.Load()
+	e.w.requestRescan()
+	e.waitFor("the rescan", func() bool { return n.Load() > start })
+	e.barrier()
+	log := e.log.String()
+	if n := strings.Count(log, "stale temp file "+old); n != 1 {
+		t.Fatalf("reported %d times:\n%s", n, log)
+	}
+	if strings.Contains(log, fresh) {
+		t.Fatalf("fresh temp file reported:\n%s", log)
+	}
+	if _, err := os.Lstat(old); err != nil {
+		t.Fatal("removed:", err)
+	}
+	e.want(old)
+	e.want(fresh)
+}
+
 // A restore of a file, a link or a "did not exist" row leaves the restore
 // and pre-restore rows newest, with no auto row after them.
 func TestRestoreWhileWatching(t *testing.T) {

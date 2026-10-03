@@ -727,6 +727,9 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 	for _, de := range ents {
 		names[de.Name()] = true
 		p := dir + "/" + de.Name()
+		if isTempName(de.Name()) {
+			w.reportStaleTemp(p, de)
+		}
 		if !w.scope.Recorded(p) {
 			continue
 		}
@@ -758,6 +761,28 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 		n += w.walk(in, d, reason, created, gen)
 	}
 	return n
+}
+
+// staleTemp is the age after which a restore's temp file is taken as left
+// behind: a restore keeps one for milliseconds.
+const staleTemp = 10 * time.Minute
+
+// isTempName reports whether name is a restore's temp name,
+// ".<base>.sc-tmp-<random>" (excluded by the scope).
+func isTempName(name string) bool {
+	return strings.HasPrefix(name, ".") && strings.Contains(name[1:], ".sc-tmp-")
+}
+
+// reportStaleTemp logs once a temp file that a killed sc restore left
+// next to its target. It is not removed: it may hold the only copy of
+// what the restore was writing, and a removal in /etc is the admin's call.
+func (w *Watcher) reportStaleTemp(p string, de os.DirEntry) {
+	fi, err := de.Info()
+	if err != nil || time.Since(fi.ModTime()) < staleTemp {
+		return
+	}
+	w.logOnce("temp "+p, prioWarning, fmt.Sprintf("stale temp file %s (written %s), left by an interrupted sc restore; not recorded, remove it",
+		show(p), fi.ModTime().Format("2006-01-02 15:04")))
 }
 
 // rescan walks every usable root and marks every stored live path (plan
