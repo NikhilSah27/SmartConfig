@@ -1,7 +1,7 @@
 BIN := bin/sc
 export CGO_ENABLED := 0
 
-.PHONY: build test race vet fmt smoke m1-compat accept-m2 clean
+.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 clean
 
 build:
 	go build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/sc
@@ -24,6 +24,9 @@ smoke: build
 # M2 acceptance in the VM (plan section 12): touches only its own test paths.
 accept-m2: build
 	sudo ./scripts/accept-m2.sh
+
+accept-m3: build
+	sudo ./scripts/accept-m3.sh
 
 # The M1 binary must keep working on a store the M2 code has migrated.
 m1-compat:
