@@ -79,8 +79,10 @@ func (c *Checks) pathExists(p string) bool {
 	return err == nil
 }
 
-// validate runs a validator and turns "not installed" and "did not finish"
-// into notes. ok is false when there is no output to read.
+// validate runs a validator and turns "not installed", "did not finish",
+// "was killed" and "output cut" into notes, so a caller never takes a run
+// that did not happen for a clean one. ok is false when there is no output
+// to read.
 func (c *Checks) validate(ctx context.Context, in input, tool string, args ...string) (res Result, notes []string, ok bool, err error) {
 	res, err = c.Run.Run(ctx, filepath.Dir(in.file), tool, args...)
 	switch {
@@ -90,6 +92,10 @@ func (c *Checks) validate(ctx context.Context, in input, tool string, args ...st
 		return res, []string{"no validator found (" + tool + "); only sc's own rules ran"}, false, nil
 	case res.TimedOut:
 		return res, []string{tool + " did not finish in time; only sc's own rules ran"}, false, nil
+	case res.Exit < 0:
+		return res, []string{tool + " was killed; only sc's own rules ran"}, false, nil
+	case res.Truncated:
+		notes = []string{tool + " printed more than sc reads; some of its findings may be missing"}
 	}
-	return res, nil, true, nil
+	return res, notes, true, nil
 }

@@ -1,6 +1,3 @@
-findmnt: g.mixed: parse error at line 4 -- ignored
-
-1 parse error, 3 errors, 3 warnings
 /
    [W] cannot detect on-disk filesystem type (Permission denied)
 /data

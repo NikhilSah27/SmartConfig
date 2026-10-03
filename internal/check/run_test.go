@@ -45,7 +45,10 @@ exit 3
 	if !res.Found || res.Exit != 3 || res.TimedOut || res.Truncated {
 		t.Fatalf("%+v\n%s", res, out)
 	}
-	for _, want := range []string{"arg:-f\narg:a b\narg:$(id)\narg:\n", "LC_ALL=C\n", "PATH=/usr/sbin:/usr/bin:/sbin:/bin\n", dir + "\n", "to stderr\n"} {
+	if string(res.Err) != "to stderr\n" || strings.Contains(out, "to stderr") {
+		t.Errorf("stderr %q; stdout:\n%s", res.Err, out)
+	}
+	for _, want := range []string{"arg:-f\narg:a b\narg:$(id)\narg:\n", "LC_ALL=C\n", "PATH=/usr/sbin:/usr/bin:/sbin:/bin\n", dir + "\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -157,7 +160,7 @@ func TestRunOutputCap(t *testing.T) {
 	r := tool(t, "fake", "head -c 300000 /dev/zero | tr '\\0' x\necho end >&2\n")
 	r.MaxOut = 1000
 	res, err := r.Run(context.Background(), "", "fake")
-	if err != nil || res.Exit != 0 || !res.Truncated || len(res.Out) != 1000 {
+	if err != nil || res.Exit != 0 || !res.Truncated || len(res.Out) != 1000 || string(res.Err) != "end\n" {
 		t.Fatalf("exit %d truncated %v len %d err %v", res.Exit, res.Truncated, len(res.Out), err)
 	}
 }

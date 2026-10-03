@@ -1,0 +1,11 @@
+none
+   [W] target specified more than once
+   [W] unreachable source: /dev/sdz8: No such file or directory
+   [W] cannot detect on-disk filesystem type (No such file or directory)
+none
+   [W] unreachable source: /dev/sdz9: No such file or directory
+   [W] cannot detect on-disk filesystem type (No such file or directory)
+/x#y
+   [E] unreachable on boot required target: No such file or directory
+   [W] unreachable source: /dev/sdz7: No such file or directory
+   [W] cannot detect on-disk filesystem type (No such file or directory)

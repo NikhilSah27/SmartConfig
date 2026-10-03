@@ -4,8 +4,12 @@ package check
 
 import (
 	"context"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -44,10 +48,16 @@ type fstabEntry struct {
 	opts                   []string // option names, without "=value"
 }
 
-// parseFstab splits an fstab into its entries and the numbers of the
-// lines libmount would ignore (fewer than three fields, or a dump or pass
-// field that is not a number).
-func parseFstab(data []byte) (entries []fstabEntry, bad []int) {
+// badLine is a line libmount ignores.
+type badLine struct {
+	line int
+	text string
+}
+
+// parseFstab splits an fstab into its entries and the lines libmount would
+// ignore (fewer than three fields, or a dump or pass field that is not a
+// number).
+func parseFstab(data []byte) (entries []fstabEntry, bad []badLine) {
 	for i, l := range strings.Split(string(data), "\n") {
 		f := strings.Fields(l)
 		if len(f) == 0 || strings.HasPrefix(f[0], "#") {
@@ -60,7 +70,7 @@ func parseFstab(data []byte) (entries []fstabEntry, bad []int) {
 			}
 		}
 		if !ok {
-			bad = append(bad, i+1)
+			bad = append(bad, badLine{i + 1, l})
 			continue
 		}
 		e := fstabEntry{line: i + 1, source: unmangle(f[0]), target: unmangle(f[1]), fstype: f[2]}
@@ -76,18 +86,15 @@ func parseFstab(data []byte) (entries []fstabEntry, bad []int) {
 	return entries, bad
 }
 
-// unmangle undoes fstab's octal escapes (\040 is a space).
-func unmangle(s string) string {
-	return strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`).Replace(s)
-}
+var octalEscape = regexp.MustCompile(`\\[0-3][0-7]{2}`)
 
-func (e fstabEntry) has(opt string) bool {
-	for _, o := range e.opts {
-		if o == opt {
-			return true
-		}
-	}
-	return false
+// unmangle undoes fstab's octal escapes (\040 is a space), as libmount
+// does for any byte.
+func unmangle(s string) string {
+	return octalEscape.ReplaceAllStringFunc(s, func(m string) string {
+		n, _ := strconv.ParseUint(m[1:], 8, 8)
+		return string([]byte{byte(n)})
+	})
 }
 
 var netFS = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": true, "smbfs": true,
@@ -100,9 +107,9 @@ var netFS = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": tru
 // whose failure is emergency mode.
 func (e fstabEntry) severity() Severity {
 	switch {
-	case e.has("nofail") || e.has("noauto"):
+	case slices.Contains(e.opts, "nofail") || slices.Contains(e.opts, "noauto"):
 		return Warning
-	case e.target == "/", e.fstype == "swap", netFS[e.fstype], e.has("_netdev"):
+	case e.target == "/", e.fstype == "swap", netFS[e.fstype], slices.Contains(e.opts, "_netdev"):
 		return Error
 	}
 	return Blocker
@@ -110,7 +117,8 @@ func (e fstabEntry) severity() Severity {
 
 // deviceExists reports whether source names a device in a form sc can
 // check (a /dev path, or a UUID, PARTUUID, LABEL or PARTLABEL tag), and
-// whether that device is on this machine.
+// whether that device is on this machine. Tags are compared as written:
+// libblkid and udev's links are case-sensitive.
 func (c *Checks) deviceExists(source string) (checked, exists bool) {
 	tag, val, isTag := strings.Cut(source, "=")
 	val = strings.Trim(val, `"'`)
@@ -121,41 +129,63 @@ func (c *Checks) deviceExists(source string) (checked, exists bool) {
 		return false, false
 	}
 	dir := map[string]string{"UUID": "by-uuid", "PARTUUID": "by-partuuid", "LABEL": "by-label", "PARTLABEL": "by-partlabel"}[tag]
-	// udev escapes other characters in the link's name.
+	// udev escapes other characters in the link's name: findmnt decides.
 	if dir == "" || val == "" || strings.Trim(val, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-") != "" {
 		return false, false
 	}
-	for _, v := range []string{val, strings.ToLower(val), strings.ToUpper(val)} {
-		if c.pathExists("/dev/disk/" + dir + "/" + v) {
-			return true, true
-		}
-	}
-	return true, false
+	return true, c.pathExists("/dev/disk/" + dir + "/" + val)
 }
 
-var fstypeMismatch = regexp.MustCompile(`^\s+\[W\] (\S+) does not match with on-disk (\S+)`)
+// sameFS reports whether a line of type want mounts a disk blkid calls
+// have, although findmnt's plain comparison says they differ; maybe says
+// the mount may still work (an ext3 line on an ext4 disk without ext4-only
+// features).
+func sameFS(want, have string) (same, maybe bool) {
+	ext := map[string]bool{"ext2": true, "ext3": true, "ext4": true}
+	for _, w := range strings.Split(want, ",") { // a list: mount tries each
+		switch {
+		case w == have, strings.HasPrefix(w, "fuse"), w == "ext4" && ext[have],
+			have == "ntfs" && (w == "ntfs-3g" || w == "ntfs3" || w == "lowntfs-3g"),
+			have == "vfat" && w == "msdos":
+			return true, false
+		case ext[w] && ext[have]:
+			maybe = true
+		}
+	}
+	return false, maybe
+}
+
+var (
+	fstypeMismatch = regexp.MustCompile(`^\s+\[W\] (\S+) does not match with on-disk (\S+)`)
+	sourceMissing  = regexp.MustCompile(`^\s+\[E\] unreachable on boot required source: `)
+)
 
 // checkFstab checks an fstab: sc's own rules on every line, then findmnt
-// --verify for what only it can see (the type on disk, as root).
+// --verify for what only it can see: the type on disk (as root), and
+// devices named in a form sc cannot look up.
 func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	entries, bad := parseFstab(in.data)
 	var out []Finding
-	for _, n := range bad {
-		out = append(out, Finding{Rule: "fstab-fields", Severity: Error, Line: n,
+	for _, b := range bad {
+		sum := sha256.Sum256([]byte(b.text))
+		out = append(out, Finding{Rule: "fstab-fields", Severity: Error, Line: b.line, Key: hex.EncodeToString(sum[:8]),
 			Text: "not a valid fstab line; it is ignored, so nothing is mounted"})
 	}
-	byTarget := map[string]fstabEntry{}
-	for _, e := range entries {
-		if _, dup := byTarget[e.target]; !dup {
-			byTarget[e.target] = e
+	byTarget := map[string][]fstabEntry{}
+	flagged := map[int]bool{} // lines with a missing-source finding
+	missing := func(e fstabEntry, raw string) Finding {
+		f := Finding{Rule: "fstab-source-missing", Severity: e.severity(), Line: e.line, Raw: raw,
+			Text: fmt.Sprintf("%s (for %s) is not a device on this machine", e.source, e.target)}
+		if e.target == "/" {
+			f.Rule = "fstab-root-source"
 		}
+		flagged[e.line] = true
+		return f
+	}
+	for _, e := range entries {
+		byTarget[e.target] = append(byTarget[e.target], e)
 		if checked, exists := c.deviceExists(e.source); checked && !exists {
-			f := Finding{Rule: "fstab-source-missing", Severity: e.severity(), Line: e.line,
-				Text: fmt.Sprintf("%s (for %s) is not a device on this machine", e.source, e.target)}
-			if e.target == "/" {
-				f.Rule = "fstab-root-source"
-			}
-			out = append(out, f)
+			out = append(out, missing(e, ""))
 		}
 		for _, o := range e.opts {
 			if near := optionTypo(o); near != "" {
@@ -168,22 +198,71 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 	if err != nil || !ok {
 		return out, notes, err
 	}
-	target := ""
-	for _, l := range strings.Split(string(res.Out), "\n") {
-		switch {
-		case l == "" || strings.HasPrefix(l, "findmnt: ") || strings.HasPrefix(l, "Success, "):
-		case l[0] != ' ' && l[0] != '\t':
-			target = l // a section's heading; the summary line is no target
-		case fstypeMismatch.MatchString(l):
-			m, e := fstypeMismatch.FindStringSubmatch(l), byTarget[target]
-			out = append(out, Finding{Rule: "fstab-fstype-mismatch", Severity: e.severity(), Line: e.line, Raw: strings.TrimSpace(l),
-				Text: fmt.Sprintf("%s is %s on disk, not %s", target, m[2], m[1])})
-		case strings.Contains(l, "[E] ") && !strings.Contains(l, "[E] unreachable on boot required "):
-			// Missing sources are sc's own rule above; a missing mount
-			// point is no problem, systemd creates it.
-			out = append(out, Finding{Rule: "fstab-verify", Severity: Warning, Line: byTarget[target].line, Raw: strings.TrimSpace(l),
-				Text: "findmnt reports an error for " + target})
+	for _, l := range strings.Split(string(res.Err), "\n") {
+		// Its parse errors are fstab-fields above; anything else it says
+		// about itself means it did not check the file.
+		if msg, isOwn := strings.CutPrefix(l, "findmnt: "); isOwn && !strings.Contains(msg, "parse error at line") {
+			return out, append(notes, "findmnt could not check the file ("+strings.ReplaceAll(msg, in.file, in.path)+"); only sc's own rules ran"), nil
 		}
+	}
+	// stdout is one heading per mount point that has messages, each
+	// followed by its indented messages. A heading says which lines the
+	// messages are about: with several lines for one mount point (two swap
+	// lines, both "none") sc cannot tell which, and takes the first line
+	// and the worst case; a heading sc cannot match gets no line.
+	var about []fstabEntry
+	target := ""
+	unread := false
+	for _, l := range strings.Split(string(res.Out), "\n") {
+		if l == "" || strings.HasPrefix(l, "Success, ") {
+			continue
+		}
+		if l[0] != ' ' && l[0] != '\t' {
+			target, about = l, byTarget[l]
+			continue
+		}
+		raw := strings.TrimSpace(l)
+		f := Finding{Raw: raw, Severity: Error} // a heading sc cannot match: not known to be required
+		if len(about) > 0 {
+			f.Line, f.Severity = about[0].line, 0
+			for _, e := range about {
+				f.Severity = max(f.Severity, e.severity())
+			}
+		}
+		switch {
+		case fstypeMismatch.MatchString(l):
+			m := fstypeMismatch.FindStringSubmatch(l)
+			same, maybe := sameFS(m[1], m[2])
+			if same {
+				continue
+			}
+			if maybe {
+				f.Severity = Warning
+			}
+			f.Rule, f.Text = "fstab-fstype-mismatch", fmt.Sprintf("%s is %s on disk, not %s", target, m[2], m[1])
+		case sourceMissing.MatchString(l):
+			// sc's own rule already has the lines it could look up.
+			if len(about) > 0 && !slices.ContainsFunc(about, func(e fstabEntry) bool { return !flagged[e.line] }) {
+				continue
+			}
+			if len(about) == 1 {
+				f = missing(about[0], raw)
+			} else {
+				f.Rule, f.Text = "fstab-source-missing", "the device for "+target+" is not on this machine"
+			}
+		case strings.Contains(l, "cannot detect on-disk filesystem type (Permission denied)"):
+			unread = true
+			continue
+		case strings.HasPrefix(raw, "[E] ") && !strings.HasPrefix(raw, "[E] unreachable on boot required target"):
+			// A missing mount point is no problem: systemd creates it.
+			f.Rule, f.Severity, f.Key, f.Text = "fstab-verify", Warning, raw, "findmnt reports an error for "+target
+		default:
+			continue
+		}
+		out = append(out, f)
+	}
+	if unread {
+		notes = append(notes, "findmnt could not read the disks (not root): filesystem types were not compared")
 	}
 	return out, notes, nil
 }
@@ -192,35 +271,34 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 var commonOpts = []string{"defaults", "noauto", "nofail", "noatime", "nodiratime", "relatime", "nosuid",
 	"nodev", "noexec", "discard", "errors", "users", "owner", "async", "_netdev", "user", "auto", "exec", "sync"}
 
-// knownOpts are options that are real although close to a common one.
+//go:embed mountopts.txt
+var mountOptsText string
+
+// knownOpts are the real mount options (mountopts.txt): none of them is
+// ever called a misspelling.
 var knownOpts = map[string]bool{}
 
 func init() {
-	for _, o := range append(commonOpts, strings.Fields(`ro rw suid dev nouser group atime diratime
-		norelatime strictatime nostrictatime lazytime nolazytime dirsync mand nomand silent loud
-		iversion noiversion symfollow nosymfollow remount bind rbind loop sw pri nodiscard
-		acl noacl user_xattr nouser_xattr quota noquota usrquota grpquota prjquota barrier nobarrier
-		data commit uid gid umask dmask fmask mode size subvol subvolid compress ssd autodefrag
-		degraded noload norecovery inode64 nouuid dax utf8 iocharset codepage shortname flush
-		soft hard intr tcp udp proto port vers sec bg fg nolock timeo retrans rsize wsize
-		credentials username password domain allow_other default_permissions nonempty context
-		lowerdir upperdir workdir hidepid nr_inodes offset sizelimit`)...) {
+	for _, l := range strings.Split(mountOptsText, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			knownOpts[l] = true
+		}
+	}
+	for _, o := range commonOpts {
 		knownOpts[o] = true
 	}
 }
 
-// optionTypo returns the common option that o is probably a misspelling
-// of, or "". Options sc knows, x-* options and short ones are never typos.
+// optionTypo returns the common option that o is one slip away from (a
+// letter added, dropped, replaced, or two swapped), or "". Options sc
+// knows, x-* options and short ones are never typos: the list cannot hold
+// every option of every filesystem, so only the nearest misses count.
 func optionTypo(o string) string {
 	if knownOpts[o] || len(o) < 4 || strings.HasPrefix(strings.ToLower(o), "x-") || o == "comment" {
 		return ""
 	}
 	for _, c := range commonOpts {
-		limit := 2
-		if len(c) <= 5 {
-			limit = 1
-		}
-		if editDistance(o, c) <= limit {
+		if editDistance(o, c) == 1 {
 			return c
 		}
 	}

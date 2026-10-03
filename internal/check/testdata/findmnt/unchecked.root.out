@@ -1,0 +1,6 @@
+/mnt/c
+   [E] unreachable on boot required target: No such file or directory
+   [E] unreachable on boot required source: LABEL=My Disk
+/data
+   [E] unreachable on boot required target: No such file or directory
+   [E] unreachable on boot required source: UUID=E41C582C-C4D8-4225-9E5D-249C8248CB80

@@ -33,28 +33,31 @@ type Finding struct {
 	Line     int      // 0 when unknown
 	Text     string   // one sentence of ours; never a secret
 	Raw      string   // the validator's own lines; never logged by scd
+	// Key tells apart two findings with the same rule, severity and text
+	// (two lines that are not fstab lines). It is never shown or logged.
+	Key string
 }
 
 // Added returns the findings of after that before does not have, in
 // after's order (plan 5.2): what an edit added. A stock system already
 // fails some validators, so only these are blamed on the edit. A finding
-// is the same when its rule, severity and text are; its line may have
+// is the same when its rule, severity, text and key are; its line may have
 // moved. The same finding twice in after and once in before is one added;
 // a finding whose severity changed (nofail removed from a line whose disk
 // is missing) is added.
 func Added(before, after []Finding) []Finding {
 	type key struct {
-		rule string
-		sev  Severity
-		text string
+		rule      string
+		sev       Severity
+		text, key string
 	}
 	had := map[key]int{}
 	for _, f := range before {
-		had[key{f.Rule, f.Severity, f.Text}]++
+		had[key{f.Rule, f.Severity, f.Text, f.Key}]++
 	}
 	var out []Finding
 	for _, f := range after {
-		k := key{f.Rule, f.Severity, f.Text}
+		k := key{f.Rule, f.Severity, f.Text, f.Key}
 		if had[k] > 0 {
 			had[k]--
 			continue

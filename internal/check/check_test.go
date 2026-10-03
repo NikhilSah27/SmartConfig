@@ -35,6 +35,8 @@ func TestAdded(t *testing.T) {
 		"severity rose":             {old, []Finding{f(9, "b-rule", Blocker, "disk gone")}, "9 b-rule blocker disk gone"},
 		"no findings before":        {nil, old[:1], "3 a-rule error one"},
 		"no findings after":         {old, nil, ""},
+		"same text, other key":      {[]Finding{{Rule: "a-rule", Severity: Error, Line: 3, Text: "bad line", Key: "k1"}}, []Finding{{Rule: "a-rule", Severity: Error, Line: 1, Text: "bad line", Key: "k2"}}, "1 a-rule error bad line"},
+		"same key, moved":           {[]Finding{{Rule: "a-rule", Severity: Error, Line: 3, Text: "bad line", Key: "k1"}}, []Finding{{Rule: "a-rule", Severity: Error, Line: 9, Text: "bad line", Key: "k1"}}, ""},
 		"twice before, once after":  {[]Finding{old[0], old[0]}, old[:1], ""},
 		"twice before, three after": {[]Finding{old[0], old[0]}, []Finding{old[0], old[0], f(8, "a-rule", Error, "one")}, "8 a-rule error one"},
 	} {

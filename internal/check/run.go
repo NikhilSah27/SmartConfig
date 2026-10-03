@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 // toolDirs is where validators are looked up, never through $PATH.
@@ -29,8 +30,9 @@ type Runner struct {
 type Result struct {
 	Found     bool   // the tool exists; false from a rescue shell without it
 	Exit      int    // its exit status; -1 when it was killed
-	Out       []byte // stdout and stderr together, at most MaxOut bytes
-	Truncated bool   // more output than MaxOut
+	Out       []byte // its stdout, at most MaxOut bytes
+	Err       []byte // its stderr, at most MaxOut bytes
+	Truncated bool   // more of either than MaxOut
 	TimedOut  bool   // killed after Timeout, with its process group
 }
 
@@ -73,15 +75,20 @@ func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Resu
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
-	out := &capWriter{max: maxOut}
-	cmd.Stdout, cmd.Stderr = out, out
-	err := cmd.Run()
-	if cmd.Process != nil {
-		// Whatever it started and left behind goes too. The group is the
-		// tool's own (Setpgid), so nothing else is hit.
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	// Two pipes: a tool that buffers stdout and not stderr would otherwise
+	// have one stream land in the middle of the other's line.
+	out, errOut := &capWriter{max: maxOut}, &capWriter{max: maxOut}
+	cmd.Stdout, cmd.Stderr = out, errOut
+	if err := cmd.Start(); err != nil {
+		return Result{Found: true}, fmt.Errorf("run %s: %w", tool, err)
 	}
-	res := Result{Found: true, Out: out.buf, Truncated: out.cut}
+	// Whatever the tool started and left behind is killed too, while the
+	// tool is still a zombie: until Wait reaps it, its pid and so its
+	// process group id cannot belong to anything else.
+	waitExited(cmd.Process.Pid)
+	syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	err := cmd.Wait()
+	res := Result{Found: true, Out: out.buf, Err: errOut.buf, Truncated: out.cut || errOut.cut}
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
@@ -90,13 +97,26 @@ func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Resu
 	case tctx.Err() != nil:
 		res.TimedOut, res.Exit = true, -1
 	case errors.Is(err, exec.ErrWaitDelay):
-		// It exited 0, but something it started still held its output.
+		// It exited 0; something outside its group still held its output.
 	case errors.As(err, &ee):
 		res.Exit = ee.ExitCode()
 	case err != nil:
 		return res, fmt.Errorf("run %s: %w", tool, err)
 	}
 	return res, nil
+}
+
+// waitExited blocks until pid has exited and leaves it unreaped (waitid
+// with WNOWAIT, as os.Process.Wait does before it reaps).
+func waitExited(pid int) {
+	var info [128]byte // siginfo_t
+	for {
+		_, _, e := syscall.Syscall6(syscall.SYS_WAITID, 1 /* P_PID */, uintptr(pid),
+			uintptr(unsafe.Pointer(&info[0])), syscall.WEXITED|syscall.WNOWAIT, 0, 0)
+		if e != syscall.EINTR {
+			return
+		}
+	}
 }
 
 // capWriter keeps the first max bytes and drops the rest, so a noisy tool
