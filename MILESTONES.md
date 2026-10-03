@@ -146,8 +146,8 @@ deferred by the owner. The next session checks what scd has run by then.
 
 - Rate-limit a system file that a program rewrites constantly (medium):
   nothing caps rows, objects or journal lines except the free-space floor.
-- Digest rows: use a keyed id, so a journal reader cannot test guesses
-  at a low-entropy secret.
+- Digest rows: done, they get a random id, so a journal reader cannot
+  test guesses at a low-entropy secret (`4ec437a`).
 - Watches, all done: `deleted` rows when a login `.ssh` moves away
   (`bd8fad9`), re-walk after a directory swap (`c0cfe77`), stale watches
   after an overflow (`465b30d`), listings trimmed by each walk (`d76a295`).

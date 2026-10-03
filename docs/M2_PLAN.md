@@ -328,7 +328,8 @@ PRAGMA user_version = 1;
   - With an empty blob, M1 refuses with `sc: invalid blob name ""`.
   - With a digest row, M1 fails on the missing object, also in one line (S6).
 - **Ids.** `makeID(path, ts, key)`, where the key is:
-  - the blob for file and digest rows, so M1 ids are reproduced exactly;
+  - the blob for file rows, so M1 ids are reproduced exactly;
+  - none for digest rows: they get 6 random hex digits (C15);
   - `"link\n" + target` for link rows;
   - `"deleted"` for deleted rows.
 
@@ -1734,3 +1735,4 @@ the plan has changed.
 | C12 | 2026-10-01 | `store.Obs` gains `Suffix` (the intent suffixes of 6.5, with constants); "first seen" gets no " while not watching". The watcher writes every log line with its syslog `<N>` prefix; turning that into a time stamp for a terminal, or keeping it for journald, is the CLI's job (step 14). | Plan 5.4 had no field for 6.5's suffixes; "first seen while not watching" says nothing more. Keeping the prefix decision in one place (the CLI, which knows `JOURNAL_STREAM`). | `e6b1c32` |
 | C13 | 2026-10-01 | A rescan asked for because a root itself moved or vanished (IN_IGNORED, MOVE_SELF, DELETE_SELF) waits `Cap` before it runs. The user-file gap (question 9) is measured from the watcher's own record time, not the row's whole-second `ts`. The store gains `IntegrityCheck` and `HasObject`. | Without the wait, a root moved away and back, or a `~/.ssh` replaced by a new one, was rescanned while missing and then not watched until the hourly rescan. `ts` has one-second resolution. | `836a2a9` |
 | C14 | 2026-10-01 | `sc watch`: SIGHUP asks for a rescan instead of stopping (the unit gains `ExecReload=/bin/kill -HUP $MAINPID`); the unit is `After=remote-fs.target`; SIGPIPE is ignored; fatal lines carry `<3>` under journald; `--root` takes only existing real directories other than `/`. Acceptance step 4 no longer checks `/etc/alternatives/` (recorded since C7), and the run treats a `SUDO_USER` of root as unknown. | Chunk E review: a stray `kill -HUP` left scd stopped (exit 0, not restarted); a broken journald stream killed it with SIGPIPE, also not restarted; NFS homes could be read before they are mounted; under nested sudo the acceptance run would have restored root's own `authorized_keys`. | reviews/2026-10-01-m2-chunk-e.md |
+| C15 | 2026-10-03 | Digest rows get a random id (6 hex digits from crypto/rand, with the same uniqueness check), not `makeID` over their fingerprint. File, link and deleted rows keep the formula. | Final review: the journal prints ids, so an id derived from the fingerprint let a journal reader test guesses at a short secret. Your pick over a keyed hash: nothing new to keep. | `4ec437a` |

@@ -48,8 +48,11 @@ your yes):
 5. done (`d76a295`): trim directory listings after a walk;
 6. done (`2a8b686`): count orphan objects against the per-file limit for home files;
 7. done (`7463e5d`): report stale `.NAME.sc-tmp-*` files;
-8. needs your OK on the design first: a rate limit for a constantly
-   rewritten system file, and a keyed id for digest rows.
+8. your picks (2026-10-03): a rate limit for a constantly rewritten
+   system file, 20 rows an hour as now, then at most one every 5 min
+   (the newest state, marked `(rate-limited)`, one warning line when it
+   starts; every tier; `.ssh` files keep their 60 s rule); random ids for
+   digest rows, done (`4ec437a`). Install once, after 8.
 
 Next session, first: the deferred soak check (S6), on what scd has run by
 then: uptime, restarts, memory, log volume, unexplained rows, and `/etc`
@@ -734,3 +737,23 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     follow-ups) and exactly the same on this commit: the VM's CPU
     starvation (pressure up to 13% this hour), not the changes. CI passes
     it. Worth making less timing-bound before M3.
+- **M2 follow-up 8, your picks** (asked with three options each): rate
+  limit "20/h, then 1 per 5 min"; digest ids "random id" (over a keyed
+  hash or leaving them); install "after follow-up 8".
+- **M2 follow-up 8a, digest ids, fixed `4ec437a`:** a digest row's id was
+  the first 6 hex of sha256(path, ts, fingerprint) and the journal prints
+  it, so a journal reader could test guesses at a short fingerprint-only
+  secret (reproduced: the id followed the formula). Digest rows now get 6
+  random hex digits with the same uniqueness check; file, link and
+  deleted rows keep the formula (M1 ids still reproduced), and existing
+  rows keep their ids. Plan 5.2 updated, change C15. New test
+  `TestDigestIDRandom`. Checks: build, gofmt, vet, `make m1-compat`,
+  `internal/store` and `cmd/sc` as root: clean.
+  - The VM was paused again (about 2 h, uptime against the clock) and has
+    run about twice as slow since: the watch package's timing-bound tests
+    (`TestOverflow`, `TestOverflowDropsStaleWatch`,
+    `TestRescanUnderBusyEvents`) timed out in `make test` and `make race`
+    at CPU pressure up to 15%. Run back to back at normal load, the whole
+    watch package passes on `6c1f306` (37.8 s) and on this code (44.9 s,
+    8 more tests), and `TestOverflow` alone passes 10 of 10 on both at
+    0.6 s. `gnome-shell` averages over half a CPU (software rendering).
