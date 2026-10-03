@@ -270,7 +270,9 @@ measurement.
 **Answered 2026-09-28:** yes to every recommendation below. Question 7 (the
 ruleset) and question 13 (host details) still need you.
 
-1. **Build the rescue path (M4) before the checkers (M3)?** Decide at M2
+1. **Build the rescue path (M4) before the checkers (M3)?** Answered
+   2026-10-03: no, M3 first (M4's boot tests need QEMU without KVM, slow
+   on this VM; M3 is built in the repo while the M2 soak runs). Was: decide at M2
    sign-off; nothing changes before then. We lean yes, if the feasibility
    check in section 3 holds. The worst failures leave root locked with no
    shell, and only M4 recovers from them. The cost: "warn before a bad

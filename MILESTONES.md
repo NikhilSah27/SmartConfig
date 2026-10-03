@@ -12,7 +12,7 @@
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M3, not planned yet. The M2 follow-ups below are done; the
+Current: M3, plan being drafted (`docs/M3_PLAN.md`). The M2 follow-ups below are done; the
 deferred M2 soak check runs alongside M3 (your call, 2026-10-03).
 
 ## M1 notes

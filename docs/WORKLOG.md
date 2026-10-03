@@ -28,7 +28,12 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
+**Now: the M3 plan is being drafted** (2026-10-03, docs only; no M3 code
+until you approve `docs/M3_PLAN.md`). Your picks: M3 (checkers) before
+M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
+plan in the session, not a multi-agent workflow.
+
+**M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
 2026-10-03), and the build of `b6ab3cc` runs as scd since 14:27 UTC (the
 `m2` binary is kept as `sc-m2`). Earlier that day the VM came back from
@@ -775,3 +780,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   them paused): 4.5 s CPU, 12.7 MB peak, 0 restarts, one row
   (`grub.cfg`, the upgrade). PROJECT_LOG: VM state and recovery guide now
   name the new build and `sc-m2`.
+- **M3 starts with its plan** (your "lets do m3"; asked with options):
+  order M3 before M4, plan drafted by Claude in the session. The soak
+  keeps running on the build of `b6ab3cc`. The VM settings (4 vCPUs,
+  VMSVGA) and the snapshot are still open on your side.
