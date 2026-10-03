@@ -399,6 +399,37 @@ func TestProofOfAbsence(t *testing.T) {
 	e.want(r("fresh"), "deleted did not exist", "file created")
 }
 
+// Every walk replaces its directory's listing (6.4): a name that is gone
+// leaves it, so a file made under that name later keeps its proof of
+// absence; a name that is still there stays (final review).
+func TestWalkTrimsListing(t *testing.T) {
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	put(t, r("kept"), "k\n", 0o644)
+	var n atomic.Int32
+	testHookRescan = func(string) { n.Add(1) }
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	os.WriteFile(r("x"), []byte("x\n"), 0o644) // gone before it is read
+	os.Remove(r("x"))
+	e.barrier()
+	e.want(r("x"))
+	start := n.Load()
+	e.w.requestRescan()
+	e.waitFor("the rescan", func() bool { return n.Load() > start })
+	e.barrier()
+	e.w.mu.Lock()
+	list := e.w.listings[e.root]
+	gone, kept := list["x"], list["kept"]
+	e.w.mu.Unlock()
+	if gone || !kept {
+		t.Fatalf("listing after the walk: x %v, kept %v", gone, kept)
+	}
+	put(t, r("x"), "x again\n", 0o644)
+	e.waitFor("x", func() bool { return len(e.history(r("x"))) > 0 })
+	e.want(r("x"), "deleted did not exist", "file created")
+}
+
 // A restore of a file, a link or a "did not exist" row leaves the restore
 // and pre-restore rows newest, with no auto row after them.
 func TestRestoreWhileWatching(t *testing.T) {

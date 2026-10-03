@@ -737,8 +737,17 @@ func (w *Watcher) walk(in *Inotify, dir, reason string, created bool, gen int) i
 		w.markLocked(p, reason, created, false)
 	}
 	if old, ok := w.listings[dir]; ok {
-		for n := range old { // names an event added during the listing
-			names[n] = true
+		// Keep the names an event added during the listing, and any the
+		// listing missed that are there now; drop those that are gone
+		// (6.4: every walk replaces its listing). A name that is there
+		// must never be dropped: a rename over it would look like a create.
+		for n := range old {
+			if names[n] {
+				continue
+			}
+			if _, err := os.Lstat(dir + "/" + n); !fsutil.IsNotExist(err) {
+				names[n] = true
+			}
 		}
 	}
 	w.listings[dir] = names
