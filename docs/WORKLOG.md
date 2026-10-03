@@ -31,8 +31,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 **Now: M3 is being built** ([M3_PLAN.md](M3_PLAN.md), approved 2026-10-03,
 "great go ahead": all 7 recommendations of its section 14, which also
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
-one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built. **In progress: the chunk A
-review** (one reviewer); then step 5, `sc check`. Gate G2 stands: nothing is installed or run on the real system
+one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built and reviewed
+([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
+fixes `a2e325f`). **Next: step 5** (chunk B), `sc check`. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -840,3 +841,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   with a higher severity, is added. `Worst`. 11 cases. Checks: build,
   gofmt, vet, `go test ./...`: clean. Chunk A (steps 1-4) is built; its
   review is next.
+- **M3 chunk A review closed**
+  ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md)):
+  one reviewer, 10 findings, each reproduced and fixed in `a2e325f`. Three
+  were high: the baseline diff hid a newly broken line when the file
+  already had a bad one; a UUID in the wrong letter case passed; findmnt's
+  word on devices sc cannot look up was dropped. Also: false blockers on
+  working type and option spellings, stdout and stderr read apart, a
+  validator that did not really run is now a note, and leftovers are
+  killed while the tool is still a zombie. Plan change C3. Checks: build,
+  gofmt, vet, `go test ./...`, the package as root and 3 times under
+  race, static: clean.
