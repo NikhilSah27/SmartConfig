@@ -35,9 +35,9 @@ one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`).
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
 fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built and reviewed
 ([reviews/2026-10-03-m3-chunk-b.md](reviews/2026-10-03-m3-chunk-b.md),
-fixes `a946f6f`). **In progress: chunk C** (steps 8-11): four agents build the sudoers,
-sshd, unit and grub, and plain-rule checkers in separate worktrees; none
-commits. Claude integrates them one commit at a time.
+fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers in
+separate worktrees, Claude reviewed and integrated each. **Next: the
+chunk C review** (one reviewer), then chunk D.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -945,3 +945,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   from the agent: sudo 1.9.15 recovers from a syntax error by dropping
   the rest of the line; the explanation says so. Checks: gofmt, vet, the
   package as user, as root and as root without `/run`, under race: clean.
+- **M3 step 10, `check: systemd units and grub`, `ff952e7`** (parallel
+  agent, reviewed and integrated here): `systemd-analyze verify` on the
+  scratch copy (keeps the unit's name): a skipped line is
+  `unit-unknown-key` (warning), a missing Exec command `unit-exec-missing`
+  (error), anything that stops the unit loading or starting `unit-syntax`
+  (error); other units' problems and failed man lookups are ignored.
+  `/etc/default/grub` with `sh -n` and `grub.cfg`/`custom.cfg` with
+  `grub-script-check`: blockers at the line named. Checked as root here
+  too (the agent could not): clean.
+- **M3 step 11, `check: plain rules`, `7aeb144`** (parallel agent,
+  reviewed and integrated here): `nsswitch-no-files`, `preload-missing-lib`,
+  `flag-nologin`, `flag-sshd-not-to-be-run`, `hosts-no-localhost`, each
+  reading the file as glibc 2.39 does (the agent read glibc's sources).
+  Changed in review, on the agent's own warning: `systemd` alone is not a
+  local source for `passwd:` (it gives root and nobody, not /etc/passwd);
+  my brief had it wrong. Left for later, from the agent: a bad action in
+  any nsswitch line makes glibc reject the whole file.
+- Chunk C as a whole: gofmt, vet, `go test ./...` as user, the check
+  package as root, as root without `/run`, and under race: clean.
