@@ -4,6 +4,23 @@
 // watcher: it is given a path and the bytes to check, and returns findings.
 package check
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+)
+
+// lineKey tells apart two findings on different lines with the same
+// text: a hash of the line's content, never shown.
+func lineKey(data []byte, n int) string {
+	lines := strings.Split(string(data), "\n")
+	if n < 1 || n > len(lines) {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(lines[n-1]))
+	return hex.EncodeToString(sum[:8])
+}
+
 // Severity says how bad a finding is (plan 5.1).
 type Severity int
 

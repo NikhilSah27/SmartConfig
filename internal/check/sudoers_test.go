@@ -309,3 +309,44 @@ func TestSudoersRealVisudo(t *testing.T) {
 		t.Errorf("good drop-in: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 }
+
+// sudo skips a drop-in whose name has a dot or ends in ~ (sudoers(5)): one
+// warning, whatever is in it, and visudo is not asked.
+func TestSudoersIgnoredNames(t *testing.T) {
+	for _, p := range []string{"/etc/sudoers.d/90-local.conf", "/etc/sudoers.d/90-local~", "/etc/sudoers.d/90-local.dpkg-old"} {
+		c, args := fakeMachine(t, nil, "visudo", filepath.Join(t.TempDir(), "unused"), 0)
+		rep, err := c.Check(context.Background(), p, []byte(sudoersOne))
+		if err != nil || brief(rep.Findings) != "0 sudoers-ignored warning" || len(rep.Notes) != 0 {
+			t.Errorf("%s: %q %q %v", p, brief(rep.Findings), rep.Notes, err)
+		}
+		if _, err := os.Stat(args); err == nil {
+			t.Errorf("%s: visudo ran", p)
+		}
+	}
+	// A name with neither, and /etc/sudoers itself, are read.
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	c.lstat = func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
+	for _, p := range []string{"/etc/sudoers.d/90-local", "/etc/sudoers"} {
+		if rep, _ := c.Check(context.Background(), p, []byte(sudoersOne)); len(rep.Findings) != 0 {
+			t.Errorf("%s: %q", p, brief(rep.Findings))
+		}
+	}
+}
+
+// A saved version is checked for what is in it: the mode of the file on
+// disk today is not that version's.
+func TestSudoersSavedVersion(t *testing.T) {
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	asked := false
+	c.lstat = func(string) (os.FileInfo, error) {
+		asked = true
+		return fakeInfo{0o646, &syscall.Stat_t{Mode: syscall.S_IFREG | 0o646}}, nil
+	}
+	rep, err := c.CheckSaved(context.Background(), "/etc/sudoers.d/90-local", []byte("alice ALL=(ALL) ALL\n"))
+	if err != nil || len(rep.Findings) != 0 || asked {
+		t.Fatalf("saved: %q, lstat asked %v, %v", brief(rep.Findings), asked, err)
+	}
+	if rep, _ := c.Check(context.Background(), "/etc/sudoers.d/90-local", []byte("alice ALL=(ALL) ALL\n")); brief(rep.Findings) != "0 sudoers-mode error" {
+		t.Fatalf("on disk: %q", brief(rep.Findings))
+	}
+}

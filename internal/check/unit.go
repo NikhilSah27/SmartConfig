@@ -22,6 +22,10 @@ message from systemd-analyze.`},
 their kin, does not exist on this machine or is not executable. The
 service fails at its next start; one running now keeps going.
 Give the full path of an installed program, or install it.`},
+		Rule{"unit-notice", Warning, `systemd-analyze has a remark about this line, but the unit loads and
+runs: an obsolete setting systemd rewrites (StandardOutput=syslog), one
+it will drop (MemoryLimit=), or an unsafe choice (User=nobody).
+sc check -v shows the remark; follow it when you can.`},
 		Rule{"unit-unknown-key", Warning, `systemd does not know the key, section or value on this line and skips
 it: the unit still loads, but the setting has no effect. Most likely a
 typo. Check the spelling against the unit's man page (systemd.unit,
@@ -109,6 +113,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 	syntax := -1        // index in out of the unit-syntax finding the summary lines belong to
 	recognized := false // a line about some unit was read
 	var unknown []string
+	var remarks []int // indexes in out of unit-notice findings
 	add := func(f Finding) {
 		out = append(out, f)
 		if f.Rule == "unit-syntax" {
@@ -133,7 +138,8 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			n, _ := strconv.Atoi(m[2])
 			msg := m[3]
 			f := Finding{Line: n, Raw: raw}
-			if strings.Contains(msg, "gnoring") {
+			key := unitKey(in.data, n)
+			if strings.Contains(msg, "gnoring") || strings.Contains(msg, "gnored") {
 				// The line is skipped; the unit loads without it.
 				f.Rule, f.Severity = "unit-unknown-key", Warning
 				switch {
@@ -142,8 +148,8 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 					f.Text = fmt.Sprintf("%s= is not a key systemd knows in [%s]; the line is ignored", k[1], k[2])
 				case unitSection.MatchString(msg):
 					f.Text = fmt.Sprintf("[%s] is not a section systemd knows; it is ignored", unitSection.FindStringSubmatch(msg)[1])
-				case strings.HasPrefix(msg, "Failed to parse") && unitKey(in.data, n) != "":
-					f.Text = fmt.Sprintf("the value of %s= is not one systemd accepts; the line is ignored", unitKey(in.data, n))
+				case strings.HasPrefix(msg, "Failed to parse") && key != "":
+					f.Text = fmt.Sprintf("the value of %s= is not one systemd accepts; the line is ignored", key)
 				case strings.HasPrefix(msg, "Assignment outside of section"):
 					f.Text = "the line is outside any [Section]; it is ignored"
 				case strings.HasPrefix(msg, "Missing '='"):
@@ -151,13 +157,14 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				default:
 					f.Text, f.Key = "systemd ignores the line", msg
 				}
-			} else {
+			} else if strings.HasPrefix(msg, "Invalid section header") {
 				f.Rule, f.Severity = "unit-syntax", Error
-				if strings.HasPrefix(msg, "Invalid section header") {
-					f.Text = "the section header is not valid; the unit does not load"
-				} else {
-					f.Text, f.Key = "systemd cannot read the line; the unit does not load", msg
-				}
+				f.Text = "the section header is not valid; the unit does not load"
+			} else {
+				// A remark (an obsolete or unsafe setting) unless the unit
+				// then fails to load, which only the summary line says.
+				f.Rule, f.Severity, f.Text, f.Key = "unit-notice", Warning, "systemd has a remark about the line; the unit loads", msg
+				remarks = append(remarks, len(out))
 			}
 			add(f)
 		case unitNameMsg.MatchString(raw):
@@ -231,6 +238,13 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			case strings.HasPrefix(msg, "not found"):
 				// It never loaded the file (unreadable, or a name it rejects).
 				return nil, append(notes, "systemd-analyze could not load the unit ("+raw+")"), nil
+			case strings.HasPrefix(msg, "failed to load properly") && len(remarks) > 0 && syntax < 0:
+				// It did not load: its remarks were the reasons.
+				for _, i := range remarks {
+					out[i].Rule, out[i].Severity, out[i].Text = "unit-syntax", Error, "systemd cannot read the line; the unit does not load"
+				}
+				out[remarks[len(remarks)-1]].Raw += "; " + raw
+				syntax = remarks[len(remarks)-1]
 			case syntax >= 0:
 				out[syntax].Raw += "; " + raw
 			case strings.HasPrefix(msg, "is masked"):

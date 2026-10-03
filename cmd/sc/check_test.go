@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"smartconfig/internal/check"
+	"smartconfig/internal/scope"
 )
 
 // checkEnv gives sc check a graph whose fstab is dir/fstab and a machine
@@ -23,7 +24,11 @@ func checkEnv(t *testing.T) (dir, fstab string) {
 	}
 	empty := t.TempDir()
 	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
-	t.Cleanup(func() { testHookChecks = nil })
+	recordedFile = func(p string) bool { return !strings.HasSuffix(p, "~") }
+	t.Cleanup(func() {
+		testHookChecks = nil
+		recordedFile = func(p string) bool { return scope.Default().Recorded(p) }
+	})
 	return dir, fstab
 }
 
@@ -170,5 +175,29 @@ func TestCheckCLIUncheckedFile(t *testing.T) {
 	if r.code != 1 || r.stderr != "sc: 1 file not checked (see the notes)\n" ||
 		r.stdout != "note: "+fstab+": not checked: permission denied (run sc check as root)\n" {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// With no argument, sc check looks only at files sc keeps: an editor's
+// backup next to a checked file is left out.
+func TestCheckCLISkipsUnrecorded(t *testing.T) {
+	dir, fstab := checkEnv(t)
+	g, _ := check.ParseGraph("check fstab " + dir + "/fstab*\n")
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	os.WriteFile(fstab+"~", []byte(badFstab), 0o644)
+	if r := sc(t, "check"); r.code != 0 || !strings.Contains(r.stdout, "no problems found in 1 file") {
+		t.Fatalf("%+v", r)
+	}
+	// Named, it is checked.
+	if r := sc(t, "check", fstab+"~"); r.code != 2 {
+		t.Fatalf("named: %+v", r)
+	}
+	// The default scope leaves these names out.
+	for _, p := range []string{"/etc/sudoers.d/90-local~", "/etc/sudoers.d/90-local.dpkg-old"} {
+		if scope.Default().Recorded(p) {
+			t.Errorf("the default scope records %s", p)
+		}
 	}
 }

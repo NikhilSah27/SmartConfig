@@ -56,6 +56,18 @@ func TestUnitVerify(t *testing.T) {
 		want, note, text         string
 	}{
 		{"good", "testdata/systemd-analyze/good", "my.service", goodUnit, 0, "", "", ""},
+		// Remarks about a unit that loads are warnings, not load failures
+		// (chunk C review): an unsafe user, obsolete and deprecated settings.
+		{"remarks", "testdata/systemd-analyze/remarks", "my.service",
+			"[Unit]\nDescription=Remarks\n\n[Service]\nExecStart=/bin/true\nUser=nobody\nStandardOutput=syslog\nMemoryLimit=1G\n", 0,
+			"6 unit-notice warning\n7 unit-notice warning\n8 unit-notice warning", "", "systemd has a remark about the line; the unit loads"},
+		{"a remark and a refusal", "testdata/systemd-analyze/remarkfail", "my.service",
+			"[Unit]\nDescription=Remark, then no ExecStart\n\n[Service]\nUser=nobody\n", 1,
+			"0 unit-syntax error\n5 unit-notice warning", "", ""},
+		{"a remark, then the unit does not load", writeGolden(t, "remarkload", "",
+			"/SCRATCH/my.service:5: Something systemd learns to say later\nUnit my.service failed to load properly, please adjust/correct and reload service manager: Bad message\n"),
+			"my.service", "[Unit]\nDescription=x\n\n[Service]\nExecStart=/bin/true\n", 1,
+			"5 unit-syntax error", "", "systemd cannot read the line; the unit does not load"},
 		{"unknown key", "testdata/systemd-analyze/unknownkey", "my.service",
 			"[Unit]\nDescription=Unknown key\n\n[Service]\nExecStart=/bin/true\nRestrt=always\n", 0,
 			"6 unit-unknown-key warning", "", "Restrt= is not a key systemd knows in [Service]; the line is ignored"},

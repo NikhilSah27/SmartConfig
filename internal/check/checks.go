@@ -33,6 +33,9 @@ type input struct {
 	path string // the real path
 	data []byte // the content to check
 	file string // a scratch copy of data, named like path
+	// saved is set for a version from the store (sc check <id>): what is
+	// on disk at path now, its mode for one, is not that version's.
+	saved bool
 }
 
 // checkers maps the graph's checker names to their code.
@@ -53,6 +56,17 @@ var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []st
 // be what is on disk: sc edit checks a candidate, sc check <id> a saved
 // version. A file no checker reads gives an empty Report.
 func (c *Checks) Check(ctx context.Context, path string, data []byte) (Report, error) {
+	return c.check(ctx, input{path: path, data: data})
+}
+
+// CheckSaved is Check for a version from the store: rules about the file
+// on disk now (sudoers-mode) are left out.
+func (c *Checks) CheckSaved(ctx context.Context, path string, data []byte) (Report, error) {
+	return c.check(ctx, input{path: path, data: data, saved: true})
+}
+
+func (c *Checks) check(ctx context.Context, in input) (Report, error) {
+	path, data := in.path, in.data
 	g := c.Graph
 	if g == nil {
 		g = DefaultGraph()
@@ -70,7 +84,8 @@ func (c *Checks) Check(ctx context.Context, path string, data []byte) (Report, e
 		return Report{}, err
 	}
 	defer cleanup()
-	fs, notes, err := fn(ctx, c, input{path: path, data: data, file: file})
+	in.file = file
+	fs, notes, err := fn(ctx, c, in)
 	if err != nil {
 		return Report{}, fmt.Errorf("check %s: %w", path, err)
 	}

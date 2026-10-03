@@ -155,14 +155,10 @@ func (g *Graph) Files() []string {
 		if dir == "" || dir == "/" {
 			continue // a pattern with no fixed directory is not walked
 		}
-		// "*" and "?" stay within one segment: unless the pattern has "**"
-		// or alternatives (which may hold "/"), nothing deeper than the
-		// pattern can match, and those directories are not entered.
-		pat := r.g.String()
-		depth := -1
-		if !strings.Contains(pat, "**") && !strings.Contains(pat, "{") {
-			depth = strings.Count(pat, "/")
-		}
+		// "*" and "?" stay within one segment: unless the pattern has "**",
+		// nothing deeper than its longest alternative can match, and those
+		// directories are not entered.
+		depth := r.g.MaxDepth()
 		filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil // an unreadable directory is skipped

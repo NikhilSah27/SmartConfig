@@ -41,6 +41,8 @@ const ubuntuNsswitch = "# /etc/nsswitch.conf\n#\n# Example configuration of GNU 
 	"hosts:          files mdns4_minimal [NOTFOUND=return] dns\nnetworks:       files\n\n" +
 	"protocols:      db files\nservices:       db files\nethers:         db files\nrpc:            db files\n\nnetgroup:       nis\n"
 
+const nssBase = "passwd: files\ngroup: files\nshadow: files\n"
+
 func TestNsswitch(t *testing.T) {
 	runPlain(t, "/etc/nsswitch.conf", nil, []plainCase{
 		{name: "ubuntu's file", data: ubuntuNsswitch},
@@ -63,6 +65,23 @@ func TestNsswitch(t *testing.T) {
 		{name: "a final passwd line without newline is never read: the default applies", data: "passwd: files\npasswd: nis"},
 
 		{name: "nis only", data: "passwd: nis\n", want: "1 nsswitch-no-files blocker"},
+		// Actions, each checked against glibc 2.39 on the dev VM (getent
+		// passwd root with the file bind-mounted in a private mount
+		// namespace): one bad action anywhere and every lookup fails.
+		{name: "a bad action on the hosts line", data: nssBase + "hosts: files [NOTFOUND=retrun] dns\n", want: "4 nsswitch-invalid blocker"},
+		{name: "an unclosed bracket", data: nssBase + "hosts: files [NOTFOUND=return dns\n", want: "4 nsswitch-invalid blocker"},
+		{name: "a bad action after #", data: nssBase + "hosts: files dns # [NOTFOUND=retrun]\n", want: "4 nsswitch-invalid blocker"},
+		{name: "a status without =", data: nssBase + "hosts: files [NOTFOUND] dns\n", want: "4 nsswitch-invalid blocker"},
+		{name: "empty brackets", data: nssBase + "hosts: files [] dns\n", want: "4 nsswitch-invalid blocker"},
+		{name: "a bad action and no local source", data: "passwd: nis [NOTFOUND=retrun]\n", want: "1 nsswitch-invalid blocker\n1 nsswitch-no-files blocker"},
+		{name: "actions in any case", data: nssBase + "hosts: files [notfound=RETURN] dns\n"},
+		{name: "! and blanks in an action", data: nssBase + "hosts: files [ !UNAVAIL = return ] dns\n"},
+		{name: "two pairs in one action", data: nssBase + "hosts: files [NOTFOUND=return UNAVAIL=continue] dns\n"},
+		{name: "merge", data: nssBase + "hosts: files [SUCCESS=merge] dns\n"},
+		{name: "a bad action on a # line", data: nssBase + "# hosts: files [NOTFOUND=retrun]\n"},
+		{name: "a bad action for a database glibc does not know", data: nssBase + "sudoers: files [NOTFOUND=retrun]\n"},
+		{name: "a bad action on a last line with no newline", data: nssBase + "hosts: files [x]"},
+		{name: "a bracket before any service", data: nssBase + "hosts: [NOTFOUND=retrun] files\n"},
 		// nss-systemd gives root and nobody, not the users in /etc/passwd.
 		{name: "systemd alone", data: "passwd: systemd\n", want: "1 nsswitch-no-files blocker"},
 		{name: "a misspelt files", data: "passwd:         fiels sss\n", want: "1 nsswitch-no-files blocker"},

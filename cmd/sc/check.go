@@ -15,12 +15,17 @@ import (
 
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
+	"smartconfig/internal/scope"
 	"smartconfig/internal/store"
 )
 
 // testHookChecks, if set by a test, adjusts the checks a command runs (its
 // graph and where validators are looked up).
 var testHookChecks func(*check.Checks)
+
+// recordedFile reports whether sc keeps p (the default scope). sc check
+// with no argument looks only at those; the tests point it elsewhere.
+var recordedFile = func(p string) bool { return scope.Default().Recorded(p) }
 
 // rowID is what an id or id prefix looks like to sc cat and sc restore. An
 // argument of sc check is an id when it looks like one and no file of that
@@ -56,6 +61,7 @@ type checkTarget struct {
 	label string // as shown: the path, or "path (id)"
 	path  string
 	data  []byte
+	saved bool // a version from the store, not the file on disk
 }
 
 func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
@@ -78,6 +84,9 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 			g = check.DefaultGraph()
 		}
 		for _, p := range g.Files() {
+			if !recordedFile(p) {
+				continue // an editor or package backup (x~, x.dpkg-old): not a config file sc keeps
+			}
 			st, err := fsutil.ReadState(p)
 			switch {
 			case errors.Is(err, os.ErrPermission):
@@ -87,7 +96,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 				unchecked++
 				notes = append(notes, show(p)+": not checked: "+err.Error())
 			case st.Kind == "file":
-				targets = append(targets, checkTarget{p, p, st.Data})
+				targets = append(targets, checkTarget{p, p, st.Data, false})
 			}
 		}
 	}
@@ -111,7 +120,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 			if err != nil {
 				return err
 			}
-			targets = append(targets, checkTarget{row.Path + " (" + row.ID + ")", row.Path, data})
+			targets = append(targets, checkTarget{row.Path + " (" + row.ID + ")", row.Path, data, true})
 			continue
 		}
 		p, err := filepath.Abs(a)
@@ -125,13 +134,17 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		if st.Kind != "file" {
 			return fmt.Errorf("%s is a symlink; sc check reads files", p)
 		}
-		targets = append(targets, checkTarget{p, p, st.Data})
+		targets = append(targets, checkTarget{p, p, st.Data, false})
 	}
 
 	var rows []findingRow
 	checked := 0
 	for _, t := range targets {
-		rep, err := c.Check(cmd.Context(), t.path, t.data)
+		check := c.Check
+		if t.saved {
+			check = c.CheckSaved
+		}
+		rep, err := check(cmd.Context(), t.path, t.data)
 		if err != nil {
 			return err
 		}

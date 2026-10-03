@@ -218,4 +218,22 @@ func CompileGlob(pattern string) (*Glob, error) {
 // Match reports whether p, an absolute clean path, matches the pattern.
 func (g *Glob) Match(p string) bool { return g.g.match(p) }
 
+// MaxDepth returns the most segments a matching path can have, or -1 when
+// a "**" (or a pattern starting with "**/") lets it have any number.
+func (g *Glob) MaxDepth() int {
+	if strings.HasPrefix(g.g.text, "**/") {
+		return -1
+	}
+	depth := 0
+	for _, segs := range g.g.alts {
+		for _, s := range segs {
+			if s == "**" {
+				return -1
+			}
+		}
+		depth = max(depth, len(segs))
+	}
+	return depth
+}
+
 func (g *Glob) String() string { return g.g.String() }

@@ -22,6 +22,11 @@ shadow holds cannot be looked up (systemd alone gives only root and
 nobody). For passwd the users vanish: login, su, sudo and ssh fail; for
 group, membership (sudo) is lost; for shadow, passwords cannot be
 checked. Put files first: "passwd: files systemd" is what Ubuntu ships.`},
+		Rule{"nsswitch-invalid", Blocker, `glibc cannot read the [ ] actions on this line, so it rejects the whole
+file: every user, group and host lookup fails at once, root's included,
+until the file is fixed. An action is [STATUS=ACTION]: STATUS is SUCCESS,
+NOTFOUND, UNAVAIL or TRYAGAIN, ACTION is return, continue or merge, and
+the ] must close it. "#" starts no comment in the middle of a line.`},
 		Rule{"preload-missing-lib", Blocker, `/etc/ld.so.preload names a library that does not exist on this machine.
 The loader reads this file for every dynamically linked program started
 from now on, and each one prints "ERROR: ld.so: object ... cannot be
@@ -111,12 +116,88 @@ func parseNsswitch(data []byte) map[string]nsswitchLine {
 // dynamic and homed users, but does not read /etc/passwd.
 var localSources = map[string]bool{"files": true, "compat": true}
 
-// checkNsswitch checks the passwd, group and shadow lines of an
-// nsswitch.conf: each must name a local source. A missing line is fine:
-// glibc then uses "files" (and for shadow, the passwd line).
+// nssDatabases are the databases glibc 2.39 knows (nss/databases.def):
+// only their lines are parsed, so only theirs can break the file.
+var nssDatabases = map[string]bool{"aliases": true, "ethers": true, "group": true, "group_compat": true,
+	"gshadow": true, "hosts": true, "initgroups": true, "netgroup": true, "networks": true, "passwd": true,
+	"passwd_compat": true, "protocols": true, "publickey": true, "rpc": true, "services": true,
+	"shadow": true, "shadow_compat": true}
+
+// nssActionsOK reports whether glibc can parse the services and actions of
+// a line (nss/nss_action_parse.c): each "[...]" holds one or more
+// STATUS=ACTION pairs, a status may have "!" before it, both are compared
+// case-insensitively, and an unclosed "[" is an error. A "[" before any
+// service ends the list, which is no error.
+func nssActionsOK(rest string) bool {
+	isSpace := func(b byte) bool { return isSpaceC(rune(b)) }
+	word := func(s string, stop string) (string, string) {
+		i := 0
+		for i < len(s) && !isSpace(s[i]) && !strings.ContainsRune(stop, rune(s[i])) {
+			i++
+		}
+		return s[:i], s[i:]
+	}
+	skip := func(s string) string { return strings.TrimLeftFunc(s, isSpaceC) }
+	for {
+		rest = skip(rest)
+		var name string
+		if name, rest = word(rest, "["); name == "" {
+			return true // the end, or "[" with no service before it
+		}
+		rest = skip(rest)
+		if !strings.HasPrefix(rest, "[") {
+			continue
+		}
+		rest = skip(rest[1:])
+		for {
+			rest = strings.TrimPrefix(rest, "!")
+			var status, action string
+			status, rest = word(rest, "=]")
+			switch strings.ToUpper(status) {
+			case "SUCCESS", "UNAVAIL", "NOTFOUND", "TRYAGAIN":
+			default:
+				return false
+			}
+			if rest = skip(rest); !strings.HasPrefix(rest, "=") {
+				return false
+			}
+			action, rest = word(skip(rest[1:]), "=]")
+			switch strings.ToUpper(action) {
+			case "RETURN", "CONTINUE", "MERGE":
+			default:
+				return false
+			}
+			if rest = skip(rest); strings.HasPrefix(rest, "]") {
+				rest = rest[1:]
+				break
+			}
+		}
+	}
+}
+
+// checkNsswitch checks an nsswitch.conf: every line of a database glibc
+// knows must parse, or glibc rejects the whole file; and the passwd,
+// group and shadow lines must each name a local source. A missing line is
+// fine: glibc then uses "files" (and for shadow, the passwd line).
 func checkNsswitch(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	lines := parseNsswitch(in.data)
 	var out []Finding
+	text := string(in.data)
+	read := strings.Split(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		read = read[:len(read)-1] // glibc never reads a last line with no newline
+	}
+	for i, l := range read {
+		l = strings.TrimLeftFunc(l, isSpaceC)
+		end := strings.IndexFunc(l, func(r rune) bool { return isSpaceC(r) || r == ':' })
+		if end <= 0 || !nssDatabases[l[:end]] {
+			continue
+		}
+		if !nssActionsOK(strings.TrimLeftFunc(l[end:], func(r rune) bool { return isSpaceC(r) || r == ':' })) {
+			out = append(out, Finding{Rule: "nsswitch-invalid", Severity: Blocker, Line: i + 1, Key: lineKey(in.data, i+1),
+				Text: fmt.Sprintf("glibc cannot read the actions on the %s line, so it rejects the whole file", l[:end])})
+		}
+	}
 	for _, db := range []struct {
 		name string
 		sev  Severity

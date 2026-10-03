@@ -4,9 +4,7 @@ package check
 
 import (
 	"context"
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"slices"
@@ -167,8 +165,7 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 	entries, bad := parseFstab(in.data)
 	var out []Finding
 	for _, b := range bad {
-		sum := sha256.Sum256([]byte(b.text))
-		out = append(out, Finding{Rule: "fstab-fields", Severity: Error, Line: b.line, Key: hex.EncodeToString(sum[:8]),
+		out = append(out, Finding{Rule: "fstab-fields", Severity: Error, Line: b.line, Key: lineKey(in.data, b.line),
 			Text: "not a valid fstab line; it is ignored, so nothing is mounted"})
 	}
 	byTarget := map[string][]fstabEntry{}

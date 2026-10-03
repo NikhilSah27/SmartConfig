@@ -130,6 +130,12 @@ func TestExportedGlob(t *testing.T) {
 	if g.String() != "/etc/systemd/system/*.{service,timer}" {
 		t.Errorf("String() = %q", g.String())
 	}
+	for p, want := range map[string]int{"/etc/fstab": 2, "/etc/sudoers.d/*": 3, "/boot/grub/{grub.cfg,custom.cfg}": 3,
+		"/etc/{a,b/c}/*": 4, "/etc/**": -1, "/etc/{x,y/**}": -1, "**/.ssh/x": -1} {
+		if g, err := CompileGlob(p); err != nil || g.MaxDepth() != want {
+			t.Errorf("MaxDepth(%s) = %v, want %d (%v)", p, g.MaxDepth(), want, err)
+		}
+	}
 	if _, err := CompileGlob("etc/x"); err == nil {
 		t.Error("relative pattern accepted")
 	}

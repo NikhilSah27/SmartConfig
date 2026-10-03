@@ -4,8 +4,6 @@ package check
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,6 +22,10 @@ and runs with what is left, so a rule that gave someone sudo may be gone;
 older sudo refuses to run at all. Ubuntu locks root, so no sudo, no root.
 A bad Defaults option or a missing include is only an error; an unused
 or undefined alias is a warning. Fix the line; sc check -v shows where.`},
+		Rule{"sudoers-ignored", Warning, `sudo never reads this file: in /etc/sudoers.d it skips every name that
+contains a "." or ends in "~" (so editor and package backups are left
+alone), and the rules in it have no effect.
+Rename it without a dot, for example 90-local, if it is meant to be read.`},
 		Rule{"sudoers-mode", Error, `The file is not mode 0440 owned by root. sudo ignores a sudoers file
 that root does not own or that others may write, so its rules do not
 apply; for /etc/sudoers itself sudo does not run at all. Other modes
@@ -130,12 +132,21 @@ func (c *Checks) sudoersMode(path string) (f Finding, found bool, note string) {
 // note, not a finding of this file: a change to a drop-in checks that
 // file alone (plan 7).
 func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
+	if name := filepath.Base(in.path); filepath.Dir(in.path) == "/etc/sudoers.d" && (strings.Contains(name, ".") || strings.HasSuffix(name, "~")) {
+		// sudoers(5): #includedir skips these names. What is in the file
+		// does not matter: it is never read.
+		return []Finding{{Rule: "sudoers-ignored", Severity: Warning,
+			Text: "sudo does not read a file in sudoers.d whose name has a dot or ends in ~"}}, nil, nil
+	}
 	var out []Finding
 	var notes []string
-	if f, found, note := c.sudoersMode(in.path); found {
-		out = append(out, f)
-	} else if note != "" {
-		notes = append(notes, note)
+	// The mode on disk says nothing about a saved version's bytes.
+	if !in.saved {
+		if f, found, note := c.sudoersMode(in.path); found {
+			out = append(out, f)
+		} else if note != "" {
+			notes = append(notes, note)
+		}
 	}
 	res, vnotes, ok, err := c.validate(ctx, in, "visudo", "-c", "-f", in.file)
 	notes = append(notes, vnotes...)
@@ -145,13 +156,7 @@ func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	lines := strings.Split(string(in.data), "\n")
 	// key tells apart two lines with the same problem at the same column,
 	// and follows a line that only moved.
-	key := func(n int) string {
-		if n < 1 || n > len(lines) {
-			return ""
-		}
-		sum := sha256.Sum256([]byte(lines[n-1]))
-		return hex.EncodeToString(sum[:8])
-	}
+	key := func(n int) string { return lineKey(in.data, n) }
 	// visudo read a scratch copy: its messages name that, and resolve a
 	// relative include against its directory.
 	scratchDir, realDir := filepath.Dir(in.file)+"/", filepath.Dir(in.path)+"/"

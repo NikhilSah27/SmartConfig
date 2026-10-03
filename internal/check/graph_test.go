@@ -82,6 +82,23 @@ func TestGraphFiles(t *testing.T) {
 	}
 }
 
+// Files with a pattern that has alternatives finds the top-level file and
+// not one of the same name deeper down. That the walk stops at the
+// pattern's depth is MaxDepth's (scope's TestExportedGlob).
+func TestGraphFilesAlternatives(t *testing.T) {
+	d := t.TempDir()
+	os.MkdirAll(filepath.Join(d, "grub", "x86_64-efi"), 0o755)
+	os.WriteFile(filepath.Join(d, "grub", "grub.cfg"), nil, 0o644)
+	os.WriteFile(filepath.Join(d, "grub", "x86_64-efi", "grub.cfg"), nil, 0o644)
+	g, err := ParseGraph("check grubcfg " + d + "/grub/{grub.cfg,custom.cfg}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Files(); len(got) != 1 || got[0] != filepath.Join(d, "grub", "grub.cfg") {
+		t.Errorf("Files() = %q", got)
+	}
+}
+
 func TestGraphParseErrors(t *testing.T) {
 	for text, want := range map[string]string{
 		"chek fstab /etc/fstab":                  `line 1: unknown keyword "chek"`,

@@ -1,0 +1,3 @@
+/SCRATCH/my.service:6: Special user nobody configured, this is not safe!
+/SCRATCH/my.service:7: Standard output type syslog is obsolete, automatically updating to journal. Please update your unit file, and consider removing the setting altogether.
+/SCRATCH/my.service:8: Unit uses MemoryLimit=; please use MemoryMax= instead. Support for MemoryLimit= will be removed soon.

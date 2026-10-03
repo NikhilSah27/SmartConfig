@@ -4,8 +4,6 @@ package check
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -25,17 +23,6 @@ error and drops to the grub> prompt instead of booting.
 grub.cfg is generated: fix /etc/default/grub or /etc/grub.d and run
 update-grub rather than editing it. custom.cfg is yours to fix.`},
 	)
-}
-
-// lineKey tells apart two findings on different lines with the same
-// text: a hash of the line's content, never shown.
-func lineKey(data []byte, n int) string {
-	lines := strings.Split(string(data), "\n")
-	if n < 1 || n > len(lines) {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(lines[n-1]))
-	return hex.EncodeToString(sum[:8])
 }
 
 var shSyntax = regexp.MustCompile(`^(.*): (\d+): Syntax error: (.*)$`)
