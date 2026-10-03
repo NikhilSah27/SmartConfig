@@ -32,6 +32,8 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 	}
 	return &Checks{Home: filepath.Join(t.TempDir(), "schome"), Run: Runner{Dirs: []string{dir}},
 		nsswitchPath: filepath.Join(dir, "no-nsswitch.conf"), // no nss-systemd: the worse case
+		groupPath:    filepath.Join(dir, "no-group"),         // no admins to look for
+		passwdPath:   filepath.Join(dir, "no-passwd"),
 		exists:       func(p string) bool { return set[p] }}, args
 }
 
@@ -193,7 +195,10 @@ func TestFstabFindmnt(t *testing.T) {
 			"/dev/sda3 /data ext4 defaults 0 2\n", 0, "0 fstab-fstype-mismatch error", ""},
 		// Errors sc has no rule for.
 		{"an unknown error", write("unknown", "/data\n   [E] something findmnt learns to say later\n", "\n0 parse errors, 1 error, 0 warnings\n"),
-			"/dev/sda3 /data ext4 defaults 0 2\n", 1, "1 fstab-verify warning", ""},
+			"/dev/sda3 /data ext4 defaults 0 2\n", 1, "1 fstab-verify blocker", ""},
+		// The line's own severity: with nofail the boot goes on.
+		{"an unknown error, nofail", write("unknown2", "/data\n   [E] something findmnt learns to say later\n", "\n0 parse errors, 1 error, 0 warnings\n"),
+			"/dev/sda3 /data ext4 defaults,nofail 0 2\n", 1, "1 fstab-verify warning", ""},
 		// A findmnt that did not check the file is not a clean run.
 		{"usage error", "testdata/findmnt/usage.user", "/dev/sda3 /data ext4 defaults 0 2\n", 1, "",
 			"findmnt could not check the file (unrecognized option '--no-such-option'); only sc's own rules ran"},
@@ -245,7 +250,7 @@ func TestFstabVerifyKeys(t *testing.T) {
 		}
 		return rep.Findings
 	}
-	if got := brief(Added(run("one problem"), run("another problem"))); got != "1 fstab-verify warning" {
+	if got := brief(Added(run("one problem"), run("another problem"))); got != "1 fstab-verify blocker" {
 		t.Errorf("got %q", got)
 	}
 	if got := brief(Added(run("one problem"), run("one problem"))); got != "" {
@@ -357,5 +362,55 @@ func TestOptionTypo(t *testing.T) {
 		if got := editDistance(tc.a, tc.b); got != tc.d {
 			t.Errorf("editDistance(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.d)
 		}
+	}
+}
+
+// A source that is a path outside /dev (a bind source, an image file, a
+// swap file) must exist, with the line's severity; one below another
+// line's mount point is not looked for, nor a pseudo or fuse source.
+// x-systemd.automount makes a missing source an error: only the
+// automount unit is required at boot.
+func TestFstabPathSources(t *testing.T) {
+	for _, tc := range []struct{ fstab, want string }{
+		{"/srv/data /var/lib/docker none bind 0 0\n", ""},
+		{"/srv/dat /var/lib/docker none bind 0 0\n", "1 fstab-source-missing blocker"},
+		{"/srv/dat /mnt/x none rbind,nofail 0 0\n", "1 fstab-source-missing warning"},
+		{"/srv/disk.img /mnt/img ext4 loop 0 2\n", "1 fstab-source-missing blocker"},
+		{"/srv/disk.img /mnt/img ext4 defaults 0 2\n", "1 fstab-source-missing blocker"},
+		{"/swap.img none swap sw 0 0\n", "1 fstab-source-missing error"},
+		{"/swapfile none swap sw 0 0\n", ""},
+		{"/dev/sdz9 /data ext4 x-systemd.automount 0 2\n", "1 fstab-source-missing error"},
+		{"/dev/sda3 /mnt/new ext4 defaults 0 2\n/mnt/new/sub /srv/sub none bind 0 0\n", ""},
+		{"tmpfs /tmp tmpfs defaults 0 0\noverlay /merged overlay lowerdir=/a,upperdir=/b 0 0\n", ""},
+		{"/mnt/disk* /storage fuse.mergerfs defaults 0 0\n", ""},
+	} {
+		c, _ := fakeMachine(t, []string{"/dev/sda3", "/srv/data", "/swapfile"}, "", "", 0)
+		rep, err := c.Check(context.Background(), "/etc/fstab", []byte(tc.fstab))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != tc.want {
+			t.Errorf("%q: %q, want %q", tc.fstab, got, tc.want)
+		}
+	}
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	rep, _ := c.Check(context.Background(), "/etc/fstab", []byte("/srv/dat /var/lib/docker none bind 0 0\n"))
+	if len(rep.Findings) != 1 || rep.Findings[0].Text != "/srv/dat (bind source for /var/lib/docker) does not exist" {
+		t.Errorf("%+v", rep.Findings)
+	}
+}
+
+// Not root: a path sc may not look at is not missing.
+func TestFstabPathSourceUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	dir := t.TempDir()
+	shut := filepath.Join(dir, "shut")
+	os.Mkdir(shut, 0o000)
+	t.Cleanup(func() { os.Chmod(shut, 0o755) })
+	c := &Checks{Home: t.TempDir()}
+	if c.pathMissing(filepath.Join(shut, "img")) || !c.pathMissing(filepath.Join(dir, "img")) {
+		t.Error("pathMissing")
 	}
 }

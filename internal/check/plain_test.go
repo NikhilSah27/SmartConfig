@@ -91,10 +91,15 @@ func TestNsswitch(t *testing.T) {
 		{name: "a bare name: glibc reads an empty service list", data: "passwd\n", want: "1 nsswitch-no-files blocker"},
 		{name: "the last passwd line wins, nis", data: "passwd: files\n\npasswd: nis\n", want: "3 nsswitch-no-files blocker"},
 		{name: "an action with no service before it", data: "passwd: [NOTFOUND=return] files\n", want: "1 nsswitch-no-files blocker"},
-		{name: "group and shadow at error", data: "passwd: files\ngroup: sss\nshadow: ldap\n",
-			want: "2 nsswitch-no-files error\n3 nsswitch-no-files error"},
+		// Each is a sudo lockout (checked with glibc and sudo in a private
+		// mount namespace: id -G loses sudo; shadow fails PAM's account
+		// check even with NOPASSWD).
+		{name: "group and shadow", data: "passwd: files\ngroup: sss\nshadow: ldap\n",
+			want: "2 nsswitch-no-files blocker\n3 nsswitch-no-files blocker"},
 		{name: "all three", data: "passwd: ldap\ngroup: ldap\nshadow: ldap\n",
-			want: "1 nsswitch-no-files blocker\n2 nsswitch-no-files error\n3 nsswitch-no-files error"},
+			want: "1 nsswitch-no-files blocker\n2 nsswitch-no-files blocker\n3 nsswitch-no-files blocker"},
+		{name: "initgroups without files", data: "passwd: files\ninitgroups: sss\n", want: "2 nsswitch-no-files blocker"},
+		{name: "initgroups with files", data: "initgroups: files [SUCCESS=continue] sss\n", want: ""},
 	})
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	rep, err := c.Check(context.Background(), "/etc/nsswitch.conf", []byte("passwd: nis\ngroup: nis\nshadow: nis\n"))
@@ -103,8 +108,8 @@ func TestNsswitch(t *testing.T) {
 	}
 	want := []string{
 		"the passwd line names neither files nor compat, so the users in /etc/passwd cannot be looked up",
-		"the group line names neither files nor compat, so local groups (sudo included) and their members are lost",
-		"the shadow line names neither files nor compat, so local passwords cannot be checked",
+		"the group line names neither files nor compat, so local groups and their members are lost: nobody can use sudo",
+		"the shadow line names neither files nor compat, so PAM cannot check local accounts: sudo and logins fail",
 	}
 	for i, f := range rep.Findings {
 		if i >= len(want) || f.Text != want[i] {
@@ -132,16 +137,16 @@ func TestPreload(t *testing.T) {
 		{name: "a relative path", data: "lib/libfoo.so\n",
 			note: "the loader looks for lib/libfoo.so itself (no full path, or a $TOKEN); sc did not check it"},
 
-		{name: "a missing library", data: "/usr/lib/libgone.so\n", want: "1 preload-missing-lib blocker"},
-		{name: "missing, no final newline", data: "/usr/lib/libgone.so", want: "1 preload-missing-lib blocker"},
+		{name: "a missing library", data: "/usr/lib/libgone.so\n", want: "1 preload-missing-lib error"},
+		{name: "missing, no final newline", data: "/usr/lib/libgone.so", want: "1 preload-missing-lib error"},
 		{name: "one of three, on line 3", data: "# comment\n/usr/lib/libthere.so\n/usr/local/lib/libeat.so:/usr/lib/libgone.so\n",
-			want: "3 preload-missing-lib blocker"},
+			want: "3 preload-missing-lib error"},
 		{name: "two missing, one twice", data: "/usr/lib/libgone.so\n/usr/lib/libgone.so /usr/lib/libgone2.so\n",
-			want: "1 preload-missing-lib blocker\n2 preload-missing-lib blocker"},
-		{name: "CRLF makes the carriage return part of the name", data: "/usr/lib/libthere.so\r\n", want: "1 preload-missing-lib blocker"},
-		{name: "CRLF with a blank before the end: the loader looks for a library named CR", data: "/usr/lib/libthere.so \r\n", want: "1 preload-missing-lib blocker"},
-		{name: "a missing library and a bare one", data: "libfoo.so\n/usr/lib/libgone.so\n", want: "2 preload-missing-lib blocker", note: noPath},
-		{name: "a comment hides the rest of the line", data: "/usr/lib/libgone.so # /usr/lib/libgone2.so\n", want: "1 preload-missing-lib blocker"},
+			want: "1 preload-missing-lib error\n2 preload-missing-lib error"},
+		{name: "CRLF makes the carriage return part of the name", data: "/usr/lib/libthere.so\r\n", want: "1 preload-missing-lib error"},
+		{name: "CRLF with a blank before the end: the loader looks for a library named CR", data: "/usr/lib/libthere.so \r\n", want: "1 preload-missing-lib error"},
+		{name: "a missing library and a bare one", data: "libfoo.so\n/usr/lib/libgone.so\n", want: "2 preload-missing-lib error", note: noPath},
+		{name: "a comment hides the rest of the line", data: "/usr/lib/libgone.so # /usr/lib/libgone2.so\n", want: "1 preload-missing-lib error"},
 	})
 	c, _ := fakeMachine(t, have, "", "", 0)
 	for data, want := range map[string]string{

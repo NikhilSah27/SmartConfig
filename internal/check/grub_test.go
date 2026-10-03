@@ -5,6 +5,7 @@ package check
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -227,5 +228,37 @@ func TestGrubCfgReal(t *testing.T) {
 	}
 	if rep, err = c.Check(context.Background(), "/boot/grub/grub.cfg", []byte(grubCfg)); err != nil || len(rep.Findings) != 0 || len(rep.Notes) != 0 {
 		t.Errorf("good file: %+v %v", rep, err)
+	}
+}
+
+// Two mistakes sh -n accepts and update-grub stops at (set -e, then
+// ". FILE": checked with dash, exit 127): spaces around =, and a value
+// with a space but no quotes. Quoted, escaped and multi-line values, and
+// comments, are fine.
+func TestShAssignments(t *testing.T) {
+	for _, tc := range []struct{ data, want string }{
+		{"GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"\n", ""},
+		{"GRUB_CMDLINE_LINUX_DEFAULT=quiet splash\n", "1 grub-default-syntax blocker"},
+		{"GRUB_TIMEOUT = 5\n", "1 grub-default-syntax blocker"},
+		{"  GRUB_TIMEOUT =5\n", "1 grub-default-syntax blocker"},
+		{"GRUB_TIMEOUT= 5\n", "1 grub-default-syntax blocker"},
+		{"GRUB_TIMEOUT=5 # five seconds\nGRUB_X=a;GRUB_Y=b\n", ""},
+		// A value with $ or ` is not judged (GRUB_W=$A b does fail).
+		{"GRUB_X=a\\ b\nGRUB_Y='a b'\nGRUB_Z=a\"b c\"\n", ""},
+		{"GRUB_DISTRIBUTOR=`( . /etc/os-release; echo ${NAME:-Ubuntu} ) 2>/dev/null || echo Ubuntu`\n", ""},
+		{"GRUB_CMDLINE_LINUX=\"a\nB = c\nd\"\nGRUB_TIMEOUT = 5\n", "4 grub-default-syntax blocker"},
+		{"# GRUB_TIMEOUT = 5\n#GRUB_X=a b\n", ""},
+		{"GRUB_X='it''s'\nGRUB_Y=1 2\n", "2 grub-default-syntax blocker"},
+	} {
+		if got := brief(shAssignments([]byte(tc.data))); got != tc.want {
+			t.Errorf("%q: %q, want %q", tc.data, got, tc.want)
+		}
+		// dash agrees: a line flagged makes ". FILE" under set -e fail.
+		f := filepath.Join(t.TempDir(), "grub")
+		os.WriteFile(f, []byte(tc.data), 0o644)
+		err := exec.Command("/bin/sh", "-c", "set -e; . "+f+" >/dev/null 2>&1").Run()
+		if (err != nil) != (tc.want != "") {
+			t.Errorf("%q: dash says %v", tc.data, err)
+		}
 	}
 }

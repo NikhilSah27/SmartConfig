@@ -253,7 +253,7 @@ func TestSudoersMode(t *testing.T) {
 	c, _ := fakeVisudo(t, nil, "testdata/visudo/one", 1)
 	c.lstat = func(string) (os.FileInfo, error) { return fakeInfo{0o644, stat(0o644, 1000)}, nil }
 	rep, err := c.Check(context.Background(), "/etc/sudoers", []byte(sudoersOne))
-	if err != nil || brief(rep.Findings) != "0 sudoers-mode error\n2 sudoers-syntax blocker" || len(rep.Notes) != 0 {
+	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker\n2 sudoers-syntax blocker" || len(rep.Notes) != 0 {
 		t.Errorf("both: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 }
@@ -267,13 +267,13 @@ func TestSudoersVisudoBroken(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "visudo"), []byte("#!/bin/sh\necho '/x/sudoers:2:19: syntax error' >&2\nkill -9 $$\n"), 0o755)
 	rep, err := c.Check(context.Background(), "/etc/sudoers", []byte(sudoersOne))
-	if err != nil || brief(rep.Findings) != "0 sudoers-mode error" || strings.Join(rep.Notes, "|") != "visudo was killed; only sc's own rules ran" {
+	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || strings.Join(rep.Notes, "|") != "visudo was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "visudo"), []byte("#!/bin/sh\nsleep 60\n"), 0o755)
 	c.Run.Timeout = 200 * time.Millisecond
 	rep, err = c.Check(context.Background(), "/etc/sudoers", []byte(sudoersOne))
-	if err != nil || brief(rep.Findings) != "0 sudoers-mode error" || strings.Join(rep.Notes, "|") != "visudo did not finish in time; only sc's own rules ran" {
+	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || strings.Join(rep.Notes, "|") != "visudo did not finish in time; only sc's own rules ran" {
 		t.Errorf("hung: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	var zero fakeInfo
@@ -348,5 +348,28 @@ func TestSudoersSavedVersion(t *testing.T) {
 	}
 	if rep, _ := c.Check(context.Background(), "/etc/sudoers.d/90-local", []byte("alice ALL=(ALL) ALL\n")); brief(rep.Findings) != "0 sudoers-mode error" {
 		t.Fatalf("on disk: %q", brief(rep.Findings))
+	}
+}
+
+// /etc/sudoers with no rule and no include lets nobody use sudo (checked
+// with sudo in a private mount namespace: "not allowed"). A drop-in may
+// hold anything.
+func TestSudoersNoRules(t *testing.T) {
+	for _, tc := range []struct{ path, data, want string }{
+		{"/etc/sudoers", "", "0 sudoers-no-rules blocker"},
+		{"/etc/sudoers", "# all gone\n\nDefaults env_reset\nDefaults:alice !lecture\nUser_Alias\tADMINS = alice\n", "0 sudoers-no-rules blocker"},
+		{"/etc/sudoers", "Defaults env_reset\n@includedir /etc/sudoers.d\n", ""},
+		{"/etc/sudoers", "#includedir /etc/sudoers.d\n", ""},
+		{"/etc/sudoers", "#include /etc/sudoers.local\n", ""},
+		{"/etc/sudoers", "%sudo ALL=(ALL:ALL) ALL\n", ""},
+		{"/etc/sudoers", "Defaults \\\n  env_reset\nroot\tALL=(ALL:ALL) ALL\r\n", ""},
+		{"/etc/sudoers.d/90-local", "", ""},
+	} {
+		c, _ := fakeMachine(t, nil, "", "", 0)
+		c.lstat = func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist }
+		rep, err := c.Check(context.Background(), tc.path, []byte(tc.data))
+		if err != nil || brief(rep.Findings) != tc.want {
+			t.Errorf("%s %q: %q %v", tc.path, tc.data, brief(rep.Findings), err)
+		}
 	}
 }

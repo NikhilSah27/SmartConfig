@@ -5,20 +5,24 @@ package check
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 func init() {
 	rules = append(rules,
-		Rule{"fstab-source-missing", Blocker, `The line names a disk or partition that does not exist on this machine.
-At boot systemd waits 90 s for it, fails local-fs.target and stops in
-emergency mode; on Ubuntu root is locked, so there is no shell.
-Fix the UUID (lsblk -f lists them), or add nofail if the disk may be
-absent. With nofail or noauto, or for swap, the boot goes on.`},
+		Rule{"fstab-source-missing", Blocker, `The line names a disk, partition, image file or bind-mount source that
+does not exist. At boot the mount fails: systemd fails local-fs.target
+and stops in emergency mode; on Ubuntu root is locked, so no shell.
+Fix the UUID (lsblk -f) or the path, or add nofail if it may be absent.
+With nofail, noauto or x-systemd.automount, or for swap, the boot goes on.`},
 		Rule{"fstab-root-source", Error, `The line for / names a device that does not exist on this machine.
 Ubuntu most likely still boots, because the initramfs mounts / from the
 kernel command line, but the fsck and remount of / use this line.
@@ -34,7 +38,9 @@ Correct the spelling. If the option is real, save anyway.`},
 not a number. mount and systemd ignore such a line, so the filesystem
 is not mounted.
 A line is: device, mount point, type, options, dump, pass.`},
-		Rule{"fstab-verify", Warning, `findmnt --verify reports an error that sc has no rule for.
+		Rule{"fstab-verify", Blocker, `findmnt --verify reports an error that sc has no rule for (a source
+tag it does not know, a mount point that is not a directory): the mount
+fails, with the same weight as a missing disk on the line.
 sc check -v shows its message.`},
 	)
 }
@@ -102,15 +108,53 @@ var netFS = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": tru
 // severity says how bad a line that cannot be mounted is, from what
 // systemd-fstab-generator does with it (plan appendix A14): a local
 // filesystem without nofail or noauto is required by local-fs.target,
-// whose failure is emergency mode.
+// whose failure is emergency mode. With x-systemd.automount only the
+// automount unit is required: the boot goes on and the mount fails when
+// first used.
 func (e fstabEntry) severity() Severity {
 	switch {
 	case slices.Contains(e.opts, "nofail") || slices.Contains(e.opts, "noauto"):
 		return Warning
-	case e.target == "/", e.fstype == "swap", netFS[e.fstype], slices.Contains(e.opts, "_netdev"):
+	case e.target == "/", e.fstype == "swap", netFS[e.fstype], slices.Contains(e.opts, "_netdev"),
+		slices.Contains(e.opts, "x-systemd.automount"):
 		return Error
 	}
 	return Blocker
+}
+
+// blockFS are the filesystems that mount a regular file through a loop
+// device when the source is a path outside /dev.
+var blockFS = map[string]bool{"auto": true, "ext2": true, "ext3": true, "ext4": true, "xfs": true,
+	"btrfs": true, "vfat": true, "exfat": true, "ntfs": true, "ntfs3": true, "ntfs-3g": true,
+	"iso9660": true, "udf": true, "squashfs": true, "erofs": true, "f2fs": true, "hfsplus": true}
+
+// pathSource says what a source that is a path outside /dev is (a bind
+// source, an image file or a swap file), or "" when the line's source is
+// not a path sc should look for: a device, a tag, a pseudo or network
+// filesystem's name, a fuse source.
+func (e fstabEntry) pathSource() string {
+	if !strings.HasPrefix(e.source, "/") || strings.HasPrefix(e.source, "/dev/") {
+		return ""
+	}
+	switch {
+	case slices.Contains(e.opts, "bind") || slices.Contains(e.opts, "rbind"):
+		return "bind source"
+	case e.fstype == "swap":
+		return "swap file"
+	case slices.Contains(e.opts, "loop") || blockFS[e.fstype]:
+		return "image file"
+	}
+	return ""
+}
+
+// pathMissing reports whether p surely does not exist: a path sc may not
+// look at (not root) is not missing.
+func (c *Checks) pathMissing(p string) bool {
+	if c.exists != nil {
+		return !c.exists(p)
+	}
+	_, err := os.Stat(p)
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }
 
 // deviceExists reports whether source names a device in a form sc can
@@ -184,6 +228,13 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 		if checked, exists := c.deviceExists(e.source); checked && !exists {
 			out = append(out, missing(e, ""))
 		}
+		// A path below another line's mount point may only exist once
+		// that is mounted (a new disk): not looked for.
+		if what := e.pathSource(); what != "" && !belowMount(e.source, entries) && c.pathMissing(e.source) {
+			f := missing(e, "")
+			f.Text = fmt.Sprintf("%s (%s for %s) does not exist", e.source, what, e.target)
+			out = append(out, f)
+		}
 		for _, o := range e.opts {
 			if near := optionTypo(o); near != "" {
 				out = append(out, Finding{Rule: "fstab-option-typo", Severity: e.severity(), Line: e.line,
@@ -252,7 +303,9 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 			continue
 		case strings.HasPrefix(raw, "[E] ") && !strings.HasPrefix(raw, "[E] unreachable on boot required target"):
 			// A missing mount point is no problem: systemd creates it.
-			f.Rule, f.Severity, f.Key, f.Text = "fstab-verify", Warning, raw, "findmnt reports an error for "+target
+			// Anything else it calls an error fails the mount: the
+			// line's own severity.
+			f.Rule, f.Key, f.Text = "fstab-verify", raw, "findmnt reports an error for "+target
 		default:
 			continue
 		}
@@ -262,6 +315,17 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 		notes = append(notes, "findmnt could not read the disks (not root): filesystem types were not compared")
 	}
 	return out, notes, nil
+}
+
+// belowMount reports whether p lies below the mount point of another line
+// (not /).
+func belowMount(p string, entries []fstabEntry) bool {
+	for _, e := range entries {
+		if e.target != "/" && e.target != "none" && strings.HasPrefix(p, strings.TrimSuffix(e.target, "/")+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // commonOpts are the options a misspelling is measured against.

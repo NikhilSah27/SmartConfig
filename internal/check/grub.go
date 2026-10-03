@@ -16,8 +16,8 @@ func init() {
 		Rule{"grub-default-syntax", Blocker, `update-grub reads /etc/default/grub as a shell script, and this line is
 not valid shell. update-grub stops with an error, or writes a grub.cfg
 with the wrong settings, and that shows at the next boot.
-Check the quotes and brackets on the line: a value with spaces needs
-double quotes, and a line is NAME="value".`},
+A value with spaces needs double quotes, and = has no spaces around it:
+update-grub would run the rest as a command. A line is NAME="value".`},
 		Rule{"grubcfg-syntax", Blocker, `GRUB cannot read its menu past this line: at the next boot it prints an
 error and drops to the grub> prompt instead of booting.
 grub.cfg is generated: fix /etc/default/grub or /etc/grub.d and run
@@ -31,11 +31,12 @@ var shSyntax = regexp.MustCompile(`^(.*): (\d+): Syntax error: (.*)$`)
 // update-grub sources, with sh -n (dash on Ubuntu), which stops at the
 // first error.
 func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
+	own := shAssignments(in.data)
 	res, notes, ok, err := c.validate(ctx, in, "sh", "-n", in.file)
 	if err != nil || !ok {
-		return nil, notes, err
+		return own, notes, err
 	}
-	var out []Finding
+	out := own
 	for _, l := range strings.Split(string(res.Err), "\n") {
 		if l == "" {
 			continue
@@ -53,6 +54,68 @@ func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []strin
 		return nil, append(notes, fmt.Sprintf("sh could not check the file (exit %d, no message)", res.Exit)), nil
 	}
 	return out, notes, nil
+}
+
+var (
+	// NAME = value, NAME =value: sh runs NAME as a command.
+	shSpacedEquals = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)[ \t]+=`)
+	// NAME=value more, NAME= value: sh runs "more" (or "value") as a
+	// command with NAME set for it. Only a plain value is judged: one
+	// with a quote, a $, a backslash or a backquote may be anything.
+	shUnquoted = regexp.MustCompile("^([A-Za-z_][A-Za-z0-9_]*)=([^\"'$`\\\\ \t;&|#]*)[ \t]+([^ \t;&|#])")
+)
+
+// shAssignments finds the two mistakes in a shell fragment of NAME=value
+// lines that sh -n accepts but update-grub (set -e, then ". FILE") stops
+// at: spaces around =, and a value with spaces but no quotes. Lines
+// inside a quoted value that runs over several lines are skipped.
+func shAssignments(data []byte) []Finding {
+	var out []Finding
+	quote := byte(0) // the quote open at the end of the line before
+	for i, l := range strings.Split(string(data), "\n") {
+		l = strings.TrimSuffix(l, "\r")
+		if quote == 0 {
+			t := strings.TrimLeft(l, " \t")
+			add := func(text string) {
+				out = append(out, Finding{Rule: "grub-default-syntax", Severity: Blocker, Line: i + 1,
+					Key: lineKey(data, i+1), Text: text})
+			}
+			if m := shSpacedEquals.FindStringSubmatch(t); m != nil {
+				add(fmt.Sprintf("spaces around = make sh run %s as a command: update-grub stops", m[1]))
+			} else if m := shUnquoted.FindStringSubmatch(t); m != nil {
+				add(fmt.Sprintf("the value of %s has a space but no quotes: update-grub runs the rest as a command and stops", m[1]))
+			}
+		}
+		quote = shQuoteState(l, quote)
+	}
+	return out
+}
+
+// shQuoteState scans one line as sh would for quotes and returns the
+// quote still open at its end (0 for none): backslash escapes outside
+// single quotes, and # starting a comment at the start of a word outside
+// quotes.
+func shQuoteState(l string, quote byte) byte {
+	for j := 0; j < len(l); j++ {
+		ch := l[j]
+		switch {
+		case quote == '\'':
+			if ch == '\'' {
+				quote = 0
+			}
+		case ch == '\\':
+			j++
+		case quote == '"':
+			if ch == '"' {
+				quote = 0
+			}
+		case ch == '\'' || ch == '"':
+			quote = ch
+		case ch == '#' && (j == 0 || l[j-1] == ' ' || l[j-1] == '\t'):
+			return 0
+		}
+	}
+	return quote
 }
 
 var grubSyntaxLine = regexp.MustCompile(`^Syntax error at line (\d+)$`)

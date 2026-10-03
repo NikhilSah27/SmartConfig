@@ -21,6 +21,8 @@ type Checks struct {
 	sshdHostKey  string                            // tests: a throwaway host key for sshd -t when not root
 	netplanRoot  string                            // "": /; tests fake the machine's {lib,etc,run}/netplan
 	nsswitchPath string                            // "": /etc/nsswitch.conf; tests fake the machine
+	groupPath    string                            // "": /etc/group, whose sudo and admin members are the admins
+	passwdPath   string                            // "": /etc/passwd, the users a group's members must be
 }
 
 // Report is the result of checking one file.

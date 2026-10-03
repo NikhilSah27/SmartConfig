@@ -26,11 +26,14 @@ or undefined alias is a warning. Fix the line; sc check -v shows where.`},
 contains a "." or ends in "~" (so editor and package backups are left
 alone), and the rules in it have no effect.
 Rename it without a dot, for example 90-local, if it is meant to be read.`},
+		Rule{"sudoers-no-rules", Blocker, `/etc/sudoers gives no one any rights and includes no other file (an
+empty file, or every rule deleted). sudo then lets nobody run anything,
+and Ubuntu's root has no password, so nobody can fix it. Ubuntu's file
+has "%sudo ALL=(ALL:ALL) ALL" and "@includedir /etc/sudoers.d".`},
 		Rule{"sudoers-mode", Error, `The file is not mode 0440 owned by root. sudo ignores a sudoers file
 that root does not own or that others may write, so its rules do not
-apply; for /etc/sudoers itself sudo does not run at all. Other modes
-work, but visudo -c reports them (a warning).
-Fix: chown root:root FILE and chmod 0440 FILE.`},
+apply; for /etc/sudoers itself sudo does not run at all (a blocker).
+Other modes work; visudo -c warns. Fix: chown root:root, chmod 0440.`},
 	)
 }
 
@@ -122,8 +125,34 @@ func (c *Checks) sudoersMode(path string) (f Finding, found bool, note string) {
 	}
 	if uid > 0 || mode&0o002 != 0 || (mode&0o020 != 0 && gid != 0) {
 		f.Severity = Error // sudo ignores the file
+		if path == "/etc/sudoers" {
+			f.Severity = Blocker // sudo refuses to run
+			f.Text += ": sudo does not run at all"
+		}
 	}
 	return f, true, ""
+}
+
+// sudoersGrants reports whether a sudoers file holds a rule or an
+// include: any line but a blank, a comment, Defaults or an alias.
+func sudoersGrants(data []byte) bool {
+	text := strings.ReplaceAll(string(data), "\\\n", " ") // a continued line
+	for _, l := range strings.Split(text, "\n") {
+		f := strings.Fields(l)
+		if len(f) == 0 {
+			continue
+		}
+		switch word := f[0]; {
+		case word == "#include" || word == "#includedir" || word == "@include" || word == "@includedir":
+			return true
+		case strings.HasPrefix(word, "#"):
+		case strings.HasPrefix(word, "Defaults"):
+		case strings.HasSuffix(word, "_Alias"):
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // checkSudoers checks /etc/sudoers or one of its drop-ins: the mode and
@@ -147,6 +176,10 @@ func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		} else if note != "" {
 			notes = append(notes, note)
 		}
+	}
+	if in.path == "/etc/sudoers" && !sudoersGrants(in.data) {
+		out = append(out, Finding{Rule: "sudoers-no-rules", Severity: Blocker, Key: "no rules",
+			Text: "the file gives no one any rights and includes no other file: nobody can use sudo"})
 	}
 	res, vnotes, ok, err := c.validate(ctx, in, "visudo", "-c", "-f", in.file)
 	notes = append(notes, vnotes...)

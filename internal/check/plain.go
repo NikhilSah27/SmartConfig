@@ -20,14 +20,14 @@ func init() {
 		Rule{"nsswitch-no-files", Blocker, `The line names neither files nor compat, so what /etc/passwd, group or
 shadow holds cannot be looked up (systemd alone gives only root and
 nobody). For passwd the users vanish: login, su, sudo and ssh fail; for
-group, membership (sudo) is lost; for shadow, passwords cannot be
-checked. Put files first: "passwd: files systemd" is what Ubuntu ships.`},
+group and initgroups the sudo membership is lost; for shadow, PAM fails
+every account check, so sudo fails even with NOPASSWD. Put files first.`},
 		Rule{"nsswitch-invalid", Blocker, `glibc cannot read the [ ] actions on this line, so it rejects the whole
 file: every user, group and host lookup fails at once, root's included,
 until the file is fixed. An action is [STATUS=ACTION]: STATUS is SUCCESS,
 NOTFOUND, UNAVAIL or TRYAGAIN, ACTION is return, continue or merge, and
 the ] must close it. "#" starts no comment in the middle of a line.`},
-		Rule{"preload-missing-lib", Blocker, `/etc/ld.so.preload names a library that does not exist on this machine.
+		Rule{"preload-missing-lib", Error, `/etc/ld.so.preload names a library that does not exist on this machine.
 The loader reads this file for every dynamically linked program started
 from now on, and each one prints "ERROR: ld.so: object ... cannot be
 preloaded" before it runs; programs that read their own stderr fail.
@@ -177,8 +177,9 @@ func nssActionsOK(rest string) bool {
 
 // checkNsswitch checks an nsswitch.conf: every line of a database glibc
 // knows must parse, or glibc rejects the whole file; and the passwd,
-// group and shadow lines must each name a local source. A missing line is
-// fine: glibc then uses "files" (and for shadow, the passwd line).
+// group, initgroups and shadow lines must each name a local source. A
+// missing line is fine: glibc then uses "files" (for initgroups the group
+// line, for shadow the passwd line).
 func checkNsswitch(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	lines := parseNsswitch(in.data)
 	var out []Finding
@@ -204,8 +205,9 @@ func checkNsswitch(ctx context.Context, c *Checks, in input) ([]Finding, []strin
 		text string
 	}{
 		{"passwd", Blocker, "the users in /etc/passwd cannot be looked up"},
-		{"group", Error, "local groups (sudo included) and their members are lost"},
-		{"shadow", Error, "local passwords cannot be checked"},
+		{"group", Blocker, "local groups and their members are lost: nobody can use sudo"},
+		{"initgroups", Blocker, "users do not get their local groups at login: nobody can use sudo"},
+		{"shadow", Blocker, "PAM cannot check local accounts: sudo and logins fail"},
 	} {
 		l, ok := lines[db.name]
 		if !ok {
@@ -253,7 +255,7 @@ func checkPreload(ctx context.Context, c *Checks, in input) ([]Finding, []string
 			case c.pathExists(name):
 				continue
 			}
-			out = append(out, Finding{Rule: "preload-missing-lib", Severity: Blocker, Line: i + 1, Text: text})
+			out = append(out, Finding{Rule: "preload-missing-lib", Severity: Error, Line: i + 1, Text: text})
 		}
 	}
 	var notes []string

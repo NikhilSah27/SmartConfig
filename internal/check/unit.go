@@ -104,7 +104,9 @@ func unitKey(data []byte, n int) string {
 // dependency's problems are its own file's, and a failed man page lookup
 // for Documentation= is no problem with the unit.
 func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
-	res, notes, ok, err := c.validate(ctx, in, "systemd-analyze", "verify", in.file)
+	// --man=no: a Documentation=man: entry would run man (and groff) on
+	// the page it names, as the caller, root under scd.
+	res, notes, ok, err := c.validate(ctx, in, "systemd-analyze", "verify", "--man=no", in.file)
 	if err != nil || !ok {
 		return nil, notes, err
 	}
@@ -157,6 +159,9 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				default:
 					f.Text, f.Key = "systemd ignores the line", msg
 				}
+				// The line's content in the key: a second Restrat= added
+				// above an old one is blamed for the new line.
+				f.Key = lineKey(in.data, n) + " " + f.Key
 			} else if strings.HasPrefix(msg, "Invalid section header") {
 				f.Rule, f.Severity = "unit-syntax", Error
 				f.Text = "the section header is not valid; the unit does not load"

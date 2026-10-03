@@ -77,9 +77,9 @@ var grpckCases = []accountCase{
 		want: "2 group-invalid warning\n3 group-invalid error", text: "grpck does not accept the group name on this line: glibc reads it, but other tools may refuse it"},
 	// glibc skips an empty member and blanks before one.
 	{name: "members", data: "root:x:0:\nsudo:x:27:root,scnouser\nscgrp:x:1001:root,,root\nscsp:x:1002: root\n", code: 2,
-		want: "2 group-invalid warning", text: "member scnouser of group sudo is not a user on this machine"},
+		want: "2 group-invalid error", text: "member scnouser of group sudo is not a user on this machine, so whoever was meant has no sudo"},
 	{name: "crlf", data: "root:x:0:\r\nsudo:x:27:root\r\n", code: 2,
-		want: "2 group-invalid warning", text: `member "root\r" of group sudo is not a user on this machine (it ends in a carriage return: a DOS line ending)`},
+		want: "2 group-invalid error", text: `member "root\r" of group sudo is not a user on this machine, so whoever was meant has no sudo (it ends in a carriage return: a DOS line ending)`},
 	{name: "notx", data: "root:x:0:\nsudo:sc-not-a-hash:27:root\n", code: 2,
 		want: "2 group-invalid warning", text: "the password field of group sudo is not x, so /etc/gshadow is not used for it"},
 	{name: "nis", data: "root:x:0:\n+scgrp\n-other\n"},
@@ -181,9 +181,9 @@ func TestPasswdRoot(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	for _, tc := range []struct{ nsswitch, data, want, text string }{
 		{"passwd: files systemd\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root warning",
-			"no line defines root: nss-systemd supplies it, so sudo and su still work"},
+			"no line defines root, but nss-systemd supplies it with uid 0"},
 		{"passwd: files systemd\n", "root:x:0:zero:root:/root:/bin/bash\n", "1 passwd-root warning",
-			"glibc cannot read root's line: nss-systemd supplies root, so sudo and su still work"},
+			"glibc cannot read root's line, but nss-systemd supplies root with uid 0"},
 		{"passwd: files systemd\n", "root:x:1000:0:root:/root:/bin/bash\n", "1 passwd-root blocker", ""},
 		{"passwd: files\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root blocker", ""},
 		{"passwd: files sss\ngroup: files systemd\n", "alice:x:1001:0:Alice:/tmp:/bin/sh\n", "0 passwd-root blocker", ""},
@@ -373,14 +373,15 @@ func TestAccountsRealTools(t *testing.T) {
 			pwRoot + "alice:x:1001:0:Alice:/tmp:/bin/sh\nbob:x:1002:0:Bob:/:/bin/sh\n"},
 		{"grpck", "/etc/group",
 			"root:x:0:\nsudo:x:27:root,scnouser\njunk line\nscgrp:x:1001:\nscgrp:x:1002:\n",
-			"2 group-invalid warning\n3 group-invalid error\n5 group-invalid warning",
+			"2 group-invalid error\n3 group-invalid error\n5 group-invalid warning",
 			"root:x:0:\nsudo:x:27:root\nscgrp:x:1001:\n"},
 	} {
 		if _, err := os.Stat("/usr/sbin/" + tc.tool); err != nil {
 			t.Logf("no %s", tc.tool)
 			continue
 		}
-		c := &Checks{Home: filepath.Join(t.TempDir(), "schome")}
+		// The admins of this machine are not looked for (TestAdmins).
+		c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), groupPath: "/sc-no-such-group"}
 		rep, err := c.Check(context.Background(), tc.path, []byte(tc.bad))
 		if err != nil || brief(rep.Findings) != tc.want || len(rep.Notes) != 0 {
 			t.Errorf("%s: findings:\n%s\nnotes %q %v", tc.tool, brief(rep.Findings), rep.Notes, err)
@@ -389,5 +390,65 @@ func TestAccountsRealTools(t *testing.T) {
 		if err != nil || len(rep.Findings) != 0 || len(rep.Notes) != 0 {
 			t.Errorf("%s: good file: %q %q %v", tc.tool, brief(rep.Findings), rep.Notes, err)
 		}
+	}
+}
+
+// A member that is not a user is an error in sudo or admin (whoever was
+// meant loses sudo at their next login), a warning in another group.
+func TestGroupMemberSeverity(t *testing.T) {
+	for _, tc := range []struct{ group, want string }{
+		{"sudo", "2 group-invalid error"},
+		{"admin", "2 group-invalid error"},
+		{"scgrp", "2 group-invalid warning"},
+	} {
+		c, _ := fakeMachine(t, nil, "", "", 0)
+		goldenTool(t, c, "grpck", writeGolden(t, "m", "group "+tc.group+": no user scnouser\n", ""), 2)
+		rep, err := c.Check(context.Background(), "/etc/group", []byte("root:x:0:\n"+tc.group+":x:27:scnouser\n"))
+		if err != nil || brief(rep.Findings) != tc.want {
+			t.Errorf("%s: %q %v", tc.group, brief(rep.Findings), err)
+		}
+	}
+}
+
+// An account file that leaves no admin locks Ubuntu's owner out, as root
+// has no password (checked with sudo in a private mount namespace: an
+// empty or root-only passwd, or a group file without the sudo line, and
+// uid 1000 can no longer sudo). The admins are the members of sudo and
+// admin in the machine's group file; a group file's members must be
+// users in the machine's passwd file.
+func TestAdmins(t *testing.T) {
+	dir := t.TempDir()
+	group := filepath.Join(dir, "group")
+	os.WriteFile(group, []byte("root:x:0:\nsudo:x:27:alice,bob\nadmin:x:116:\n"), 0o644)
+	passwd := filepath.Join(dir, "passwd")
+	os.WriteFile(passwd, []byte(pwRoot+"alice:x:1000:1000::/home/alice:/bin/bash\nbob:x:1001:1001::/home/bob:/bin/bash\n"), 0o644)
+	for _, tc := range []struct{ path, data, want string }{
+		{"/etc/passwd", pwRoot + "alice:x:1000:1000::/home/alice:/bin/bash\nbob:x:1001:1001::/home/bob:/bin/bash\n", ""},
+		{"/etc/passwd", pwRoot + "alice:x:1000:1000::/home/alice:/bin/bash\n", "0 passwd-no-admin error"},
+		{"/etc/passwd", pwRoot, "0 passwd-no-admin blocker"},
+		{"/etc/passwd", "", "0 passwd-root blocker\n0 passwd-no-admin blocker"},
+		{"/etc/group", "root:x:0:\nsudo:x:27:alice\n", ""},
+		{"/etc/group", "root:x:0:\nadmin:x:116:bob\n", ""},
+		{"/etc/group", "root:x:0:\nsudo:x:27:\n", "2 group-no-admin blocker"},
+		{"/etc/group", "root:x:0:\nsudo:x:27:carol\n", "2 group-no-admin blocker"},
+		{"/etc/group", "root:x:0:\n", "0 group-no-admin blocker"},
+		{"/etc/group", "", "0 group-no-admin blocker"},
+	} {
+		c, _ := fakeMachine(t, nil, "", "", 0)
+		c.groupPath, c.passwdPath = group, passwd
+		rep, err := c.Check(context.Background(), tc.path, []byte(tc.data))
+		if err != nil || brief(rep.Findings) != tc.want {
+			t.Errorf("%s %q: %q %v", tc.path, tc.data, brief(rep.Findings), err)
+		}
+	}
+	// Without the machine's files there is nothing to compare with.
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	if rep, _ := c.Check(context.Background(), "/etc/group", nil); brief(rep.Findings) != "" {
+		t.Errorf("no passwd: %q", brief(rep.Findings))
+	}
+	c.groupPath, c.passwdPath = group, passwd
+	rep, _ := c.Check(context.Background(), "/etc/passwd", []byte(pwRoot))
+	if rep.Findings[0].Text != "no line is left for alice, bob (in sudo or admin): nobody can log in and use sudo" {
+		t.Errorf("text %q", rep.Findings[0].Text)
 	}
 }

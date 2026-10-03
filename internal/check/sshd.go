@@ -93,7 +93,9 @@ func checkSshd(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			out[i].Raw += "; " + raw
 			continue
 		}
-		f := Finding{Rule: "sshd-invalid", Severity: Blocker, Line: line, Raw: raw, Key: msg}
+		// The line's content in the key: an edit that adds the same
+		// mistake above an old one is blamed for the new line.
+		f := Finding{Rule: "sshd-invalid", Severity: Blocker, Line: line, Raw: raw, Key: lineKey(in.data, line) + " " + msg}
 		if kw, isUnknown := strings.CutPrefix(msg, "Bad configuration option: "); isUnknown {
 			f.Text = fmt.Sprintf("unknown option %q", kw)
 		} else if kw := sshdKeyword(in.data, line); kw != "" {

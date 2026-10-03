@@ -162,7 +162,7 @@ func TestUnitVerify(t *testing.T) {
 		// and the copy is gone afterwards.
 		b, _ := os.ReadFile(args)
 		a := strings.Split(strings.TrimSpace(string(b)), "\n")
-		if len(a) != 2 || a[0] != "verify" || filepath.Base(a[1]) != tc.path || !strings.HasPrefix(a[1], filepath.Join(c.Home, "tmp", "check-")) {
+		if len(a) != 3 || a[0] != "verify" || a[1] != "--man=no" || filepath.Base(a[2]) != tc.path || !strings.HasPrefix(a[2], filepath.Join(c.Home, "tmp", "check-")) {
 			t.Errorf("%s: arguments %q", tc.name, a)
 		}
 		if left, _ := os.ReadDir(filepath.Join(c.Home, "tmp")); len(left) != 0 {
@@ -198,6 +198,24 @@ func TestUnitKeys(t *testing.T) {
 	}
 	if got := brief(Added(run("One thing is wrong."), run("One thing is wrong."))); got != "" {
 		t.Errorf("the same refusal: %q", got)
+	}
+	// A second unknown key added above an old one: the new line is blamed.
+	unknown := func(data string, lines ...int) []Finding {
+		var msgs string
+		for _, n := range lines {
+			msgs += fmt.Sprintf("/SCRATCH/my.service:%d: Unknown key name 'Restrat' in section 'Service', ignoring.\n", n)
+		}
+		c, _ := fakeMachine(t, nil, "", "", 0)
+		goldenTool(t, c, "systemd-analyze", writeGolden(t, "u", "", msgs), 0)
+		rep, err := c.Check(context.Background(), unitDir+"my.service", []byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep.Findings
+	}
+	old := unknown("[Service]\nExecStart=/bin/true\nRestrat=always\n", 3)
+	if got := brief(Added(old, unknown("[Service]\nRestrat=no\nExecStart=/bin/true\nRestrat=always\n", 2, 4))); got != "2 unit-unknown-key warning" {
+		t.Errorf("added above: %q", got)
 	}
 }
 

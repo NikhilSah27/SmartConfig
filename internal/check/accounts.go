@@ -18,8 +18,8 @@ func init() {
 	rules = append(rules,
 		Rule{"passwd-root", Blocker, `/etc/passwd has no line glibc can read that gives root uid 0. sudo and
 su look root up by name: with another uid they run commands as that uid.
-With no root line, nss-systemd (passwd: files systemd) supplies root and
-sudo still works (a warning); without it, sudo and su fail.
+With no root line, nss-systemd (passwd: files systemd) supplies root with
+uid 0 (a warning); without it, sudo and su fail.
 Put the root line back first: root:x:0:0:root:/root:/bin/bash.`},
 		Rule{"passwd-invalid", Error, `pwck rejects a line of /etc/passwd. glibc skips a line it cannot read
 (an id that is not a number, too few fields), so that user does not
@@ -31,11 +31,21 @@ ssh start that shell, so the user cannot log in (a session already open
 keeps going). A missing nologin or false is only a warning: such an
 account is not meant to log in. Fix the path: /bin/bash, /bin/sh or
 /usr/sbin/nologin; chsh -s does it for one user.`},
+		Rule{"passwd-no-admin", Blocker, `No line is left for the members of sudo and admin (from /etc/group), the
+groups Ubuntu's sudoers lets run commands as root. Ubuntu's root has no
+password, so with no admin account nobody can log in and use sudo. One
+admin of several missing is an error: that user can no longer log in.
+Put their lines back; sc log /etc/passwd lists the versions to restore.`},
+		Rule{"group-no-admin", Blocker, `No user of this machine is left in group sudo or admin, the groups
+Ubuntu's sudoers lets run commands as root. Ubuntu's root has no
+password, so nobody can use sudo, and so nobody can fix the file.
+On a machine where root logs in with a password this is no problem.
+Put the sudo line back: sudo:x:27:NAME.`},
 		Rule{"group-invalid", Error, `grpck rejects a line of /etc/group. glibc skips a line it cannot read,
-so the group does not exist and its members lose it at their next login;
-for sudo or admin that ends sudo for everyone (Ubuntu locks root). A blank
-or comment line, a duplicate or bad name, a member that is not a user or
-a password field other than x is a warning. sc check -v shows grpck's.`},
+so the group does not exist and its members lose it at their next login.
+A member that is not a user is an error in sudo or admin (whoever was
+meant has no sudo), else a warning, as are a blank or comment line, a
+bad or duplicate name, a password field other than x. sc check -v.`},
 	)
 }
 
@@ -160,10 +170,10 @@ func passwdRoot(data []byte, synth bool) []Finding {
 		return nil
 	}
 	if synth {
-		f := Finding{Rule: "passwd-root", Severity: Warning, Text: "no line defines root: nss-systemd supplies it, so sudo and su still work"}
+		f := Finding{Rule: "passwd-root", Severity: Warning, Text: "no line defines root, but nss-systemd supplies it with uid 0"}
 		if broken > 0 {
 			f.Line, f.Key = broken, lineKey(data, broken)
-			f.Text = "glibc cannot read root's line: nss-systemd supplies root, so sudo and su still work"
+			f.Text = "glibc cannot read root's line, but nss-systemd supplies root with uid 0"
 		}
 		return []Finding{f}
 	}
@@ -174,15 +184,120 @@ func passwdRoot(data []byte, synth bool) []Finding {
 	return []Finding{{Rule: "passwd-root", Severity: Blocker, Text: "no line defines root, so root does not exist: sudo and su fail"}}
 }
 
+// adminGroups are the groups Ubuntu's sudoers lets run commands as root.
+var adminGroups = []string{"sudo", "admin"}
+
+// orEtc is p, or /etc/name when p is "" (tests fake the machine's files).
+func orEtc(p, name string) string {
+	if p == "" {
+		return "/etc/" + name
+	}
+	return p
+}
+
+// groupMembers returns the members glibc reads for the groups names in a
+// group file, in file order, each once.
+func groupMembers(data []byte, names []string) []string {
+	var out []string
+	for _, l := range ckSplit(data) {
+		f, ok := glibcEntry(l, 4, 2)
+		if !ok || len(f) < 4 || !slices.Contains(names, f[0]) {
+			continue
+		}
+		for _, m := range strings.Split(f[3], ",") {
+			if m = strings.TrimLeftFunc(m, isSpaceC); m != "" && !slices.Contains(out, m) {
+				out = append(out, m)
+			}
+		}
+	}
+	return out
+}
+
+// passwdUsers returns the names glibc reads in a passwd file.
+func passwdUsers(data []byte) map[string]bool {
+	users := map[string]bool{}
+	for _, l := range ckSplit(data) {
+		if f, ok := glibcEntry(l, 7, 2, 3); ok {
+			users[f[0]] = true
+		}
+	}
+	return users
+}
+
+// nameList is up to three names, quoted when odd, and how many more.
+func nameList(names []string) string {
+	var q []string
+	for _, n := range names[:min(len(names), 3)] {
+		q = append(q, quoteOdd(n))
+	}
+	s := strings.Join(q, ", ")
+	if len(names) > 3 {
+		s += fmt.Sprintf(" and %d more", len(names)-3)
+	}
+	return s
+}
+
+// passwdAdmins is the passwd-no-admin rule: the members of sudo and admin
+// in the machine's group file must keep their lines. A machine whose
+// group file is unreadable, or names no admin, gives nothing to compare.
+func (c *Checks) passwdAdmins(data []byte) []Finding {
+	group, err := os.ReadFile(orEtc(c.groupPath, "group"))
+	if err != nil {
+		return nil
+	}
+	admins := groupMembers(group, adminGroups)
+	users := passwdUsers(data)
+	var missing []string
+	for _, a := range admins {
+		if !users[a] {
+			missing = append(missing, a)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if len(missing) == len(admins) {
+		return []Finding{{Rule: "passwd-no-admin", Severity: Blocker, Key: "no admin",
+			Text: fmt.Sprintf("no line is left for %s (in sudo or admin): nobody can log in and use sudo", nameList(missing))}}
+	}
+	var out []Finding
+	for _, a := range missing {
+		out = append(out, Finding{Rule: "passwd-no-admin", Severity: Error, Key: "admin " + a,
+			Text: fmt.Sprintf("no line is left for %s (in sudo or admin): that user can no longer log in", quoteOdd(a))})
+	}
+	return out
+}
+
+// groupAdmins is the group-no-admin rule: a user of this machine (its
+// passwd file) must be left in sudo or admin. Nothing to say when the
+// passwd file is unreadable.
+func (c *Checks) groupAdmins(data []byte) []Finding {
+	passwd, err := os.ReadFile(orEtc(c.passwdPath, "passwd"))
+	if err != nil {
+		return nil
+	}
+	users := passwdUsers(passwd)
+	for _, m := range groupMembers(data, adminGroups) {
+		if users[m] {
+			return nil
+		}
+	}
+	f := Finding{Rule: "group-no-admin", Severity: Blocker, Key: "no admin",
+		Text: "no user of this machine is in group sudo or admin: nobody can use sudo"}
+	for i, l := range ckSplit(data) {
+		if g, ok := glibcEntry(l, 4, 2); ok && g[0] == "sudo" {
+			f.Line = i + 1
+			break
+		}
+	}
+	return []Finding{f}
+}
+
 // synthesizesRoot reports whether nsswitch.conf's passwd line names
 // systemd, whose module supplies root when /etc/passwd has none. An
 // unreadable nsswitch.conf counts as no: the worse case is reported.
 func (c *Checks) synthesizesRoot() bool {
-	p := c.nsswitchPath
-	if p == "" {
-		p = "/etc/nsswitch.conf"
-	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(orEtc(c.nsswitchPath, "nsswitch.conf"))
 	if err != nil {
 		return false
 	}
@@ -484,8 +599,14 @@ func grpckMore(s *ckLines, key func(int) string, msg string) ([]Finding, bool) {
 	if !glibcMember(lineAt(s.lines, n), member) {
 		return nil, true
 	}
-	return []Finding{{Rule: "group-invalid", Severity: Warning, Line: n, Raw: msg, Key: key(n),
-		Text: fmt.Sprintf("member %s of group %s is not a user on this machine%s", quoteOdd(member), quoteOdd(group), dosEnding(member))}}, true
+	f := Finding{Rule: "group-invalid", Severity: Warning, Line: n, Raw: msg, Key: key(n),
+		Text: fmt.Sprintf("member %s of group %s is not a user on this machine%s", quoteOdd(member), quoteOdd(group), dosEnding(member))}
+	if slices.Contains(adminGroups, group) {
+		// Whoever was meant loses sudo at their next login.
+		f.Severity = Error
+		f.Text = fmt.Sprintf("member %s of group %s is not a user on this machine, so whoever was meant has no sudo%s", quoteOdd(member), group, dosEnding(member))
+	}
+	return []Finding{f}, true
 }
 
 // glibcMember reports whether glibc reads name as a member on line l of
@@ -529,6 +650,7 @@ func checkPasswd(ctx context.Context, c *Checks, in input) ([]Finding, []string,
 	if len(out) > 0 {
 		skip = out[0].Line
 	}
+	out = append(out, c.passwdAdmins(in.data)...)
 	shadow, err := ckCompanion(in, pwckTool, ":*:::::::")
 	if err != nil {
 		return out, nil, err
@@ -549,10 +671,11 @@ func checkGroup(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 	if err != nil {
 		return nil, nil, err
 	}
+	out := c.groupAdmins(in.data)
 	msgs, exit, notes, ok, err := ckRun(ctx, c, in, "grpck", "-r", "-S", in.file, gshadow)
 	if err != nil || !ok {
-		return nil, notes, err
+		return out, notes, err
 	}
 	fs, more := grpckTool.findings(in, msgs, exit, 0)
-	return fs, append(notes, more...), nil
+	return append(out, fs...), append(notes, more...), nil
 }

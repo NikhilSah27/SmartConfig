@@ -216,6 +216,13 @@ func TestSshdKeys(t *testing.T) {
 	if got := brief(Added(before, run("Port abc\nPort abc\n", "Badly formatted port number.", "Badly formatted port number."))); got != "2 sshd-invalid blocker" {
 		t.Errorf("the same line twice: %q", got)
 	}
+	// The same mistake added above an old one: the new line is blamed.
+	old := run("Port 22\nPermitRootLogn no\n", "", "Bad configuration option: PermitRootLogn")
+	added := Added(old, run("PermitRootLogn yes\nPort 22\nPermitRootLogn no\n",
+		"Bad configuration option: PermitRootLogn", "", "Bad configuration option: PermitRootLogn"))
+	if got := brief(added); got != "1 sshd-invalid blocker" {
+		t.Errorf("added above: %q", got)
+	}
 }
 
 // Environment failures as root, which a user cannot provoke (from
