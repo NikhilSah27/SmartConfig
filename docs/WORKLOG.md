@@ -40,8 +40,9 @@ separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
 fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). Step 14 (`7ccb3d9`).
 Step 13 is in (`a73dfde`, `2e4d4ee`) and the acceptance script is
-committed, not run (`2ff038b`). **Next: the chunk D review** (steps
-12-14, `--as`, the acceptance script); then docs (step 15) and the
+committed, not run (`2ff038b`). Chunk D is reviewed
+([reviews/2026-10-03-m3-chunk-d.md](reviews/2026-10-03-m3-chunk-d.md),
+fixes `2fb037e`, plan change C8). **Next: docs (step 15)**; then the
 sign-off runs (root, your OK, after the soak check).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
@@ -1038,3 +1039,26 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   names exists; its step 1 (`sc check --as`, all checkers) passes as a
   user. The rest needs root and writes a test unit under
   `/etc/systemd/system`: sign-off S1, with your OK.
+- **Chunk D review closed, `2fb037e`**
+  ([reviews/2026-10-03-m3-chunk-d.md](reviews/2026-10-03-m3-chunk-d.md),
+  plan change C8). One reviewer agent, 10 findings, each reproduced or
+  tested here first.
+  - `passwd-root` was a false blocker on stock Ubuntu: nss-systemd
+    supplies root when no line does. Shown with a fabricated passwd
+    bind-mounted in a private mount namespace: `getent` gives uid 0 and
+    sudo still works. It is now a warning there; a root line with another
+    uid stays a blocker.
+  - netplan: an error that may come from a file sc could not read is a
+    note.
+  - `sc check --as` no longer waits on a FIFO.
+  - `sc scope` checks the roots with lstat, as scd does.
+  - scd's checker validates each version once, and still checks the new
+    version when the old one fails.
+  - The sysctl finding did not reproduce on procps 4.0.4.
+  - Cleanups: `Explain` is built on `decide`; one no-login list and one
+    `PathError` helper.
+
+  Checks: gofmt and vet clean; all tests pass as a user, as root and
+  under race. A stray `sc` binary from `go build ./cmd/sc` got into the
+  fix commit; it was taken out before the push, and `/sc` is now
+  ignored.
