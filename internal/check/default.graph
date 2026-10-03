@@ -5,3 +5,5 @@
 #   mode  GLOB OCTAL      mode of a file sc edit creates (default 0644)
 # check and mode: the FIRST matching line wins. Globs are the scope's.
 # A checker's lines are added with the step that builds it.
+check fstab /etc/fstab
+apply fstab at the next boot (now: systemctl daemon-reload, then mount -a)
