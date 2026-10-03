@@ -147,9 +147,9 @@ deferred by the owner. The next session checks what scd has run by then.
   nothing caps rows, objects or journal lines except the free-space floor.
 - Digest rows: use a keyed id, so a journal reader cannot test guesses
   at a low-entropy secret.
-- Watches: re-walk after a directory swap (`RENAME_EXCHANGE`), remove
-  stale watches after an overflow, and trim directory listings after a
-  walk. (Done, `bd8fad9`: `deleted` rows when a login `.ssh` moves away.)
+- Watches: remove stale watches after an overflow, and trim directory
+  listings after a walk. (Done: `deleted` rows when a login `.ssh` moves
+  away, `bd8fad9`; re-walk after a directory swap, `c0cfe77`.)
 - Home files: count orphan objects against the per-file limit. (Done,
   `5b57aaf`: at startup, a home root that is not a real directory is
   skipped instead of failing the start.)

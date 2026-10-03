@@ -43,7 +43,7 @@ commit and push; none touches the running scd (installing a new build needs
 your yes):
 1. done (`5b57aaf`): at startup, skip a home root that is not a real directory (instead of failing);
 2. done (`bd8fad9`): `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
-3. re-walk after a directory swap (`RENAME_EXCHANGE`);
+3. done (`c0cfe77`): re-walk after a directory swap (`RENAME_EXCHANGE`);
 4. remove stale watches after an overflow;
 5. trim directory listings after a walk;
 6. count orphan objects against the per-file limit for home files;
@@ -667,3 +667,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     and `cmd/sc` as root; the root tests 5 times under race: clean.
     `make race`: only the known `TestRescanUnderBusyEvents` flake (4
     rescans this time). Not installed.
+- **M2 follow-up 3, directory swap, fixed `c0cfe77`:** `renameat2(RENAME_EXCHANGE)`
+  of watched directories a and b gives MOVED_FROM a, MOVED_TO b,
+  MOVED_FROM b, MOVED_TO a. The second MOVED_FROM removed, by path, the
+  watches MOVED_TO b had just added for a's old directory, so it and its
+  subdirectories stayed unwatched until the hourly rescan. A directory
+  moved away is now walked again when another directory is found at its
+  name. New test `TestDirExchange` (raw `renameat2`, amd64 and arm64:
+  the syscall package has no wrapper, and `x/sys` would be a new
+  dependency): edits in both swapped trees come from events, no rescan.
+  Checks: build, gofmt, vet, `go test ./...` as user, `internal/watch`
+  and `cmd/sc` as root, the test 5 times under race, `make race`: all
+  clean. Not installed.
