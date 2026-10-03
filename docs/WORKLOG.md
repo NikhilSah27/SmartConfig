@@ -45,10 +45,10 @@ committed, not run (`2ff038b`). Chunk D is reviewed
 fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
 **M3 is built. Now: the sign-off runs** (plan section 11; your call,
 2026-10-03: close the M2 soak now and sign off, on the snapshot you
-already have). S1 `make accept-m3` (scd is stopped for it and started
-again after); then, each with your OK, S2 install the M3 build and review
-`sc check` on the real system with you; S3 the owner scenario; S4 final
-review and tag `m3`.
+already have). S1 passed (log). Next, each with your OK: S2 install the
+M3 build and review `sc check` on the real system with you (as root it
+finds nothing in 24 files); S3 the owner scenario; S4 final review and
+tag `m3`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1091,3 +1091,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   no AC power), and the deliberate `apt upgrade` was S5's rerun, before
   this build. A longer run and an apt run under scd come with M3's
   install.
+- **M3 sign-off S1 passed** (your OK: "close soak now, sign off").
+  - Checks: `make build fmt vet m1-compat` on `36fa076`; the tests last
+    passed as a user, as root and under race on `2fb037e` (only docs
+    changed after); CI green.
+  - `sudo ./scripts/accept-m3.sh`, with the real scd stopped:
+    - First run: steps 0-3 passed, step 4 failed on a script bug. After
+      a piped answer, sc edit's "saved" line follows the prompt on the
+      same line, and the script's grep wanted it at the start of a line.
+      Fixed in `6db9415`, which also makes `fail()` print its newlines.
+    - Second run: **PASS**, all 6 steps. Every validator was found and
+      run as root. `sc check` on the real system: no problems in 24
+      files. scd's check line and "ok again" for the test unit; sc edit
+      through quit, edit again and save anyway with exactly 2 rows;
+      `sc scope`. The real fstab, sudoers, sshd, grub, nsswitch, hosts,
+      passwd, group, sysctl, netplan and sudoers.d files are unchanged.
+    - After each run the test unit, the runtime unit and the scratch
+      directories were gone. The real scd started again with a baseline
+      of 0 first seen, 0 changed, 0 deleted.
