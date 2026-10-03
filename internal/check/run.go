@@ -1,0 +1,145 @@
+//go:build linux
+
+package check
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// toolDirs is where validators are looked up, never through $PATH.
+var toolDirs = []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+
+// Runner starts validators (plan 5.3). It is the only place in sc that
+// runs another program on a file's content.
+type Runner struct {
+	Dirs    []string      // where tools are looked up; nil: toolDirs
+	Timeout time.Duration // 0: 10 s
+	MaxOut  int           // most output kept; 0: 64 KiB
+}
+
+// Result is what one validator run gave.
+type Result struct {
+	Found     bool   // the tool exists; false from a rescue shell without it
+	Exit      int    // its exit status; -1 when it was killed
+	Out       []byte // stdout and stderr together, at most MaxOut bytes
+	Truncated bool   // more output than MaxOut
+	TimedOut  bool   // killed after Timeout, with its process group
+}
+
+// Run starts tool with args in dir and waits for it. The arguments go as
+// a list, never through a shell; the environment is LC_ALL=C and a fixed
+// PATH; stdin is /dev/null. A tool that is not installed, exits non-zero or
+// times out is a Result, not an error.
+func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Result, error) {
+	if tool == "" || strings.ContainsRune(tool, '/') {
+		return Result{}, fmt.Errorf("run %q: not a tool name", tool)
+	}
+	dirs := r.Dirs
+	if dirs == nil {
+		dirs = toolDirs
+	}
+	path := ""
+	for _, d := range dirs {
+		p := filepath.Join(d, tool)
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
+			path = p
+			break
+		}
+	}
+	if path == "" {
+		return Result{}, nil
+	}
+	timeout, maxOut := r.Timeout, r.MaxOut
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	if maxOut == 0 {
+		maxOut = 64 << 10
+	}
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(tctx, path, args...)
+	cmd.Dir = dir
+	cmd.Env = []string{"LC_ALL=C", "PATH=" + strings.Join(toolDirs, ":")}
+	// Its own process group, so a timeout kills what it started too.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	out := &capWriter{max: maxOut}
+	cmd.Stdout, cmd.Stderr = out, out
+	err := cmd.Run()
+	if cmd.Process != nil {
+		// Whatever it started and left behind goes too. The group is the
+		// tool's own (Setpgid), so nothing else is hit.
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	res := Result{Found: true, Out: out.buf, Truncated: out.cut}
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+	case ctx.Err() != nil:
+		return res, fmt.Errorf("run %s: %w", tool, ctx.Err())
+	case tctx.Err() != nil:
+		res.TimedOut, res.Exit = true, -1
+	case errors.Is(err, exec.ErrWaitDelay):
+		// It exited 0, but something it started still held its output.
+	case errors.As(err, &ee):
+		res.Exit = ee.ExitCode()
+	case err != nil:
+		return res, fmt.Errorf("run %s: %w", tool, err)
+	}
+	return res, nil
+}
+
+// capWriter keeps the first max bytes and drops the rest, so a noisy tool
+// is never blocked and never fills memory.
+type capWriter struct {
+	buf []byte
+	max int
+	cut bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if room := w.max - len(w.buf); room < len(p) {
+		w.buf = append(w.buf, p[:room]...)
+		w.cut = true
+	} else {
+		w.buf = append(w.buf, p...)
+	}
+	return len(p), nil
+}
+
+// Scratch writes data as <home>/tmp/check-XXXX/<base name of path>, a
+// private copy for a validator to read (plan 5.3): the directory is 0700,
+// the file 0600, and it keeps the file's own name, which some validators
+// need. home is $SC_HOME, which is never under a watched root. cleanup
+// removes the directory.
+func Scratch(home, path string, data []byte) (file string, cleanup func(), err error) {
+	name := filepath.Base(path)
+	if name == "." || name == "/" {
+		return "", nil, fmt.Errorf("scratch copy of %q: no file name", path)
+	}
+	tmp := filepath.Join(home, "tmp")
+	if err := os.MkdirAll(tmp, 0o700); err != nil {
+		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
+	}
+	dir, err := os.MkdirTemp(tmp, "check-")
+	if err != nil {
+		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
+	}
+	cleanup = func() { os.RemoveAll(dir) }
+	file = filepath.Join(dir, name)
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
+	}
+	return file, cleanup, nil
+}
