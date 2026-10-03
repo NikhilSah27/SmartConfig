@@ -17,7 +17,7 @@ UNIT=scd-accept
 UNITFILE=/run/systemd/system/$UNIT.service
 TESTUNIT=/etc/systemd/system/sc-accept.service
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
+fail() { printf 'FAIL: %b\n' "$*" >&2; exit 1; }
 step() { echo "== $*"; }
 note() { echo "   note: $*"; }
 
@@ -177,12 +177,13 @@ rc=$?
 set -e
 [ $rc -eq 2 ] && grep -q 'not saved' <<<"$out" || fail "quit: exit $rc:\n$out"
 grep -q '/bin/true' "$TESTUNIT" || fail "quit changed the file"
-# Edit again, then a clean version: saved.
+# Edit again, then a clean version: saved. Piped answers are not echoed,
+# so "saved" follows the prompt on its line.
 set +e
 out=$(printf 'e\n' | EDITOR=$ED SUDO_EDITOR= VISUAL= "$SC" edit "$TESTUNIT" 2>&1)
 rc=$?
 set -e
-[ $rc -eq 0 ] && grep -q 'What now?' <<<"$out" && grep -q "^saved $TESTUNIT as " <<<"$out" || fail "edit again: exit $rc:\n$out"
+[ $rc -eq 0 ] && grep -q 'What now?' <<<"$out" && grep -q "\[e\]: saved $TESTUNIT as " <<<"$out" || fail "edit again: exit $rc:\n$out"
 grep -q '/bin/false' "$TESTUNIT" || fail "edit again did not save"
 # Save anyway: the row says so.
 set +e
