@@ -42,8 +42,12 @@ fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`
 Step 13 is in (`a73dfde`, `2e4d4ee`) and the acceptance script is
 committed, not run (`2ff038b`). Chunk D is reviewed
 ([reviews/2026-10-03-m3-chunk-d.md](reviews/2026-10-03-m3-chunk-d.md),
-fixes `2fb037e`, plan change C8). **Next: docs (step 15)**; then the
-sign-off runs (root, your OK, after the soak check).
+fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
+**M3 is built. Next: the sign-off runs** (plan section 11), each with
+your OK, after the M2 soak check and a fresh snapshot: S1 `make
+accept-m3` (it refuses to run next to the real scd, so scd is stopped
+for it); S2 install the M3 build and review `sc check` on the real
+system with you; S3 the owner scenario; S4 final review and tag `m3`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1062,3 +1066,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   under race. A stray `sc` binary from `go build ./cmd/sc` got into the
   fix commit; it was taken out before the push, and `/sc` is now
   ignored.
+- **M3 step 15, docs.**
+  - README: M3 status; `make accept-m3`; a new section, "Check before
+    it breaks", with `sc check` (`<id>`, `--as`, `-v`, exit codes),
+    `sc edit`, `sc scope`, what each checker runs, and scd's check
+    lines. The example output comes from a made-up fstab.
+  - MILESTONES: the current state, and M3 notes with their deliberate
+    limits.
+  - CLAUDE.md: `accept-m3.sh` added to the layout.
+
+  Every relative link resolves.

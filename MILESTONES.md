@@ -12,8 +12,10 @@
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M3, plan approved 2026-10-03 (`docs/M3_PLAN.md`), being built. The M2 follow-ups below are done; the
-deferred M2 soak check runs alongside M3 (your call, 2026-10-03).
+Current: M3, plan approved 2026-10-03 (`docs/M3_PLAN.md`), built and
+reviewed in four chunks. Its sign-off runs (root, your OK) follow the M2
+soak check, which runs alongside it (your call, 2026-10-03). The M2
+follow-ups below are done.
 
 ## M1 notes
 
@@ -155,3 +157,38 @@ deferred by the owner. The next session checks what scd has run by then.
   directory is skipped instead of failing the start (`5b57aaf`); orphan
   objects count against the per-file limit (`2a8b686`).
 - Stale `.NAME.sc-tmp-*` files: done, reported, not removed (`7463e5d`).
+
+## M3 notes
+
+Checkers for the files that stop a boot or lock the owner out: `sc check`,
+`sc check <id>` and `sc check --as PATH FILE`; `sc edit`, which checks an
+edit before it replaces the file; a check by scd after every change it
+records; and `sc scope`. Plan: [docs/M3_PLAN.md](docs/M3_PLAN.md), with
+its changes after approval (C1 to C8) in section 15. Reviews:
+[chunk A](docs/reviews/2026-10-03-m3-chunk-a.md),
+[B](docs/reviews/2026-10-03-m3-chunk-b.md),
+[C](docs/reviews/2026-10-03-m3-chunk-c.md),
+[D](docs/reviews/2026-10-03-m3-chunk-d.md).
+
+31 rules across 15 checkers, each with a fixed explanation (`sc check
+-v`). Each validator was first run on this VM in the form sc uses, to make
+sure it only checks, and severities follow what the consumer really does: an fstab
+line with `nofail` is a warning, a passwd file without root is a warning
+where nss-systemd supplies root.
+
+### Deliberate limits
+
+- Findings are worked out when asked, never stored.
+- `sc edit` and scd judge a change by the findings it adds; `sc check`
+  shows them all.
+- A file is checked alone, except netplan's files, which are merged as
+  netplan merges them. Cross-file conflicts (two sudoers drop-ins) are not
+  looked for.
+- As a user, `sc check` cannot read some files (sudoers, a 0600 netplan
+  file). It says so and exits 1; it never guesses.
+- `apply` lines only say when a change takes effect (`at the next boot`);
+  whether it was applied is not tracked.
+- scd does not check the startup baseline's `first seen` rows, restores,
+  `sc edit` rows or fingerprint-only files.
+- No checker yet for nft, logrotate, AppArmor or PAM: none has a proven
+  check-only form. The M2 plan's other "M3" items wait (plan section 13).

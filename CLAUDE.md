@@ -37,5 +37,5 @@ internal/fsutil   reads that never follow symlinks, atomic write, atomic symlink
 internal/scope    pure: which paths are recorded, tiers, fingerprint-only rules
 internal/watch    the watcher (sc watch): inotify, worker, rescans, limits
 internal/check    M3 checkers: findings, rules, the one place that runs validators
-scripts/          scd.service, smoke.sh, accept-m2.sh, build-sc-m1.sh
+scripts/          scd.service, smoke.sh, accept-m2.sh, accept-m3.sh, build-sc-m1.sh
 docs/             WORKLOG (read first), plans, reviews, visual explainers

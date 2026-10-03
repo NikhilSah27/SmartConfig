@@ -19,8 +19,15 @@ be undone.
 login's `~/.ssh` without anyone typing `sc`,
 including symlinks (systemd enable, disable, mask), deletions and new files.
 SSH host keys, `/etc/machine-id` and other secrets are kept as fingerprints
-only. Milestones 3 to 7 (checkers, rescue boot path, package, incident
-factory, local model) are planned.
+only.
+
+**Milestone 3 is built, not yet signed off** (plan
+[docs/M3_PLAN.md](docs/M3_PLAN.md)): checkers. `sc check` finds the
+problems in a config file that stop a boot or lock you out, `sc edit`
+checks an edit before it replaces the file, scd checks every change it
+records, and `sc scope` explains what SmartConfig does with a path. The
+sign-off runs on the dev VM are next. Milestones 4 to 7 (rescue boot path,
+package, incident factory, local model) are planned.
 
 ## Build
 
@@ -37,6 +44,7 @@ make fmt        # fails if gofmt would change anything
 make m1-compat  # the M1 binary still works on an M2 store
 make smoke      # M1 acceptance run against the real /etc/hosts (asks for sudo; restores it)
 make accept-m2  # M2 acceptance run in the VM (asks for sudo; its own test paths only)
+make accept-m3  # M3 acceptance run in the VM (asks for sudo, scd stopped; made-up files, one test unit)
 ```
 
 ## Use
@@ -102,6 +110,68 @@ sudo rm /etc/systemd/system/scd.service /usr/local/sbin/sc
 sudo systemctl daemon-reload
 ```
 
+## Check before it breaks (M3)
+
+```sh
+./bin/sc check                             # every file sc has a checker for
+./bin/sc check /etc/fstab                  # one file as it is now
+sudo ./bin/sc check 2c6901                 # a saved version (sc log lists them)
+./bin/sc check --as /etc/fstab new.fstab   # a file you are about to copy there
+./bin/sc check -v /etc/fstab               # with each rule's explanation
+sudo ./bin/sc edit /etc/fstab              # edit a copy, checked before it is saved
+./bin/sc scope /etc/fstab                  # recorded? tier? checker? applied when?
+```
+
+A finding is a `blocker` (the machine may not boot, or you may be locked
+out), an `error` (something stops working) or a `warning`:
+
+```
+$ sc check --as /etc/fstab new.fstab
+SEVERITY  FILE                         LINE  RULE                  PROBLEM
+blocker   /etc/fstab (from new.fstab)  1     fstab-source-missing  UUID=11111111-2222-3333-4444-555555555555 (for /data) is not a device on this machine
+blocker   /etc/fstab (from new.fstab)  2     fstab-option-typo     option "defalts" of /x looks like a misspelling of "defaults"
+2 blockers in 1 file.
+sc check -v explains; sc log FILE lists the versions to restore.
+```
+
+`sc check` exits 2 when a file has a blocker or an error, 1 when a file
+could not be checked (run it with sudo for files only root may read), and
+0 otherwise. With no argument it checks the files scd records that have a
+checker.
+
+What is checked, each with the system's own validator in a check-only form
+plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers
+(`visudo -c`), `sshd_config` (`sshd -t`), systemd units in
+`/etc/systemd/system` (`systemd-analyze verify`), `/etc/default/grub` and
+`grub.cfg` (`sh -n`, `grub-script-check`), netplan (netplan's generator on
+a scratch copy of all its files), udev rules (`udevadm verify`), passwd
+and group (`pwck -r`, `grpck -r`, with a made-up shadow file), sysctl
+(`sysctl --dry-run`), and `nsswitch.conf`, `ld.so.preload`, `/etc/hosts`,
+`/etc/nologin`, `/etc/ssh/sshd_not_to_be_run` by sc's rules alone. Validators run on copies in a private
+scratch directory, from fixed system directories (not `$PATH`), with no
+shell and a 10-second limit. If one is missing (in a rescue shell, say),
+sc's own rules still run and a note says so.
+
+`sc edit` opens `$SUDO_EDITOR`, `$VISUAL`, `$EDITOR`, `editor`, `nano` or
+`vi` on a copy. If the edit adds a blocker or an error, it explains each
+one and asks `(e)dit again, (s)ave anyway, (q)uit`; without a terminal it
+quits. The file is not touched until you save. The save is atomic and
+keeps the mode and owner, and `sc log` shows it as an `edit` row (after a
+row of the state before, if that was not yet recorded). A copy
+that was not saved is kept under `$SC_HOME/tmp/kept-*`.
+
+With the M3 build, scd also checks each change it records, made with any
+editor or tool, against the version before. Each problem the change added
+gets one journal line, at err for a blocker, warning for an error and
+notice for a warning, and `ok again` follows when the file is fixed:
+
+```
+T1 /etc/fstab: check: blocker fstab-source-missing, line 2: ... (3fa2c1)
+```
+
+The journal gets sc's own sentence, never a line of the file or a
+validator's output (both can quote a secret).
+
 ## Layout
 
 ```
@@ -109,8 +179,9 @@ cmd/sc/            the CLI (cobra), one file per command; sc watch is the daemon
 internal/store/    blobs + SQLite records: record, list, get, restore, diff, migrations
 internal/fsutil/   reads that never follow symlinks, atomic write-back and symlinks
 internal/scope/    which paths are watched, their tiers, fingerprint-only rules
-internal/watch/    the watcher: inotify, debounced worker, rescans, limits
-scripts/           scd.service, smoke.sh (M1) and accept-m2.sh (M2) acceptance runs
+internal/watch/    the watcher: inotify, debounced worker, rescans, limits, checks
+internal/check/    checkers: the file graph, rules and explanations, the validator runner
+scripts/           scd.service and the acceptance runs: smoke.sh (M1), accept-m2.sh, accept-m3.sh
 docs/              worklog, plans, reviews, visual explainers
 ```
 
