@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
@@ -778,6 +780,48 @@ func TestDirtyBoundFromMovedDir(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		p := filepath.Join(d, fmt.Sprintf("f%02d", i))
 		e.waitFor(p+" deleted", func() bool { return len(e.history(p)) == 2 })
+	}
+}
+
+// renameat2(RENAME_EXCHANGE) swaps two watched directories, with their
+// subdirectories: all stay watched, so later edits in each are recorded
+// from events, with no rescan (final review).
+func TestDirExchange(t *testing.T) {
+	nr, ok := map[string]uintptr{"amd64": 316, "arm64": 276}[runtime.GOARCH]
+	if !ok {
+		t.Skip("renameat2 number not known for " + runtime.GOARCH)
+	}
+	e := newEnv(t)
+	r := func(n string) string { return filepath.Join(e.root, n) }
+	os.MkdirAll(r("a/sub"), 0o755)
+	os.MkdirAll(r("b/sub"), 0o755)
+	put(t, r("a/sub/fa"), "a\n", 0o644)
+	put(t, r("b/sub/fb"), "b\n", 0o644)
+	var n atomic.Int32
+	testHookRescan = func(string) { n.Add(1) }
+	t.Cleanup(func() { testHookRescan = nil })
+	e.start()
+	start := n.Load()
+	pa, _ := syscall.BytePtrFromString(r("a"))
+	pb, _ := syscall.BytePtrFromString(r("b"))
+	cwd := -100 // AT_FDCWD
+	const exchange = 2
+	if _, _, errno := syscall.Syscall6(nr, uintptr(cwd), uintptr(unsafe.Pointer(pa)),
+		uintptr(cwd), uintptr(unsafe.Pointer(pb)), exchange, 0); errno != 0 {
+		t.Skip("renameat2:", errno)
+	}
+	e.barrier()
+	for _, p := range []string{"a/sub/fb", "b/sub/fa", "a/fb2", "b/fa2"} {
+		put(t, r(p), "edit\n", 0o644)
+	}
+	for _, p := range []string{"a/sub/fb", "b/sub/fa", "a/fb2", "b/fa2"} {
+		e.waitFor("the edit of "+p, func() bool {
+			cs, err := e.st.List(r(p), 1)
+			return err == nil && len(cs) == 1 && cs[0].Kind == store.KindFile && cs[0].Size == int64(len("edit\n"))
+		})
+	}
+	if got := n.Load() - start; got != 0 {
+		t.Fatalf("%d rescans: the edits must come from events", got)
 	}
 }
 

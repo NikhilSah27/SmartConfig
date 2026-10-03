@@ -530,6 +530,14 @@ func (w *Watcher) handle(in *Inotify, e Event) {
 	case isDir && e.Mask&syscall.IN_MOVED_FROM != 0:
 		w.unwatchBelow(p)
 		w.markLocked(p, reasonEvent, false, true)
+		// After renameat2(RENAME_EXCHANGE) another directory is at p, and
+		// the unwatch above may have removed the watches its arrival under
+		// p just added: walk it again.
+		if fi, err := os.Lstat(p); err == nil && fi.IsDir() {
+			w.mu.Unlock()
+			w.walk(in, p, reasonEvent, false, w.currentGen())
+			w.mu.Lock()
+		}
 	case isDir:
 		// DELETE of a directory: its children's events cover it.
 	default:
