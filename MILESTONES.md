@@ -108,8 +108,9 @@ see `docs/reviews/`) led to these behaviours. Each has a test.
 - logrotate reads hidden files in /etc/logrotate.d, including sc's
   `.NAME.sc-tmp-*` during a restore's few milliseconds; no suffix avoids it.
 - kill -9 during a restore can leave a `.NAME.sc-tmp-*` file next to the
-  target. M2 was planned to clear stale ones at start; it does not yet (an
-  M2 follow-up), and the watcher ignores those names.
+  target. The watcher does not record those names; a walk reports one
+  older than 10 minutes once per run (a warning line) and leaves it for
+  the admin: it may hold the only copy of what the restore was writing.
 - Restoring a file owned by another user, or into a directory that is not
   root's, goes through paths that a hostile user could swap; M1 is for root
   on root-owned config. M2 handles user-owned paths (plan step 6).
@@ -153,4 +154,4 @@ deferred by the owner. The next session checks what scd has run by then.
 - Home files, all done: at startup, a home root that is not a real
   directory is skipped instead of failing the start (`5b57aaf`); orphan
   objects count against the per-file limit (`2a8b686`).
-- Clean up or report stale `.NAME.sc-tmp-*` files.
+- Stale `.NAME.sc-tmp-*` files: done, reported, not removed (`7463e5d`).

@@ -47,7 +47,7 @@ your yes):
 4. done (`465b30d`): remove stale watches after an overflow;
 5. done (`d76a295`): trim directory listings after a walk;
 6. done (`2a8b686`): count orphan objects against the per-file limit for home files;
-7. report stale `.NAME.sc-tmp-*` files;
+7. done (`7463e5d`): report stale `.NAME.sc-tmp-*` files;
 8. needs your OK on the design first: a rate limit for a constantly
    rewritten system file, and a keyed id for digest rows.
 
@@ -717,3 +717,20 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `TestUserFileOrphansLimited`. Checks: build, gofmt, vet, `go test
   ./...` as user, `internal/watch` and `cmd/sc` as root, the user-file
   tests 5 times under race, `make race`: all clean. Not installed.
+- **M2 follow-up 7, stale restore temp files, done `7463e5d`:** `kill -9`
+  during `sc restore` can leave `.<base>.sc-tmp-<random>` next to its
+  target, and the scope excludes those names, so nothing said so. A walk
+  now logs one older than 10 minutes once per run, at warning: `stale
+  temp file PATH (written TIME), left by an interrupted sc restore; not
+  recorded, remove it`. Reported, not removed: it may hold the only copy
+  of what the restore was writing, a fresh one may be a restore at work,
+  and a removal in `/etc` is the admin's call. MILESTONES no longer says
+  the watcher clears them. New test `TestStaleTempReported`. Checks:
+  build, gofmt, vet, `go test ./...` as user, `internal/watch` and
+  `cmd/sc` as root, the test 5 times under race: clean.
+  - `make race` failed in `TestRescanUnderBusyEvents` (a 30 s wait timed
+    out; "7 rescans" on a rerun). Alone under race, back to back, it
+    failed 4 of 4 and then 2 of 4 on `6c1f306` (before today's
+    follow-ups) and exactly the same on this commit: the VM's CPU
+    starvation (pressure up to 13% this hour), not the changes. CI passes
+    it. Worth making less timing-bound before M3.
