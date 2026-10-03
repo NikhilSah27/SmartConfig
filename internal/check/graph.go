@@ -3,8 +3,11 @@ package check
 import (
 	_ "embed"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,6 +143,46 @@ func (g *Graph) Checkers() []string {
 		}
 	}
 	return out
+}
+
+// Files returns the regular files on this machine that a checker reads,
+// sorted: what sc check looks at when it is given no path. Symlinks are
+// left out, as their content is another file's.
+func (g *Graph) Files() []string {
+	seen := map[string]bool{}
+	for _, r := range g.checks {
+		dir := literalDir(r.g.String())
+		if dir == "" || dir == "/" {
+			continue // a pattern with no fixed directory is not walked
+		}
+		filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && d.Type().IsRegular() && r.g.Match(p) && g.Checker(p) == r.checker {
+				seen[p] = true
+			}
+			return nil // an unreadable directory is skipped
+		})
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// literalDir returns the directory a pattern's matches all lie in: the
+// pattern itself when it has no glob character, "" when it has no fixed
+// directory.
+func literalDir(pattern string) string {
+	i := strings.IndexAny(pattern, `*?[{\`)
+	if i < 0 {
+		return pattern
+	}
+	j := strings.LastIndexByte(pattern[:i], '/')
+	if j < 0 {
+		return "" // "**/name": no fixed directory
+	}
+	return pattern[:j]
 }
 
 // Apply says when a saved change of p takes effect, or "" when the graph

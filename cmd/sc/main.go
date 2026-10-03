@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -196,6 +197,11 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	if err := root.ExecuteContext(ctx); err != nil {
+		var ec exitCode
+		if errors.As(err, &ec) {
+			claimEnd()
+			return int(ec)
+		}
 		if claimEnd() {
 			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
 			fmt.Fprintf(stderr, "%ssc: %s\n", errPrefix(stderr), msg)
@@ -205,6 +211,13 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 	claimEnd()
 	return 0
 }
+
+// exitCode is the error of a command that has printed what it found and
+// only has an exit status left to give (sc check: 2 when a file has a
+// blocker or an error).
+type exitCode int
+
+func (e exitCode) Error() string { return "exit status " + strconv.Itoa(int(e)) }
 
 func newRoot() *cobra.Command {
 	root := &cobra.Command{
@@ -222,6 +235,7 @@ func newRoot() *cobra.Command {
 		newDiffCmd(),
 		newRestoreCmd(),
 		newWatchCmd(),
+		newCheckCmd(),
 	)
 	return root
 }

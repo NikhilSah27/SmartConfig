@@ -1,6 +1,8 @@
 package check
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -54,6 +56,29 @@ func TestGraph(t *testing.T) {
 	}
 	if g.Mode("/etc/sudoers.d/90-x") != 0o440 || g.Mode("/etc/sudoers") != 0o644 || g.Mode("/etc/fstab") != 0o644 {
 		t.Errorf("Mode: %o %o", g.Mode("/etc/sudoers.d/90-x"), g.Mode("/etc/sudoers"))
+	}
+}
+
+// Files finds the regular files the graph's patterns match on disk.
+func TestGraphFiles(t *testing.T) {
+	d := t.TempDir()
+	for _, f := range []string{"fstab", "sudoers.d/a", "sudoers.d/b", "sudoers.d/sub/c", "units/x.service", "units/y.mount", "units/deep/z.timer", "other"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(d, f)), 0o755)
+		os.WriteFile(filepath.Join(d, f), nil, 0o644)
+	}
+	os.Symlink(filepath.Join(d, "other"), filepath.Join(d, "sudoers.d", "link"))
+	g, err := ParseGraph("check fstab " + d + "/fstab " + d + "/missing\ncheck sudoers " + d + "/sudoers.d/*\n" +
+		"check unit " + d + "/units/*.{service,timer} " + d + "/units/deep/**\ncheck any **/nowhere")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"fstab", "sudoers.d/a", "sudoers.d/b", "units/deep/z.timer", "units/x.service"}
+	got := g.Files()
+	for i := range got {
+		got[i], _ = filepath.Rel(d, got[i])
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("Files() = %q, want %q", got, want)
 	}
 }
 
