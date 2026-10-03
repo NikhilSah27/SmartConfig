@@ -927,3 +927,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   vet, the package as user and as root (the real-sshd test included) and
   under race, static: clean. Step 8 (sudoers) follows when its agent
   reports.
+- **sshd test fix, `d4ad4e9`:** CI's root pass failed `TestSshdReal`: on
+  a runner where ssh.service never ran there is no `/run/sshd`, and sshd
+  (as root) rightly does not finish, which the checker reports as a note.
+  The test assumed the dev VM's `/run/sshd`; it now expects the note
+  there. Checked as root with `/run` hidden in a private mount namespace.
+- **M3 step 8, `check: sudoers`, `c588cdd`** (parallel agent, reviewed and
+  integrated here): `visudo -c -f` on the scratch copy; one
+  `sudoers-syntax` finding per message about this file, text of ours
+  (never the line): syntax errors and an alias defined twice are
+  blockers, a bad Defaults option or a missing include an error, unused
+  or undefined aliases warnings. Problems in included files and anything
+  visudo could not read are notes. `sudoers-mode`, changed in review:
+  error only where sudo ignores the file (root does not own it, others or
+  a non-root group may write it, per sudoers(5)); any other mode than
+  0440 is a warning (sudo reads it, only `visudo -c` complains). Note
+  from the agent: sudo 1.9.15 recovers from a syntax error by dropping
+  the rest of the line; the explanation says so. Checks: gofmt, vet, the
+  package as user, as root and as root without `/run`, under race: clean.
