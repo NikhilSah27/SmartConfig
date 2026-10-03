@@ -28,19 +28,13 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**VM rolled back, waiting for you (2026-10-03).** At about 00:01 UTC
-(05:31 IST) the VM came back from the live snapshot taken before S5
-(22:22 UTC). Everything done on the VM after that is gone from it: the
-`apt upgrade` (kernel 7.0.0-38), the `m2` install (`/usr/local/sbin/sc`
-is `a0bee866…` again), the store rows written after it (2121 then, 1545
-now; integrity ok), `manifest-post-s5apt.txt`, and the S5 scripts and
-logs in `~/smartconfig-work/signoff/`. GitHub has all the code, the docs
-and the tag. Your choice:
-1. If a snapshot taken after 23:54 UTC exists (`m2-accepted`), restore it.
-2. If not, redo on this VM, each with your yes: install the `m2` build,
-   then the `apt upgrade` and a new post-upgrade manifest.
-Your pick: 2, both. `m2` is reinstalled; the `apt upgrade` is next.
-The soak check below waits until then. Details in the log, 2026-10-03.
+**VM back at the M2 state (2026-10-03).** At about 00:01 UTC the VM came
+back from the pre-S5 snapshot (22:22 UTC), which undid everything done on
+it after that. Redone with your yes: the `m2` build reinstalled, the
+`apt upgrade` rerun, the post-upgrade manifest saved again. S5 was not
+rerun; its results are in the log for 2026-10-02. The store has 1546
+rows (2121 before the rollback; the S5 test rows are gone). Details in
+the log, 2026-10-03.
 
 **Now: M2 follow-ups** (your "go ahead", 2026-10-02). M2 is done (tag
 `m2`). Waiting for you: the VirtualBox snapshot `m2-accepted`. The
@@ -69,6 +63,8 @@ review runs while the next chunk is built (your call, 2026-09-30).
 **Still waiting for you:**
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
+- [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
+  controller (black screens after login, log 2026-10-03).
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
@@ -621,3 +617,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   sha256 `03fbc30d…`, the same binary as before the rollback; installed to
   `/usr/local/sbin/sc`, scd restarted: baseline 0 first seen, 0 changed,
   0 deleted (555 ms), 0 restarts, 13 MB; store integrity ok, 1545 rows.
+- **Clock 6 h 24 min behind, fixed:** the VM was paused for about 6.4
+  hours during the session (61 min of uptime against 7.4 h of real time).
+  No guest-additions service resyncs the clock on resume, and timesyncd's
+  next poll was up to 34 min away; apt refused the mirror's index as
+  "not valid yet". `systemctl restart systemd-timesyncd` stepped it to
+  07:32 UTC (GitHub's Date header agrees). Commits `f592ece` and
+  `cc5e620` carry committer times 6 h 24 min early.
+- **`apt upgrade` rerun** (your yes; the same 31 as your "all 31"): 25
+  upgraded, 8 new (kernel 7.0.0-38, not booted yet), 6 mesa packages held
+  back by phasing. Across `/etc` and `/boot/grub` only
+  `/boot/grub/grub.cfg` changed, recorded once (`862cd3`, T1).
+  `manifest-post-s5apt.txt` and `sha256-post-s5apt.txt` saved again in
+  `/var/backups/smartconfig`. scd 0 restarts, 11 MB; store integrity ok,
+  1546 rows.
