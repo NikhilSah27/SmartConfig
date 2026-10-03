@@ -62,7 +62,13 @@ func startWatch(t *testing.T, args ...string) (stderr *lockedBuf, stop func() in
 
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	waitUntilWithin(t, 10*time.Second, what, cond)
+}
+
+// waitUntilWithin is waitUntil with its own upper bound.
+func waitUntilWithin(t *testing.T, d time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
@@ -340,7 +346,10 @@ func TestWatchSIGHUPRescans(t *testing.T) {
 	f.Close()
 	time.Sleep(200 * time.Millisecond)
 	cmd.Process.Signal(syscall.SIGHUP)
-	waitUntil(t, "the rescan row", func() bool { return strings.Contains(errb.String(), conf+": changed (found by rescan)") })
+	// sc watch keeps 10 s (RescanMinGap) between rescans, counted from the
+	// startup one: the row comes about 10 s after the start, more on a
+	// slow machine.
+	waitUntilWithin(t, 60*time.Second, "the rescan row", func() bool { return strings.Contains(errb.String(), conf+": changed (found by rescan)") })
 	cmd.Process.Signal(syscall.SIGTERM)
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("after SIGHUP then SIGTERM: %v\n%s", err, errb.String())

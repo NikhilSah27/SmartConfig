@@ -962,10 +962,15 @@ func TestRescanUnderBusyEvents(t *testing.T) {
 		f.WriteString("two\n")
 		f.Close()
 	}
+	// New files every 10 ms while the rescan runs, but fewer than MaxDirty
+	// in all: more would hit the bound for real on a machine whose worker
+	// handles under 100 paths a second (this VM under the race detector),
+	// and its rescans are right. Only rescan marks counted as event marks,
+	// the bug, can then start a second rescan.
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
-	go func() { // a new file every 10 ms
-		for i := 0; ; i++ {
+	go func() {
+		for i := 0; i < 60; i++ {
 			select {
 			case <-stop:
 				return

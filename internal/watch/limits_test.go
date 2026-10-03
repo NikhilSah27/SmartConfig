@@ -63,6 +63,11 @@ func queueLimit(t *testing.T) int {
 	return n
 }
 
+// overflowWait bounds the waits after an overflow: the reader first works
+// through a full kernel queue (16,384 events), which takes seconds on a slow
+// machine under the race detector. It is only an upper bound.
+const overflowWait = 60 * time.Second
+
 // A real overflow: events beyond the kernel queue are lost, the overflow
 // is logged, and the rescan finds what no event reported.
 func TestOverflow(t *testing.T) {
@@ -82,7 +87,7 @@ func TestOverflow(t *testing.T) {
 	flood(t, r("a"), r("b"), limit+4000)
 	put(t, r("late"), "late\n", 0o644)
 	release()
-	e.waitFor("late", func() bool { return len(e.history(r("late"))) > 0 })
+	e.waitForWithin(overflowWait, "late", func() bool { return len(e.history(r("late"))) > 0 })
 	e.want(r("late"), "file first seen (found by rescan)")
 	if !strings.Contains(e.log.String(), "event queue of the system roots overflowed") {
 		t.Fatalf("log:\n%s", e.log.String())
@@ -109,9 +114,9 @@ func TestOverflowIsolation(t *testing.T) {
 	flood(t, filepath.Join(ssh, "authorized_keys"), filepath.Join(ssh, "authorized_keys2"), limit+4000)
 	sys := filepath.Join(e.root, "during")
 	put(t, sys, "x\n", 0o644)
-	e.waitFor("the system change", func() bool { return len(e.history(sys)) > 0 })
+	e.waitForWithin(overflowWait, "the system change", func() bool { return len(e.history(sys)) > 0 })
 	release()
-	e.waitFor("the home overflow", func() bool {
+	e.waitForWithin(overflowWait, "the home overflow", func() bool {
 		return strings.Contains(e.log.String(), "event queue of the home roots overflowed")
 	})
 	e.want(sys, "deleted did not exist", "file created")
@@ -146,7 +151,7 @@ func TestOverflowDropsStaleWatch(t *testing.T) {
 	os.Mkdir(r("d"), 0o755)
 	put(t, r("late"), "late\n", 0o644)
 	release()
-	e.waitFor("the rescan", func() bool { return len(e.history(r("late"))) > 0 })
+	e.waitForWithin(overflowWait, "the rescan", func() bool { return len(e.history(r("late"))) > 0 })
 
 	e.w.mu.Lock()
 	for in, m := range e.w.wds {
