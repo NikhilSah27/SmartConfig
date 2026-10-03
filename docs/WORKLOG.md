@@ -42,7 +42,7 @@ follow-ups from the final review, one at a time, each with a test, checks,
 commit and push; none touches the running scd (installing a new build needs
 your yes):
 1. done (`5b57aaf`): at startup, skip a home root that is not a real directory (instead of failing);
-2. `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
+2. done (`bd8fad9`): `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
 3. re-walk after a directory swap (`RENAME_EXCHANGE`);
 4. remove stale watches after an overflow;
 5. trim directory listings after a walk;
@@ -647,3 +647,23 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     7 with the change, and never alone (6 of 6 pass each way);
     `TestUserFileLimits` timed out once in 7, never alone (8 of 8 each
     way). Load on a CPU-starved VM; CI is the reference.
+- **M2 follow-up 2, a root moved away, fixed `bd8fad9`:** a rescan marked
+  stored paths only under usable roots, so after `mv ~/.ssh ~/.ssh.old`
+  its files kept present rows, and a new `~/.ssh` gave `changed` rows
+  with no `deleted` row first. A login root that is missing, a symlink or
+  not a directory is now kept as gone: the rescan marks its stored paths
+  and the worker reads them below it (absent, or the symlink refused).
+  Moved away while watching: `deleted (found by rescan)`; a new `.ssh`
+  then gives `created`. While scd is down: `deleted while not watching`.
+  A scope root that is gone still gets no rows, since a separate `/boot`
+  may only be unmounted (mount tracking is M4); a root that only fails
+  with another error (an NFS home's `EACCES`) is not taken as gone.
+  New tests `TestLoginRootGone`, `TestRootGoneAtStartup`.
+  - A user renaming their `.ssh` in a loop now gets a `deleted` and a
+    `created` row per file, about one pair a minute (the `created` row
+    waits `UserFileGap`): at most 4 files per login, no new objects. The
+    general rate limit is follow-up 8.
+  - Checks: build, gofmt, vet, `go test ./...` as user, `internal/watch`
+    and `cmd/sc` as root; the root tests 5 times under race: clean.
+    `make race`: only the known `TestRescanUnderBusyEvents` flake (4
+    rescans this time). Not installed.

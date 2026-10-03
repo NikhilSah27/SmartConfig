@@ -148,8 +148,8 @@ deferred by the owner. The next session checks what scd has run by then.
 - Digest rows: use a keyed id, so a journal reader cannot test guesses
   at a low-entropy secret.
 - Watches: re-walk after a directory swap (`RENAME_EXCHANGE`), remove
-  stale watches after an overflow, add `deleted` rows when a root moves
-  away, and trim directory listings after a walk.
+  stale watches after an overflow, and trim directory listings after a
+  walk. (Done, `bd8fad9`: `deleted` rows when a login `.ssh` moves away.)
 - Home files: count orphan objects against the per-file limit. (Done,
   `5b57aaf`: at startup, a home root that is not a real directory is
   skipped instead of failing the start.)
