@@ -20,6 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/scope"
 	"smartconfig/internal/store"
@@ -43,6 +44,8 @@ type Config struct {
 	PathBurst    int           // 20 rows per system file, then
 	PathGap      time.Duration // one more per 5 min (follow-up 8)
 	MaxDirty     int           // 10,000
+	Checks       *check.Checks // after a recorded change (M3); nil: the default checks, scratch in Home
+	CheckQueue   int           // paths waiting for the checker; 100
 	Batch        int           // 50
 	Log          io.Writer     // stderr
 }
@@ -70,6 +73,9 @@ func (c Config) Defaults() Config {
 	}
 	if c.UserFileMax == 0 {
 		c.UserFileMax = 64 << 10
+	}
+	if c.CheckQueue == 0 {
+		c.CheckQueue = 100
 	}
 	if c.MaxDirty == 0 {
 		c.MaxDirty = 10000
@@ -151,9 +157,14 @@ type Watcher struct {
 	sshSet      map[string]bool      // login .ssh roots of the last rescan
 	userRows    map[string]time.Time // last row of each user-owned home file
 	rates       map[string]*pathRate // row budgets of system files that spent some
-	lowSpace    bool                 // under the free-space floor
-	nEvent      int                  // dirty entries marked by events (the MaxDirty bound)
-	stopping    atomic.Bool          // Run is stopping: walks end early
+
+	checks     *check.Checks              // the checks after a recorded change
+	checkGraph *check.Graph               // which files have a checker
+	checkQ     *checkQueue                // paths waiting for the checker
+	failing    map[string][]check.Finding // what was reported per path, until it is gone
+	lowSpace   bool                       // under the free-space floor
+	nEvent     int                        // dirty entries marked by events (the MaxDirty bound)
+	stopping   atomic.Bool                // Run is stopping: walks end early
 
 	poke chan struct{}
 }
@@ -237,6 +248,14 @@ func New(cfg Config) (*Watcher, error) {
 	}
 	w.wds[w.sys], w.wds[w.home] = map[int]string{}, map[int]string{}
 	w.baseline = &baseline{start: time.Now()}
+	w.checks = cfg.Checks
+	if w.checks == nil {
+		w.checks = &check.Checks{Home: cfg.Home}
+	}
+	if w.checkGraph = w.checks.Graph; w.checkGraph == nil {
+		w.checkGraph = check.DefaultGraph()
+	}
+	w.checkQ, w.failing = newCheckQueue(cfg.CheckQueue), map[string][]check.Finding{}
 	return w, nil
 }
 
@@ -400,7 +419,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	defer w.close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	errc := make(chan error, 3)
+	errc := make(chan error, 4)
 	var wg sync.WaitGroup
 	start := func(name string, f func()) {
 		wg.Add(1)
@@ -424,6 +443,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	start("system reader", func() { w.read(ctx, w.sys) })
 	start("home reader", func() { w.read(ctx, w.home) })
 	start("worker", func() { w.work(ctx) })
+	start("checker", func() { w.checker(ctx) })
 	<-ctx.Done()
 	w.stopping.Store(true)
 	w.sys.Close()
@@ -1098,6 +1118,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			w.noteUserRow(r.Change)
 			w.notePathRow(r.Change.Path)
 			w.logRow(r.Change, d.e.reason)
+			w.queueCheck(r.Change, d.e.reason)
 			if d.path == w.cfg.PasswdPath {
 				w.requestRescan()
 			}
