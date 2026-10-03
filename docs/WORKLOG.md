@@ -36,8 +36,10 @@ one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`).
 fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built and reviewed
 ([reviews/2026-10-03-m3-chunk-b.md](reviews/2026-10-03-m3-chunk-b.md),
 fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers in
-separate worktrees, Claude reviewed and integrated each. **Next: the
-chunk C review** (one reviewer), then chunk D.
+separate worktrees, Claude reviewed and integrated each; reviewed
+([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
+fixes `41c87bf`). **Next: chunk D** (steps 12-14), after the timing-bound
+watch tests are made robust.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -964,3 +966,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   any nsswitch line makes glibc reject the whole file.
 - Chunk C as a whole: gofmt, vet, `go test ./...` as user, the check
   package as root, as root without `/run`, and under race: clean.
+- **M3 chunk C review closed**
+  ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md)):
+  one reviewer, 8 findings, fixed in `41c87bf` except one cleanup. Two were
+  high: harmless systemd remarks (`User=nobody`) were reported as "the
+  unit does not load" (new `unit-notice` warning), and a bad nsswitch
+  action, which makes glibc reject the whole file, went unnoticed (new
+  `nsswitch-invalid` blocker; 13 cases checked against glibc 2.39 by
+  bind-mounting fabricated files in a private mount namespace). Also:
+  sudoers names sudo skips, the mode of a saved version, the walk depth
+  of brace patterns. `sc check` with no argument now checks what scd
+  records (10 files here; snapd's generated units are left out, as in
+  M2). Plan change C6. Checks: build, gofmt, vet, `go test ./...`, the
+  check package as root and under race: clean.
