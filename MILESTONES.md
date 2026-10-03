@@ -150,7 +150,7 @@ deferred by the owner. The next session checks what scd has run by then.
 - Watches, all done: `deleted` rows when a login `.ssh` moves away
   (`bd8fad9`), re-walk after a directory swap (`c0cfe77`), stale watches
   after an overflow (`465b30d`), listings trimmed by each walk (`d76a295`).
-- Home files: count orphan objects against the per-file limit. (Done,
-  `5b57aaf`: at startup, a home root that is not a real directory is
-  skipped instead of failing the start.)
+- Home files, all done: at startup, a home root that is not a real
+  directory is skipped instead of failing the start (`5b57aaf`); orphan
+  objects count against the per-file limit (`2a8b686`).
 - Clean up or report stale `.NAME.sc-tmp-*` files.

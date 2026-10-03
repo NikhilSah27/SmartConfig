@@ -46,7 +46,7 @@ your yes):
 3. done (`c0cfe77`): re-walk after a directory swap (`RENAME_EXCHANGE`);
 4. done (`465b30d`): remove stale watches after an overflow;
 5. done (`d76a295`): trim directory listings after a walk;
-6. count orphan objects against the per-file limit for home files;
+6. done (`2a8b686`): count orphan objects against the per-file limit for home files;
 7. report stale `.NAME.sc-tmp-*` files;
 8. needs your OK on the design first: a rate limit for a constantly
    rewritten system file, and a keyed id for digest rows.
@@ -705,3 +705,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   still pass. Checks: build, gofmt, vet, `go test ./...` as user,
   `internal/watch` and `cmd/sc` as root, the proof tests 5 times under
   race, `make race`: all clean. Not installed.
+- **M2 follow-up 6, orphan objects of home files, fixed `2a8b686`:** `Record`
+  stores a new object before its transaction finds the path moved, and
+  keeps it. The home-file limit counted rows only, so a user who kept
+  rewriting a file in their `.ssh` got about ten retries 50 ms apart
+  (the `Quiet` of the tests), each leaving an object of up to 64 KiB,
+  before every row: reproduced, 11 tries in 1.5 s. A new object stored
+  for a home file whose record finds it moved now counts like a row, so
+  the retry waits `UserFileGap`: 1 try. Such orphans are still kept
+  (nothing is pruned in M2); they are now bounded like rows. New test
+  `TestUserFileOrphansLimited`. Checks: build, gofmt, vet, `go test
+  ./...` as user, `internal/watch` and `cmd/sc` as root, the user-file
+  tests 5 times under race, `make race`: all clean. Not installed.
