@@ -150,6 +150,7 @@ deferred by the owner. The next session checks what scd has run by then.
 - Watches: re-walk after a directory swap (`RENAME_EXCHANGE`), remove
   stale watches after an overflow, add `deleted` rows when a root moves
   away, and trim directory listings after a walk.
-- Home files: count orphan objects against the per-file limit. At
-  startup, skip a home root that is not a real directory.
+- Home files: count orphan objects against the per-file limit. (Done,
+  `5b57aaf`: at startup, a home root that is not a real directory is
+  skipped instead of failing the start.)
 - Clean up or report stale `.NAME.sc-tmp-*` files.

@@ -41,7 +41,7 @@ the log, 2026-10-03.
 follow-ups from the final review, one at a time, each with a test, checks,
 commit and push; none touches the running scd (installing a new build needs
 your yes):
-1. at startup, skip a home root that is not a real directory (instead of failing);
+1. done (`5b57aaf`): at startup, skip a home root that is not a real directory (instead of failing);
 2. `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
 3. re-walk after a directory swap (`RENAME_EXCHANGE`);
 4. remove stale watches after an overflow;
@@ -631,3 +631,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `manifest-post-s5apt.txt` and `sha256-post-s5apt.txt` saved again in
   `/var/backups/smartconfig`. scd 0 restarts, 11 MB; store integrity ok,
   1546 rows.
+- **M2 follow-up 1, startup race, fixed `5b57aaf`:** New checked SC_HOME
+  against every root, login `.ssh` roots too. A user who swapped `~/.ssh`
+  for a symlink to a directory holding SC_HOME, between the lstat and that
+  check, failed the start (reproduced with a test hook); 5 such failures
+  in 10 min leave the unit failed (`StartLimitBurst=5`). Now New checks
+  only the scope's roots; the startup rescan skips such a `.ssh` with a
+  log line, as later rescans already did. New test
+  `TestSSHRootSwappedAtStartup`. Build, gofmt, vet, `go test ./...` as
+  user, and `internal/watch` and `cmd/sc` as root: clean. Not installed:
+  scd still runs the `m2` build.
+  - `make race` is flaky on this VM, with and without the change:
+    `TestRescanUnderBusyEvents` ("3 rescans for one request") failed in 1
+    of 3 full race runs of the watch package on the parent commit and 3 of
+    7 with the change, and never alone (6 of 6 pass each way);
+    `TestUserFileLimits` timed out once in 7, never alone (8 of 8 each
+    way). Load on a CPU-starved VM; CI is the reference.
