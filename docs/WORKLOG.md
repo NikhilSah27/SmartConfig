@@ -33,8 +33,10 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
 one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built and reviewed
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
-fixes `a2e325f`). Step 5 (`afa9403`). **Next: step 6** (chunk B), `store:
-Replace`. Gate G2 stands: nothing is installed or run on the real system
+fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). **Next: step 7** (chunk B), `sc edit`.
+Your call (2026-10-03): several agents where that stays accurate, so the
+independent checkers of chunk C are built in parallel in separate
+worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -866,3 +868,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   directory (`**/name`); fixed before the commit. Checks: build, gofmt,
   vet, `go test ./...`, `check` and `cmd/sc` as root, race on the new
   tests, `make m1-compat`: clean.
+- **M3 step 6, `store: Replace`, `5f6068b`:** a file and its row written in
+  one commit under the write lock (restore's commit, now shared as
+  `commitWrite`), for `sc edit`. Saves the state before unless the newest
+  row holds it; one row of the new origin `edit`; a new file gets a `did
+  not exist` row first; `ErrFileChanged` when the path is no longer the
+  version read; the restore refusals apply. Tests: rows, modes, undo by
+  restore, the three races, refusals, 20 rounds against a running watcher
+  (no extra row), and `sc-m1` lists and restores an edit row. Checks:
+  build, gofmt, vet, `go test ./...`, `store` and `cmd/sc` as root,
+  race on `store` and the watcher test, `make m1-compat`: clean.
+- **Your call:** "use multiagent if possible if that can be done
+  accurately, not necessary". Chunk C's checkers (sudoers, sshd, units,
+  grub, plain rules) are independent: they are built by parallel agents
+  in separate worktrees after step 7, and integrated, checked and
+  committed here one at a time. Shared code stays in the session.
