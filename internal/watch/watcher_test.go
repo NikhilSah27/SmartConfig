@@ -92,7 +92,8 @@ func newEnv(t *testing.T) *env {
 		Quiet: 50 * time.Millisecond, Cap: time.Second, RescanEvery: time.Hour,
 		RescanMinGap: 50 * time.Millisecond, StoreBackoff: 200 * time.Millisecond,
 		FloorBackoff: 200 * time.Millisecond, UserFileGap: 100 * time.Millisecond,
-		Log: e.log,
+		PathBurst: 1000, // tests change one file many times; TestPathRateLimit sets its own
+		Log:       e.log,
 	}
 	return e
 }

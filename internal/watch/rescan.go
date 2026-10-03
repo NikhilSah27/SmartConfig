@@ -104,6 +104,74 @@ func (w *Watcher) limitUserFile(o *store.Obs) time.Time {
 	return time.Time{}
 }
 
+// pathRate is a system file's row budget (follow-up 8): PathBurst rows to
+// spend, one more earned every PathGap. A file a program rewrites without
+// pause gets PathBurst rows, then one per PathGap, each the newest state.
+type pathRate struct {
+	tokens float64   // rows left
+	at     time.Time // when tokens was brought up to date
+	warned bool      // the "changes constantly" line was logged
+}
+
+// refillLocked brings r up to now (caller holds mu).
+func (w *Watcher) refillLocked(r *pathRate, now time.Time) {
+	r.tokens = min(float64(w.cfg.PathBurst), r.tokens+float64(now.Sub(r.at))/float64(w.cfg.PathGap))
+	r.at = now
+}
+
+// limitPath returns when the next row of a system file may be written if
+// its budget is spent, or zero. Home files have their own limit.
+func (w *Watcher) limitPath(p string) time.Time {
+	if w.homeFile(p, 0) {
+		return time.Time{}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	r := w.rates[p]
+	if r == nil {
+		return time.Time{}
+	}
+	now := time.Now()
+	w.refillLocked(r, now)
+	if r.tokens >= 1 {
+		return time.Time{}
+	}
+	if !r.warned {
+		r.warned = true
+		w.logLine(prioWarning, fmt.Sprintf("%s changes constantly: recording it at most every %g min, the newest state",
+			show(p), w.cfg.PathGap.Minutes()))
+	}
+	return now.Add(time.Duration((1 - r.tokens) * float64(w.cfg.PathGap)))
+}
+
+// notePathRow spends one row of a system file's budget.
+func (w *Watcher) notePathRow(p string) {
+	if w.homeFile(p, 0) {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	now := time.Now()
+	r := w.rates[p]
+	if r == nil {
+		r = &pathRate{tokens: float64(w.cfg.PathBurst), at: now}
+		w.rates[p] = r
+	}
+	w.refillLocked(r, now)
+	r.tokens--
+}
+
+// pruneRatesLocked forgets the budgets that are full again, so the map
+// holds only files that changed lately; the next flood warns again
+// (caller holds mu).
+func (w *Watcher) pruneRatesLocked(now time.Time) {
+	for p, r := range w.rates {
+		if w.refillLocked(r, now); r.tokens >= float64(w.cfg.PathBurst) {
+			delete(w.rates, p)
+		}
+	}
+}
+
 // noteUserRow remembers when a user-owned home file was last recorded.
 func (w *Watcher) noteUserRow(c store.Change) {
 	if !w.homeFile(c.Path, c.UID) {

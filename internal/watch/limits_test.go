@@ -502,6 +502,32 @@ func TestUserFileOrphansLimited(t *testing.T) {
 	}
 }
 
+// A system file rewritten without pause gets PathBurst rows, then one per
+// PathGap: the newest state, marked (rate-limited), with one warning line
+// (follow-up 8, your pick).
+func TestPathRateLimit(t *testing.T) {
+	e := newEnv(t)
+	conf := filepath.Join(e.root, "conf")
+	put(t, conf, "v0\n", 0o644)
+	e.cfg.PathBurst, e.cfg.PathGap = 3, 4*time.Second // longer than a stall of this VM
+	e.start()                                         // the first seen row spends the first of 3
+	for i := 1; i <= 2; i++ {
+		put(t, conf, fmt.Sprintf("v%d\n", i), 0o644)
+		e.waitFor(fmt.Sprintf("v%d", i), func() bool { return len(e.history(conf)) == i+1 })
+	}
+	put(t, conf, "v3\n", 0o644) // none left: waits
+	time.Sleep(200 * time.Millisecond)
+	put(t, conf, "v4, the newest\n", 0o644)
+	e.waitForWithin(15*time.Second, "the limited row", func() bool { return len(e.history(conf)) == 4 })
+	e.want(conf, "file first seen", "file changed", "file changed", "file changed (rate-limited)")
+	if c := e.newest(conf); c.Size != int64(len("v4, the newest\n")) {
+		t.Fatalf("not the newest state: %+v", c)
+	}
+	if n := strings.Count(e.log.String(), conf+" changes constantly"); n != 1 {
+		t.Fatalf("warned %d times:\n%s", n, e.log.String())
+	}
+}
+
 // More than MaxDirty marks clear the set and request one rescan, which
 // finds every file.
 func TestDirtyBound(t *testing.T) {

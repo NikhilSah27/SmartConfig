@@ -40,6 +40,8 @@ type Config struct {
 	FloorBytes   uint64        // 256 MiB
 	UserFileMax  int64         // 64 KiB
 	UserFileGap  time.Duration // 60 s
+	PathBurst    int           // 20 rows per system file, then
+	PathGap      time.Duration // one more per 5 min (follow-up 8)
 	MaxDirty     int           // 10,000
 	Batch        int           // 50
 	Log          io.Writer     // stderr
@@ -59,6 +61,10 @@ func (c Config) Defaults() Config {
 	set(&c.StoreBackoff, 30*time.Second)
 	set(&c.FloorBackoff, 60*time.Second)
 	set(&c.UserFileGap, 60*time.Second)
+	set(&c.PathGap, 5*time.Minute)
+	if c.PathBurst == 0 {
+		c.PathBurst = 20
+	}
 	if c.FloorBytes == 0 {
 		c.FloorBytes = 256 << 20
 	}
@@ -107,6 +113,7 @@ type entry struct {
 	self       bool      // read the path itself
 	moved      int       // consecutive Moved results
 	notBefore  time.Time // a backoff no new event may cut short
+	limited    bool      // waited for the file's row budget: marked (rate-limited)
 }
 
 // watchRef is one watched directory.
@@ -143,6 +150,7 @@ type Watcher struct {
 	baseline    *baseline            // startup counts, nil once logged
 	sshSet      map[string]bool      // login .ssh roots of the last rescan
 	userRows    map[string]time.Time // last row of each user-owned home file
+	rates       map[string]*pathRate // row budgets of system files that spent some
 	lowSpace    bool                 // under the free-space floor
 	nEvent      int                  // dirty entries marked by events (the MaxDirty bound)
 	stopping    atomic.Bool          // Run is stopping: walks end early
@@ -195,6 +203,7 @@ func New(cfg Config) (*Watcher, error) {
 		listings: map[string]map[string]bool{}, dirty: map[string]*entry{},
 		logged: map[string]bool{}, poke: make(chan struct{}, 1),
 		sshSet: map[string]bool{}, userRows: map[string]time.Time{},
+		rates: map[string]*pathRate{},
 	}
 	roots, _, _, machine := w.usableRoots(sc)
 	w.scope = machine
@@ -818,6 +827,7 @@ func (w *Watcher) rescan(reason string) {
 	w.roots = keep
 	w.gone = gone
 	w.lastScan = time.Now()
+	w.pruneRatesLocked(w.lastScan)
 	w.mu.Unlock()
 	dirs := 0
 	for _, r := range keep {
@@ -1014,6 +1024,16 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			}
 			continue
 		}
+		if until := w.limitPath(d.path); !until.IsZero() {
+			d.e.limited = true // later changes merge in: the newest is recorded
+			w.mu.Lock()
+			w.holdLocked(d, until)
+			w.mu.Unlock()
+			continue
+		}
+		if d.e.limited {
+			o.Suffix += store.SuffixLimited
+		}
 		obs = append(obs, o)
 		handled = append(handled, d)
 	}
@@ -1076,6 +1096,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			w.mu.Unlock()
 		case r.Recorded:
 			w.noteUserRow(r.Change)
+			w.notePathRow(r.Change.Path)
 			w.logRow(r.Change, d.e.reason)
 			if d.path == w.cfg.PasswdPath {
 				w.requestRescan()
@@ -1176,6 +1197,7 @@ func (w *Watcher) remarkLocked(d due, t time.Time) {
 	if cur := w.dirty[d.path]; cur != nil {
 		cur.created = cur.created || e.created
 		cur.self = cur.self || e.self
+		cur.limited = cur.limited || e.limited
 		if t.Before(cur.due) && !t.Before(cur.notBefore) {
 			cur.due = t
 		}

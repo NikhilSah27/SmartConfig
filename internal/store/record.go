@@ -47,6 +47,7 @@ const (
 	SuffixNotWatching = " while not watching" // found by the startup rescan
 	SuffixRescan      = " (found by rescan)"  // found by a later rescan
 	SuffixChanging    = " (still changing)"   // recorded although never stable
+	SuffixLimited     = " (rate-limited)"     // waited for its file's row budget
 )
 
 // Result is what Record did with one observation.
