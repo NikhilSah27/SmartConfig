@@ -45,8 +45,12 @@ committed, not run (`2ff038b`). Chunk D is reviewed
 fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
 **M3 is built. Now: the sign-off runs** (plan section 11; your call,
 2026-10-03: close the M2 soak now and sign off, on the snapshot you
-already have). S1, S2 and S3 are done (log): the M3 build runs as scd.
-Next: S4, the final review of M3, then the docs and the `m3` tag.
+already have). S1, S2 and S3 are done, and S4's final review is
+closed ([reviews/2026-10-03-m3-final.md](reviews/2026-10-03-m3-final.md),
+fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
+`accept-m3` passes on the fixed build. **Next: your OK to install the
+fixed build as scd; then the `m3` tag.** Then the M4 plan (rescue path)
+for your approval.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1138,3 +1142,24 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (restore rows are not checked, plan section 7), so no "ok again".
     It also still holds sshd_config as failing, so an unrelated later
     change would log "ok again" at that point.
+- **M3 sign-off S4: final review closed**
+  ([reviews/2026-10-03-m3-final.md](reviews/2026-10-03-m3-final.md),
+  plan change C9).
+  - Three reviewer agents, each in its own clone: security, checker
+    correctness against the real tools, and operations.
+  - Two high findings, both fixed in `297fbc7`:
+    - fstab bind, image and swap-file sources were never looked for.
+    - An emptied or admin-less passwd, group or sudoers file passed,
+      though each locks Ubuntu's owner out (shown with sudo in a private
+      mount namespace).
+  - Fixed in `297fbc7` and `bb31f3e`: 6 of 7 medium findings, among them
+    a relative `SC_HOME` giving a false clean and a timed-out validator
+    giving "ok again"; plus 7 low ones and a cleanup, among them "ok
+    again" at a restore (the S3 gap).
+  - Eight items go on the follow-up list in MILESTONES, the largest a
+    checker for unit drop-ins.
+  - Checks: gofmt and vet clean; all tests pass as a user, as root and
+    under race; `make m1-compat` passes; CI green.
+  - `accept-m3.sh`, with cases for the new rules, passed again as root
+    on `bb31f3e` with scd stopped and started again around it.
+  - `sc check` as root on the real system: no problems in 24 files.

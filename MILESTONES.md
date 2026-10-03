@@ -164,13 +164,14 @@ Checkers for the files that stop a boot or lock the owner out: `sc check`,
 `sc check <id>` and `sc check --as PATH FILE`; `sc edit`, which checks an
 edit before it replaces the file; a check by scd after every change it
 records; and `sc scope`. Plan: [docs/M3_PLAN.md](docs/M3_PLAN.md), with
-its changes after approval (C1 to C8) in section 15. Reviews:
+its changes after approval (C1 to C9) in section 15. Reviews:
 [chunk A](docs/reviews/2026-10-03-m3-chunk-a.md),
 [B](docs/reviews/2026-10-03-m3-chunk-b.md),
 [C](docs/reviews/2026-10-03-m3-chunk-c.md),
-[D](docs/reviews/2026-10-03-m3-chunk-d.md).
+[D](docs/reviews/2026-10-03-m3-chunk-d.md),
+[final](docs/reviews/2026-10-03-m3-final.md).
 
-31 rules across 15 checkers, each with a fixed explanation (`sc check
+34 rules across 15 checkers, each with a fixed explanation (`sc check
 -v`). Each validator was first run on this VM in the form sc uses, to make
 sure it only checks, and severities follow what the consumer really does: an fstab
 line with `nofail` is a warning, a passwd file without root is a warning
@@ -185,10 +186,31 @@ where nss-systemd supplies root.
   netplan merges them. Cross-file conflicts (two sudoers drop-ins) are not
   looked for.
 - As a user, `sc check` cannot read some files (sudoers, a 0600 netplan
-  file). It says so and exits 1; it never guesses.
+  file). It says so and exits 1; it never guesses. A validator cut short
+  (out of time, killed) also gives exit 1.
+- The admins are the members of sudo and admin. On a machine where root
+  logs in with a password and nobody is in sudo, `sc check` reports
+  `group-no-admin`; scd and `sc edit` do not, as it is not new.
 - `apply` lines only say when a change takes effect (`at the next boot`);
   whether it was applied is not tracked.
 - scd does not check the startup baseline's `first seen` rows, restores,
   `sc edit` rows or fingerprint-only files.
 - No checker yet for nft, logrotate, AppArmor or PAM: none has a proven
   check-only form. The M2 plan's other "M3" items wait (plan section 13).
+
+### M3 follow-ups (from the final review, none high)
+
+1. A checker for unit drop-ins (`*.service.d/*.conf`, what `systemctl
+   edit` writes): verify the unit together with its drop-ins (medium).
+2. sshd: a warning for a `ListenAddress` this machine does not have
+   (SSH is gone at the next boot).
+3. sshd: check a drop-in together with the main file, not alone (a false
+   blocker when the two only work together).
+4. Notes: keep a validator's raw lines for `-v`.
+5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
+   its scratch copy at once (now swept after an hour).
+6. A read-only root (M4's rescue shell): run sc's own rules without a
+   scratch copy.
+7. scd: look up only the rows a check needs, not a path's whole history.
+8. Cosmetic: an unclosed quote in `/etc/default/grub` is reported past
+   the last line; two swap lines share one findmnt heading.
