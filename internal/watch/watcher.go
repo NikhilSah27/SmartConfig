@@ -1015,6 +1015,13 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			return
 		}
 	}
+	// Record stores a new object before it finds a path moved, and keeps
+	// it. For a home file that counts against UserFileGap like a row, or a
+	// user rewriting their files would add one object per retry.
+	homeObj := make([]bool, len(obs))
+	for i, o := range obs {
+		homeObj[i] = o.State != nil && w.homeFile(o.Path, o.State.Meta.UID) && w.needsObject(o)
+	}
 	if testHookBeforeStoreRecord != nil {
 		testHookBeforeStoreRecord()
 	}
@@ -1037,6 +1044,9 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 		case r.Moved:
 			w.mu.Lock()
 			d.e.moved++
+			if homeObj[i] {
+				w.userRows[d.path] = time.Now()
+			}
 			w.remarkLocked(d, time.Now().Add(w.cfg.Quiet))
 			w.mu.Unlock()
 		case r.Recorded:

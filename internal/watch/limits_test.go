@@ -461,6 +461,47 @@ func TestUserFileLimits(t *testing.T) {
 	}
 }
 
+// A home file rewritten between its read and its record leaves its new
+// object stored with no row. That object counts against UserFileGap like
+// a row: a user rewriting their .ssh files without pause adds one object
+// per file per gap, not one per retry (final review).
+func TestUserFileOrphansLimited(t *testing.T) {
+	e := newEnv(t)
+	keys := filepath.Join(e.user, ".ssh", "authorized_keys") // made later: no row starts the gap
+	e.cfg.UserFileGap = time.Minute
+	var armed atomic.Bool
+	var tries atomic.Int32
+	testHookBeforeStoreRecord = func() {
+		if armed.Load() { // the record finds keys moved
+			os.WriteFile(keys, []byte(fmt.Sprintf("k%d\n", tries.Add(1))), 0o600)
+		}
+	}
+	t.Cleanup(func() { testHookBeforeStoreRecord = nil })
+	e.start()
+	objects := func() int {
+		n := 0
+		filepath.Walk(filepath.Join(e.home, "objects"), func(_ string, fi os.FileInfo, err error) error {
+			if err == nil && fi.Mode().IsRegular() {
+				n++
+			}
+			return nil
+		})
+		return n
+	}
+	before := objects()
+	armed.Store(true)
+	put(t, keys, "rewritten\n", 0o600)
+	e.waitFor("the first try", func() bool { return tries.Load() > 0 })
+	time.Sleep(1500 * time.Millisecond) // 30 quiet periods
+	armed.Store(false)
+	if n := tries.Load(); n > 1 {
+		t.Fatalf("%d tries within the gap", n)
+	}
+	if n := objects() - before; n > 1 {
+		t.Fatalf("%d new objects within the gap", n)
+	}
+}
+
 // More than MaxDirty marks clear the set and request one rescan, which
 // finds every file.
 func TestDirtyBound(t *testing.T) {
