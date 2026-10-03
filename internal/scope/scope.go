@@ -205,6 +205,91 @@ func (s *Scope) self(p string) (bool, int) {
 	return true, 0
 }
 
+// Line is one line of the scope file: its number and its text.
+type Line struct {
+	N    int
+	Text string
+}
+
+// Why is what the scope says about one path, with the line that decides
+// each answer (a zero Line when none does).
+type Why struct {
+	Path     string
+	Recorded bool
+	Root     string // the root p lies under; "" when it lies under none
+	Own      bool   // p lies under sc's own data directory
+	Rule     Line   // the include or exclude line that decided
+	At       string // the path Rule matched: p, or a directory above it
+	Tier     int
+	TierRule Line
+	Digest   bool // fingerprint-only
+	DigRule  Line
+}
+
+// Explain says why p is or is not recorded, its tier and whether it is
+// fingerprint-only (sc scope). p is cleaned first; a relative p is outside
+// every root.
+func (s *Scope) Explain(p string) Why {
+	w := Why{Path: p, Tier: 4}
+	p, ok := clean(p)
+	if !ok {
+		return w
+	}
+	w.Path = p
+	for _, r := range s.rules {
+		switch {
+		case r.verb == "tier" && w.TierRule.N == 0 && r.g.match(p):
+			w.Tier, w.TierRule = r.tier, s.line(r)
+		case r.verb == "digest" && !w.Digest && r.g.match(p):
+			w.Digest, w.DigRule = true, s.line(r)
+		}
+	}
+	if s.scHome != "" && under(p, s.scHome) {
+		w.Own = true
+		return w
+	}
+	for _, r := range s.roots {
+		if under(p, r) && len(r) > len(w.Root) {
+			w.Root = r
+		}
+	}
+	if w.Root == "" {
+		return w
+	}
+	for i := len(w.Root) + 1; i <= len(p); i++ {
+		if i < len(p) && p[i] != '/' {
+			continue
+		}
+		ok, n := s.self(p[:i])
+		if !ok {
+			w.Rule, w.At = s.lineAt(n), p[:i]
+			return w
+		}
+		if i == len(p) && n != 0 {
+			w.Rule, w.At = s.lineAt(n), p
+		}
+	}
+	w.Recorded = true
+	return w
+}
+
+func (s *Scope) line(r rule) Line {
+	text := r.verb + " " + r.g.text
+	if r.verb == "tier" {
+		text = fmt.Sprintf("tier %d %s", r.tier, r.g.text)
+	}
+	return Line{N: r.line, Text: text}
+}
+
+func (s *Scope) lineAt(n int) Line {
+	for _, r := range s.rules {
+		if r.line == n {
+			return s.line(r)
+		}
+	}
+	return Line{}
+}
+
 // Tier returns how loudly a change of p is logged: the first matching tier
 // line, else 4 (1 boot, 2 access, 3 network). p is cleaned first.
 func (s *Scope) Tier(p string) int {

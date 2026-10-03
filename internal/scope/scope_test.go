@@ -2,6 +2,7 @@ package scope
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -502,4 +503,41 @@ func anyTier12(s *Scope, p string) bool {
 		}
 	}
 	return false
+}
+
+// Explain names the line behind each answer, for sc scope.
+func TestExplain(t *testing.T) {
+	sc := Default().With("/var/lib/smartconfig", []string{"/home/u/.ssh"})
+	for _, tc := range []struct {
+		path string
+		want string // recorded root rule-line at tier tier-line digest
+	}{
+		{"/etc/fstab", "true /etc 0  1 tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id} false"},
+		{"/etc/hosts", "true /etc 0  3 tier 3 /etc/{resolv.conf,hosts,nftables.conf,ca-certificates.conf,ssl/openssl.cnf,default/ufw} false"},
+		{"/etc/ld.so.cache", "false /etc 76 /etc/ld.so.cache 4  false"},
+		{"/etc/ssl/certs/x.pem", "false /etc 77 /etc/ssl/certs 4  false"},
+		{"/boot/grub/grub.cfg", "true /boot/grub 24 /boot/grub/grub.cfg 1 tier 1 /boot/grub/{grub.cfg,custom.cfg} false"},
+		{"/home/u/.ssh/authorized_keys", "true /home/u/.ssh 28 /home/u/.ssh/authorized_keys 2 tier 2 **/.ssh/{authorized_keys,authorized_keys2,rc,environment} false"},
+		{"/home/u/.ssh/id_ed25519", "false /home/u/.ssh 29 /home/u/.ssh/id_ed25519 4  false"},
+		{"/usr/bin/sc", "false  0  4  false"},
+		{"etc/fstab", "false  0  4  false"},
+	} {
+		w := sc.Explain(tc.path)
+		got := fmt.Sprintf("%v %s %d %s %d %s %v", w.Recorded, w.Root, w.Rule.N, w.At, w.Tier, w.TierRule.Text, w.Digest)
+		if got != tc.want {
+			t.Errorf("%s:\n got %s\nwant %s", tc.path, got, tc.want)
+		}
+		if w.Recorded != sc.Recorded(w.Path) || w.Tier != sc.Tier(w.Path) || w.Digest != sc.FingerprintOnly(w.Path) && tc.path[0] == '/' {
+			t.Errorf("%s: Explain disagrees with Recorded, Tier or FingerprintOnly: %+v", tc.path, w)
+		}
+	}
+	if w := sc.Explain("/var/lib/smartconfig/changes.db"); !w.Own || w.Recorded {
+		t.Errorf("own: %+v", w)
+	}
+	if w := sc.Explain("/etc/ssh/ssh_host_ed25519_key"); !w.Digest || w.DigRule.N == 0 || !strings.HasPrefix(w.DigRule.Text, "digest ") {
+		t.Errorf("digest: %+v", w)
+	}
+	if w := sc.Explain("/etc/ld.so.cache"); w.Rule.Text != "exclude /etc/ld.so.cache" {
+		t.Errorf("rule text %q", w.Rule.Text)
+	}
 }
