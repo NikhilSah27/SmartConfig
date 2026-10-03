@@ -1,0 +1,1 @@
+@DIR@/sudoers:1:28: value "abc" is invalid for option "timestamp_timeout"

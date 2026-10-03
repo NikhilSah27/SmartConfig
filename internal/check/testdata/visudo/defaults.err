@@ -1,0 +1,2 @@
+@DIR@/sudoers:1:18: unknown defaults entry "env_rest"
+@DIR@/sudoers:2:22: unknown defaults entry "nosuchthing"

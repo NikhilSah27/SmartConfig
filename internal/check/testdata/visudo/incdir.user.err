@@ -1,0 +1,2 @@
+visudo: /etc/sudoers.d/90-vboxuser-nopasswd: Permission denied
+visudo: /etc/sudoers.d/README: Permission denied

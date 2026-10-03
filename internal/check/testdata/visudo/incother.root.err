@@ -1,0 +1,6 @@
+/etc/sudoers.d/10-bad:1:26: syntax error
+alice ALL=(ALL) NOPASSWD ALL
+                         ^~~
+@DIR@/sudoers:3:13: syntax error
+alice ALL = = ALL
+            ^

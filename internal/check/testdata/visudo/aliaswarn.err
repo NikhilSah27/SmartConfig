@@ -1,0 +1,2 @@
+@DIR@/sudoers:3:21: User_Alias "NOSUCH" referenced but not defined
+Warning: @DIR@/sudoers:2:12: unused User_Alias "UNUSED"

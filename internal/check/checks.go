@@ -16,8 +16,9 @@ type Checks struct {
 	Home  string // $SC_HOME: scratch copies go under Home/tmp
 	Run   Runner
 
-	exists      func(path string) bool // nil: the path exists here; tests fake the machine
-	sshdHostKey string                 // tests: a throwaway host key for sshd -t when not root
+	exists      func(path string) bool            // nil: the path exists here; tests fake the machine
+	lstat       func(string) (os.FileInfo, error) // nil: os.Lstat; tests fake the machine
+	sshdHostKey string                            // tests: a throwaway host key for sshd -t when not root
 }
 
 // Report is the result of checking one file.
@@ -36,8 +37,9 @@ type input struct {
 
 // checkers maps the graph's checker names to their code.
 var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []string, error){
-	"fstab": checkFstab,
-	"sshd":  checkSshd,
+	"fstab":   checkFstab,
+	"sudoers": checkSudoers,
+	"sshd":    checkSshd,
 }
 
 // Check runs the checker the graph names for path on data, which need not

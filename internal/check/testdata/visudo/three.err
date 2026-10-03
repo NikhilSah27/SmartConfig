@@ -1,0 +1,9 @@
+@DIR@/sudoers:2:19: syntax error
+vboxuser ALL=(ALL NOPASSWD ALL
+                  ^~~~~~~~
+@DIR@/sudoers:4:13: syntax error
+alice ALL = = ALL
+            ^
+@DIR@/sudoers:5:4: syntax error
+bob
+   ^
