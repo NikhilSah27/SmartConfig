@@ -30,6 +30,10 @@ type Report struct {
 	Checker  string    // "" when no checker reads the file
 	Findings []Finding // sorted by line
 	Notes    []string  // what could not be checked, e.g. "no validator found (findmnt)"
+	// Incomplete: a validator was cut short this time (killed, out of
+	// time, output cut), so findings may be missing. A problem it found
+	// before is then not known to be gone.
+	Incomplete bool
 }
 
 // input is what a checker gets.
@@ -40,6 +44,9 @@ type input struct {
 	// saved is set for a version from the store (sc check <id>): what is
 	// on disk at path now, its mode for one, is not that version's.
 	saved bool
+	// incomplete is set by validate when a validator did not run to the
+	// end (Report.Incomplete).
+	incomplete *bool
 }
 
 // checkers maps the graph's checker names to their code.
@@ -99,6 +106,8 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 	}
 	defer cleanup()
 	in.file = file
+	incomplete := false
+	in.incomplete = &incomplete
 	fs, notes, err := fn(ctx, c, in)
 	if err != nil {
 		return Report{}, fmt.Errorf("check %s: %w", path, err)
@@ -107,7 +116,7 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 		fs[i].Path = path
 	}
 	sort.SliceStable(fs, func(i, j int) bool { return fs[i].Line < fs[j].Line })
-	return Report{Checker: name, Findings: fs, Notes: notes}, nil
+	return Report{Checker: name, Findings: fs, Notes: notes, Incomplete: incomplete}, nil
 }
 
 // pathExists reports whether p exists on this machine.
@@ -125,6 +134,12 @@ func (c *Checks) pathExists(p string) bool {
 // to read.
 func (c *Checks) validate(ctx context.Context, in input, tool string, args ...string) (res Result, notes []string, ok bool, err error) {
 	res, err = c.Run.Run(ctx, filepath.Dir(in.file), tool, args...)
+	// A validator that is not installed is missing before and after
+	// alike: sc's own rules are then the whole check. One that was cut
+	// short this time is not.
+	if err == nil && res.Found && (res.TimedOut || res.Exit < 0 || res.Truncated) && in.incomplete != nil {
+		*in.incomplete = true
+	}
 	switch {
 	case err != nil:
 		return res, nil, false, err

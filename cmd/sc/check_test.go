@@ -81,7 +81,7 @@ func TestCheckCLI(t *testing.T) {
 
 	// -v explains each rule once and drops the hint.
 	v := sc(t, "check", "-v", fstab)
-	if v.code != 2 || !strings.Contains(v.stdout, "1 blocker, 1 warning in 1 file.\n\nfstab-source-missing:\n  The line names a disk or partition") ||
+	if v.code != 2 || !strings.Contains(v.stdout, "1 blocker, 1 warning in 1 file.\n\nfstab-source-missing:\n  The line names a disk, partition, image file") ||
 		!strings.Contains(v.stdout, "\nfstab-option-typo:\n  The option is not one sc knows") || strings.Contains(v.stdout, "sc check -v explains") {
 		t.Errorf("-v: %+v", v)
 	}
@@ -176,6 +176,39 @@ func TestCheckCLIUncheckedFile(t *testing.T) {
 	r := sc(t, "check")
 	if r.code != 1 || r.stderr != "sc: 1 file not checked (see the notes)\n" ||
 		r.stdout != "note: "+fstab+": not checked: permission denied (run sc check as root)\n" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// A validator cut short (here: out of time) leaves the file not fully
+// checked: exit 1, never "no problems found".
+func TestCheckCLIIncomplete(t *testing.T) {
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs, c.Run.Timeout = []string{tools}, 300*time.Millisecond }
+	r := sc(t, "check", fstab)
+	if r.code != 1 || r.stderr != "sc: 1 file not fully checked (see the notes)\n" || strings.Contains(r.stdout, "no problems found") ||
+		!strings.Contains(r.stdout, "findmnt did not finish in time") {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// A relative SC_HOME still gives the validator a path it can open (it
+// once ran in the scratch directory with a relative path: a false clean).
+func TestCheckCLIRelativeHome(t *testing.T) {
+	dir, fstab := checkEnv(t)
+	t.Chdir(dir)
+	t.Setenv("SC_HOME", "home")
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nfor f; do :; done\n"+
+		"[ -r \"$f\" ] || { echo \"findmnt: $f: No such file or directory\" >&2; exit 1; }\necho /data\necho '   [E] something new'\nexit 1\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs = []string{tools} }
+	if r := sc(t, "check", fstab); r.code != 2 || !strings.Contains(r.stdout, "fstab-verify") {
 		t.Fatalf("%+v", r)
 	}
 }

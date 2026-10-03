@@ -84,6 +84,7 @@ U=$(findmnt -no UUID /)
 as /etc/fstab 0 - "UUID=$U / ext4 defaults 0 1\n"
 as /etc/fstab 2 fstab-source-missing "UUID=$U / ext4 defaults 0 1\nUUID=11111111-2222-3333-4444-555555555555 /data ext4 defaults 0 2\n"
 as /etc/fstab 2 fstab-option-typo "UUID=$U / ext4 defaults 0 1\nUUID=$U /x ext4 defalts 0 2\n"
+as /etc/fstab 2 fstab-source-missing "UUID=$U / ext4 defaults 0 1\n/srv/sc-no-such-dir /mnt/sc-accept none bind 0 0\n"
 as /etc/sudoers.d/90-accept 0 - "root ALL=(ALL:ALL) ALL\n"
 as /etc/sudoers.d/90-accept 2 sudoers-syntax "nobody ALL=(ALL NOPASSWD ALL\n"
 as /etc/ssh/sshd_config.d/90-accept.conf 0 - "PasswordAuthentication no\n"
@@ -93,11 +94,14 @@ as $TESTUNIT 2 unit-exec-missing "[Unit]\nDescription=accept\n[Service]\nExecSta
 as $TESTUNIT 0 unit-unknown-key "[Unit]\nDescription=accept\n[Service]\nExecStart=/bin/true\nRestrt=always\n"
 as /etc/default/grub 0 - 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
 as /etc/default/grub 2 grub-default-syntax 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash\n'
+as /etc/default/grub 2 grub-default-syntax 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT=quiet splash\n'
 as /boot/grub/custom.cfg 0 - 'menuentry "accept" {\n  linux /vmlinuz\n}\n'
 as /boot/grub/custom.cfg 2 grubcfg-syntax 'menuentry "accept" {\n  linux /vmlinuz\n'
 as /etc/nsswitch.conf 0 - "passwd: files systemd\ngroup: files systemd\nhosts: files dns\n"
 as /etc/nsswitch.conf 2 nsswitch-invalid "passwd: files systemd\nhosts: files [NOTFOUND=retrun] dns\n"
 as /etc/nsswitch.conf 2 nsswitch-no-files "passwd: systemd\n"
+as /etc/nsswitch.conf 2 nsswitch-no-files "passwd: files systemd\ngroup: sss\n"
+as /etc/sudoers 2 sudoers-no-rules "Defaults env_reset\n"
 as /etc/ld.so.preload 2 preload-missing-lib "/usr/lib/sc-no-such-lib.so\n"
 as /etc/hosts 0 hosts-no-localhost "10.0.0.1 example\n"
 as /etc/nologin 0 flag-nologin "maintenance\n"
@@ -106,9 +110,14 @@ as /etc/netplan/90-accept.yaml 0 - "network:\n  version: 2\n"
 as /etc/netplan/90-accept.yaml 2 netplan-invalid "network:\n  version: 2\n  ethernets:\n    eth9:\n      dhcp4: maybe\n"
 as /etc/passwd 2 passwd-root "root:x:1000:0:root:/root:/bin/bash\n"
 # No root line: nss-systemd (passwd: files systemd, as on stock Ubuntu)
-# supplies root, so only a warning.
+# supplies root, so only a warning, as long as the admins keep theirs.
 if grep -Eq '^passwd:.*[[:space:]]systemd([[:space:]]|$)' /etc/nsswitch.conf; then
-	as /etc/passwd 0 passwd-root "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"
+	as /etc/passwd 0 passwd-root "$(grep -v '^root:' /etc/passwd | sed 's/\\/\\\\/g')\n"
+fi
+# The members of sudo and admin must keep their lines, and stay members.
+if [ -n "$(getent group sudo admin | cut -d: -f4 | tr -d ',\n')" ]; then
+	as /etc/passwd 2 passwd-no-admin "root:x:0:0:root:/root:/bin/bash\n"
+	as /etc/group 2 group-no-admin "root:x:0:\n"
 fi
 as /etc/sysctl.d/90-accept.conf 0 - "vm.swappiness = 60\n"
 as /etc/udev/rules.d/90-accept.rules 0 - 'SUBSYSTEM=="net", ACTION=="add", NAME="eth9"\n'

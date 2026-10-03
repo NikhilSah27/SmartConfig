@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"smartconfig/internal/check"
+	"smartconfig/internal/fsutil"
+	"smartconfig/internal/store"
 )
 
 // withChecks gives the watcher a graph whose fstab checker reads the files
@@ -161,7 +163,7 @@ func TestCheckQueueBound(t *testing.T) {
 	tools := t.TempDir()
 	release := filepath.Join(tools, "release")
 	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nwhile [ ! -e "+release+" ]; do sleep 0.05; done\n"), 0o755)
-	tabs := []string{filepath.Join(e.root, "fstab1"), filepath.Join(e.root, "fstab2"), filepath.Join(e.root, "fstab3")}
+	tabs := []string{filepath.Join(e.root, "fstab1"), filepath.Join(e.root, "fstab2"), filepath.Join(e.root, "fstab3"), filepath.Join(e.root, "fstab4")}
 	for _, p := range tabs {
 		put(t, p, goodTab, 0o644)
 	}
@@ -185,6 +187,8 @@ func TestCheckQueueBound(t *testing.T) {
 	if l := e.lines("check queue full")[0]; l != "<4>check queue full: "+tabs[2]+" was not checked (sc check "+tabs[2]+")" {
 		t.Fatalf("line %q", l)
 	}
+	put(t, tabs[3], badTab, 0o644) // no room either: counted, not named
+	e.waitFor("fstab4's row", func() bool { return len(e.history(tabs[3])) == 2 })
 	os.WriteFile(release, nil, 0o644)
 	e.waitForWithin(30*time.Second, "both checks", func() bool {
 		return len(e.lines(tabs[0]+": check: blocker")) == 1 && len(e.lines(tabs[1]+": check:")) == 2
@@ -196,6 +200,9 @@ func TestCheckQueueBound(t *testing.T) {
 	if n := len(e.lines(tabs[2] + ": check:")); n != 0 {
 		t.Errorf("fstab3 was checked: %q", e.lines(tabs[2]))
 	}
+	// The next path the queue takes: how many went unchecked.
+	put(t, tabs[0], goodTab, 0o644)
+	e.waitFor("the count line", func() bool { return len(e.lines("check queue full: 2 changed files were not checked in all")) == 1 })
 }
 
 // The version before is not checked again when the last check was of it,
@@ -227,4 +234,108 @@ func TestCheckRunsOnce(t *testing.T) {
 	if len(e.lines(": check: ok again")) != 1 {
 		t.Fatalf("log:\n%s", e.log.String())
 	}
+}
+
+// A restore or sc edit that fixes a reported file gets "ok again" with
+// its own id, and a later unrelated change says nothing; a rescan does not
+// check the deliberate row again; restoring a broken version is
+// deliberate and logs nothing; a re-break right after a restore is
+// reported (found by the M3 final review).
+func TestCheckRestoreOkAgain(t *testing.T) {
+	e := newEnv(t)
+	tab := filepath.Join(e.root, "fstab")
+	put(t, tab, goodTab, 0o644)
+	withChecks(t, e, "fstab", "")
+	var checked atomic.Int32
+	testHookChecked = func(string) { checked.Add(1) }
+	t.Cleanup(func() { testHookChecked = nil })
+	e.start()
+	good := e.newest(tab).ID
+	put(t, tab, badTab, 0o644)
+	e.waitFor("blocker", func() bool { return len(e.lines(": check: blocker")) == 1 })
+	bad := e.newest(tab).ID
+	r, _, err := e.st.Restore(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("ok again at the restore", func() bool { return len(e.lines("ok again ("+r.ID+")")) == 1 })
+	n := checked.Load()
+	put(t, tab, "# unrelated\n"+goodTab, 0o644)
+	e.waitFor("check", func() bool { return checked.Load() == n+1 })
+	if l := e.lines("ok again"); len(l) != 1 {
+		t.Fatalf("ok again: %q", l)
+	}
+	// An hourly rescan does not check the restore row again.
+	put(t, tab, badTab, 0o644)
+	e.waitFor("blocker 2", func() bool { return len(e.lines(": check: blocker")) == 2 })
+	st, _ := fsutil.ReadState(tab)
+	ed, _, err := e.st.Replace(tab, []byte(goodTab), 0o644, os.Getuid(), os.Getgid(), &st, store.OriginEdit, "sc edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("ok again at the edit", func() bool { return len(e.lines("ok again ("+ed.ID+")")) == 1 })
+	n = checked.Load()
+	e.w.requestRescan()
+	e.barrier()
+	time.Sleep(200 * time.Millisecond)
+	if c := checked.Load(); c != n {
+		t.Fatalf("rescan checked again: %d -> %d", n, c)
+	}
+	// Restoring a broken version: deliberate, no line.
+	if _, _, err := e.st.Restore(bad); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("check of the restore", func() bool { return checked.Load() == n+1 })
+	if l := e.lines(": check: blocker"); len(l) != 2 {
+		t.Fatalf("blocker after restoring a broken version: %q", l)
+	}
+	// Restore good, then re-break at once (merged into one job or not):
+	// the re-break is reported.
+	if _, _, err := e.st.Restore(good); err != nil {
+		t.Fatal(err)
+	}
+	put(t, tab, badTab+"# again\n", 0o644)
+	e.waitFor("blocker 3", func() bool { return len(e.lines(": check: blocker")) == 3 })
+}
+
+// A validator that does not finish says nothing about a problem it found
+// before: no "ok again" for a file still broken, and the problem is not
+// blamed again on the next change once the validator is back (found by
+// the M3 final review: a timeout read as a clean run).
+func TestCheckIncomplete(t *testing.T) {
+	e := newEnv(t)
+	tools := t.TempDir()
+	slow := filepath.Join(tools, "slow")
+	os.WriteFile(filepath.Join(tools, "sysctl"), []byte("#!/bin/sh\nif [ -e "+slow+" ]; then sleep 30; fi\n"+
+		"for f; do :; done\nif grep -q '^foo.bar' \"$f\"; then echo 'sysctl: cannot stat /proc/sys/foo/bar: No such file or directory' >&2; exit 1; fi\n"), 0o755)
+	conf := filepath.Join(e.root, "99-x.conf")
+	put(t, conf, "vm.swappiness = 10\n", 0o644)
+	g, err := check.ParseGraph("check sysctl " + filepath.Join(e.root, "*.conf") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfg.Checks = &check.Checks{Home: e.home, Graph: g, Run: check.Runner{Dirs: []string{tools}, Timeout: time.Second}}
+	var checked atomic.Int32
+	testHookChecked = func(string) { checked.Add(1) }
+	t.Cleanup(func() { testHookChecked = nil })
+	e.start()
+	put(t, conf, "vm.swappiness = 10\nfoo.bar = 1\n", 0o644)
+	e.waitFor("the warning", func() bool { return len(e.lines(": check: warning sysctl-unknown-key")) == 1 })
+	os.WriteFile(slow, nil, 0o644)
+	put(t, conf, "vm.swappiness = 10\nfoo.bar = 1\n# still bad\n", 0o644)
+	e.waitForWithin(30*time.Second, "the timed-out check", func() bool { return checked.Load() == 2 })
+	if l := e.lines("ok again"); len(l) != 0 {
+		t.Fatalf("ok again for a file still broken: %q", l)
+	}
+	if l := e.lines(": a validator did not finish; the check is incomplete"); len(l) != 1 {
+		t.Fatalf("incomplete line: %q", e.lines("check:"))
+	}
+	os.Remove(slow)
+	put(t, conf, "vm.swappiness = 10\nfoo.bar = 1\n# still bad 2\n", 0o644)
+	e.waitForWithin(30*time.Second, "the third check", func() bool { return checked.Load() == 3 })
+	if l := e.lines(": check: warning"); len(l) != 1 {
+		t.Fatalf("the old problem was blamed again: %q", e.lines("check:"))
+	}
+	put(t, conf, "vm.swappiness = 10\n", 0o644)
+	e.waitFor("ok again", func() bool { return len(e.lines(": check: ok again")) == 1 })
 }

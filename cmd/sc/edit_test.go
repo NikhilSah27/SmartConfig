@@ -125,7 +125,7 @@ func TestEditBlocker(t *testing.T) {
 	}
 	for _, want := range []string{
 		"blocker   " + fstab + "  1     fstab-source-missing  /dev/sc-no-such-disk (for /data) is not a device on this machine\n",
-		"\nfstab-source-missing:\n  The line names a disk or partition that does not exist",
+		"\nfstab-source-missing:\n  The line names a disk, partition, image file or bind-mount source that",
 		"\nThis edit adds 1 blocker. " + fstab + " is unchanged so far.\n" + prompt + "not saved: " + fstab + " is unchanged\n",
 	} {
 		if !strings.Contains(r.stdout, want) {

@@ -150,20 +150,48 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// staleScratch is the age past which a check-* directory is left over
+// from a run that was killed: a validator gets seconds, not an hour.
+const staleScratch = time.Hour
+
+// sweepScratch removes check-* directories under tmp older than
+// staleScratch: copies (netplan's hold Wi-Fi passwords) that a killed sc
+// left behind. sc edit's kept-* copies are the user's and stay.
+func sweepScratch(tmp string) {
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "check-") {
+			continue
+		}
+		if fi, err := e.Info(); err == nil && time.Since(fi.ModTime()) > staleScratch {
+			os.RemoveAll(filepath.Join(tmp, e.Name()))
+		}
+	}
+}
+
 // Scratch writes data as <home>/tmp/check-XXXX/<base name of path>, a
 // private copy for a validator to read (plan 5.3): the directory is 0700,
 // the file 0600, and it keeps the file's own name, which some validators
 // need. home is $SC_HOME, which is never under a watched root. cleanup
-// removes the directory.
+// removes the directory. Leftovers older than an hour are swept.
 func Scratch(home, path string, data []byte) (file string, cleanup func(), err error) {
 	name := filepath.Base(path)
 	if name == "." || name == "/" {
 		return "", nil, fmt.Errorf("scratch copy of %q: no file name", path)
 	}
-	tmp := filepath.Join(home, "tmp")
+	// Absolute: a validator runs in the scratch directory, where a
+	// relative path (SC_HOME=home) would not find its input.
+	tmp, err := filepath.Abs(filepath.Join(home, "tmp"))
+	if err != nil {
+		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
+	}
 	if err := os.MkdirAll(tmp, 0o700); err != nil {
 		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
 	}
+	sweepScratch(tmp)
 	dir, err := os.MkdirTemp(tmp, "check-")
 	if err != nil {
 		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)

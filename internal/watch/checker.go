@@ -25,6 +25,7 @@ import (
 // newest.
 type checkJob struct {
 	first, last string // row ids
+	deliberate  bool   // the job holds only a restore or sc edit row
 }
 
 // checkQueue is the bounded set of paths waiting for the checker.
@@ -46,14 +47,18 @@ func newCheckQueue(max int) *checkQueue {
 func (q *checkQueue) add(c store.Change) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	deliberate := c.Origin != store.OriginAuto
 	if j := q.jobs[c.Path]; j != nil {
+		if j.deliberate && !deliberate {
+			j.first, j.deliberate = c.ID, false // compare with the restored content
+		}
 		j.last = c.ID
 		return true
 	}
 	if len(q.order) >= q.max {
 		return false
 	}
-	q.jobs[c.Path] = &checkJob{first: c.ID, last: c.ID}
+	q.jobs[c.Path] = &checkJob{first: c.ID, last: c.ID, deliberate: deliberate}
 	q.order = append(q.order, c.Path)
 	select {
 	case q.wake <- struct{}{}:
@@ -82,18 +87,33 @@ func (q *checkQueue) next() (string, checkJob, bool) {
 // change. A full queue drops the path and says so once until it drains:
 // sc check still finds the problem.
 func (w *Watcher) queueCheck(c store.Change, reason string) {
-	if w.checks == nil || c.Kind != store.KindFile || c.Origin != store.OriginAuto ||
+	deliberate := c.Origin == store.OriginRestore || c.Origin == store.OriginEdit
+	if deliberate {
+		if _, ok := w.lastFound(c.Path, c.Blob); ok || reason == reasonStartup {
+			return
+		}
+	}
+	if w.checks == nil || c.Kind != store.KindFile || !(c.Origin == store.OriginAuto || deliberate) ||
 		(reason == reasonStartup && strings.HasPrefix(c.Intent, "first seen")) ||
 		w.checkGraph.Checker(c.Path) == "" {
 		return
 	}
 	if !w.checkQ.add(c) {
+		logMu.Lock()
+		w.dropped++
+		logMu.Unlock()
 		w.logOnce("check queue full", prioWarning, fmt.Sprintf("check queue full: %s was not checked (sc check %s)", show(c.Path), show(c.Path)))
 		return
 	}
 	logMu.Lock()
 	delete(w.logged, "check queue full") // drained enough to take one: the next drop is news
+	n := w.dropped
+	w.dropped = 0
 	logMu.Unlock()
+	if n > 1 {
+		// The first line named one path: say how many went unchecked.
+		w.logLine(prioWarning, fmt.Sprintf("check queue full: %d changed files were not checked in all (sc check)", n))
+	}
 }
 
 // checker checks queued paths until ctx is cancelled.
@@ -155,6 +175,11 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 	// the new content counts as new: better a known problem said again
 	// than a new one not said.
 	var had []check.Finding
+	stale := false
+	if before != nil && before.Origin != store.OriginAuto {
+		_, ok := w.lastFound(p, before.Blob)
+		stale = !ok // nothing checked it: what was reported is not what was before
+	}
 	if before != nil && before.Kind == store.KindFile {
 		if c, ok := w.lastFound(p, before.Blob); ok {
 			had = c
@@ -167,6 +192,9 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 				w.logOnce("check before "+p, prioNotice, fmt.Sprintf("check: %s: the version before could not be checked (%v); all findings are reported", show(p), err))
 			default:
 				had = rep.Findings
+				if rep.Incomplete {
+					w.logOnce("check before "+p, prioNotice, fmt.Sprintf("check: %s: the version before was not fully checked (a validator did not finish); its problems may be reported as new", show(p)))
+				}
 			}
 		}
 	}
@@ -177,18 +205,33 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		}
 		return
 	}
-	w.rememberFound(p, last.Blob, rep.Findings)
+	if rep.Incomplete {
+		// Not remembered, and no "ok again": a validator that did not
+		// finish cannot say a problem it found before is gone.
+		w.logOnce("check incomplete "+p, prioNotice, fmt.Sprintf("check: %s: a validator did not finish; the check is incomplete (sc check %s)", show(p), show(p)))
+	} else {
+		w.rememberFound(p, last.Blob, rep.Findings)
+	}
 	tier := w.tierOf(p)
 	// A file reported before: clean of what was reported, it is ok again.
 	w.mu.Lock()
 	reported := w.failing[p]
 	w.mu.Unlock()
+	if stale {
+		reported = nil
+	}
 	fixed := check.Added(rep.Findings, reported) // reported, and not there now
+	if rep.Incomplete {
+		fixed = nil
+	}
 	still := check.Added(fixed, reported)
 	if len(reported) > 0 && len(still) == 0 {
 		w.logLine(prioInfo, fmt.Sprintf("T%d %s: check: ok again (%s)", tier, show(p), last.ID))
 	}
 	added := check.Added(had, rep.Findings)
+	if last.Origin != store.OriginAuto {
+		added = nil // a restore or sc edit is deliberate (plan 7): only "ok again"
+	}
 	w.mu.Lock()
 	if all := append(still, added...); len(all) > 0 {
 		w.failing[p] = all

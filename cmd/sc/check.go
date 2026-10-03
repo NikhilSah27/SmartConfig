@@ -201,7 +201,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, notes []string, unchecked int, verbose bool) error {
 	out := cmd.OutOrStdout()
 	var rows []findingRow
-	checked := 0
+	checked, partial := 0, 0 // partial: a validator was cut short (its note says so)
 	for _, t := range targets {
 		check := c.Check
 		if t.saved {
@@ -216,6 +216,9 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 			continue
 		}
 		checked++
+		if rep.Incomplete {
+			partial++
+		}
 		for _, f := range rep.Findings {
 			rows = append(rows, findingRow{t.label, f})
 		}
@@ -234,15 +237,22 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 	// A file that was not checked is not a clean file: exit 1, unless a
 	// finding already makes it 2.
 	var notChecked error
+	var why []string
 	if unchecked > 0 {
-		notChecked = fmt.Errorf("%s not checked (see the notes)", count(unchecked, "file"))
+		why = append(why, count(unchecked, "file")+" not checked")
+	}
+	if partial > 0 {
+		why = append(why, count(partial, "file")+" not fully checked")
+	}
+	if len(why) > 0 {
+		notChecked = fmt.Errorf("%s (see the notes)", strings.Join(why, ", "))
 	}
 	if len(rows) == 0 {
 		switch {
 		case checked == 0 && len(notes) == 0:
 			fmt.Fprintln(out, "no files to check")
-		case checked > 0:
-			fmt.Fprintf(out, "no problems found in %s\n", count(checked, "file"))
+		case checked > partial:
+			fmt.Fprintf(out, "no problems found in %s\n", count(checked-partial, "file"))
 		}
 		return notChecked
 	}

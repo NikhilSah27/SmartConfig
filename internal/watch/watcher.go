@@ -151,6 +151,7 @@ type Watcher struct {
 	rescanAfter time.Time
 	lastScan    time.Time
 	logged      map[string]bool      // one-time log lines
+	dropped     int                  // paths the full check queue dropped since it last took one (logMu)
 	roots       []string             // usable roots of the last rescan
 	gone        []string             // login .ssh roots gone at the last rescan
 	baseline    *baseline            // startup counts, nil once logged
@@ -1113,6 +1114,8 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 			if d.path == w.cfg.PasswdPath {
 				w.requestRescan()
 			}
+		case !r.Moved && (r.Change.Origin == store.OriginRestore || r.Change.Origin == store.OriginEdit):
+			w.queueCheck(r.Change, d.e.reason) // a restore or sc edit scd did not write
 		}
 		if !r.Moved {
 			w.processed(d.path)

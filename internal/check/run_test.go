@@ -210,3 +210,64 @@ func TestScratch(t *testing.T) {
 		t.Fatal("/ accepted")
 	}
 }
+
+// A relative home still gives the validator an absolute path to its copy
+// (SC_HOME=home once gave a false clean: the validator ran in the scratch
+// directory and could not open its input). Leftover check-* directories
+// older than an hour are swept; newer ones and sc edit's kept-* stay.
+func TestScratchAbsoluteAndSwept(t *testing.T) {
+	t.Chdir(t.TempDir())
+	file, cleanup, err := Scratch("home", "/etc/fstab", []byte("x\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !filepath.IsAbs(file) {
+		t.Fatalf("relative scratch path %q", file)
+	}
+	tmp := filepath.Dir(filepath.Dir(file))
+	old, fresh, kept := filepath.Join(tmp, "check-old"), filepath.Join(tmp, "check-fresh"), filepath.Join(tmp, "kept-old")
+	for _, d := range []string{old, fresh, kept} {
+		os.MkdirAll(filepath.Join(d, "root"), 0o700)
+	}
+	long := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(old, long, long)
+	os.Chtimes(kept, long, long)
+	_, cleanup2, err := Scratch("home", "/etc/hosts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup2()
+	for d, want := range map[string]bool{old: false, fresh: true, kept: true} {
+		if _, err := os.Stat(d); (err == nil) != want {
+			t.Errorf("%s: exists %v, want %v", filepath.Base(d), err == nil, want)
+		}
+	}
+}
+
+// A validator cut short makes the report incomplete; one that ran,
+// whatever it said, does not, nor one that is not installed (sc's own
+// rules are then the whole check, before and after alike).
+func TestReportIncomplete(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   bool
+	}{
+		{"", false}, // not installed
+		{"#!/bin/sh\nexit 0\n", false},
+		{"#!/bin/sh\necho '   [E] something' \nexit 1\n", false},
+		{"#!/bin/sh\nkill -9 $$\n", true},
+		{"#!/bin/sh\nsleep 60\n", true},
+		{"#!/bin/sh\nhead -c 5000 /dev/zero\nexit 0\n", true},
+	} {
+		c, _ := fakeMachine(t, []string{"/dev/sda3"}, "", "", 0)
+		c.Run.Timeout, c.Run.MaxOut = 300*time.Millisecond, 1000
+		if tc.script != "" {
+			os.WriteFile(filepath.Join(c.Run.Dirs[0], "findmnt"), []byte(tc.script), 0o755)
+		}
+		rep, err := c.Check(context.Background(), "/etc/fstab", []byte("/dev/sda3 /data ext4 defaults 0 2\n"))
+		if err != nil || rep.Incomplete != tc.want {
+			t.Errorf("%q: incomplete %v, want %v (%v)", tc.script, rep.Incomplete, tc.want, err)
+		}
+	}
+}
