@@ -624,6 +624,29 @@ func TestSymlinkedSSHRoot(t *testing.T) {
 	}
 }
 
+// A user who swaps their ~/.ssh for a symlink to a directory holding
+// SC_HOME, after the startup lstat and before the SC_HOME check, cannot
+// fail the start: the startup rescan skips the root and logs it.
+func TestSSHRootSwappedAtStartup(t *testing.T) {
+	e := newEnv(t)
+	ssh := filepath.Join(e.user, ".ssh")
+	testHookRootsListed = func() {
+		os.RemoveAll(ssh)
+		os.Symlink(filepath.Dir(e.home), ssh)
+	}
+	t.Cleanup(func() { testHookRootsListed = nil })
+	e.start()
+	if log := e.log.String(); !strings.Contains(log, "not watching "+ssh+": it is a symlink") {
+		t.Fatalf("not logged:\n%s", log)
+	}
+	e.w.mu.Lock()
+	_, watched := e.w.dirs[ssh]
+	e.w.mu.Unlock()
+	if watched {
+		t.Fatal("symlinked .ssh watched")
+	}
+}
+
 var _ = fsutil.ReadState
 var _ = syscall.IN_CREATE
 

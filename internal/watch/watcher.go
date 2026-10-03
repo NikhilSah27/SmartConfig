@@ -164,10 +164,13 @@ var (
 	// testHookBeforeStoreRecord runs after a batch is read and before it
 	// is recorded.
 	testHookBeforeStoreRecord func()
+	// testHookRootsListed runs in New between the roots' lstat and the
+	// SC_HOME check.
+	testHookRootsListed func()
 )
 
 // New prepares a watcher (plan 6.2): it finds the roots, refuses an
-// SC_HOME inside a root before creating anything, creates SC_HOME, takes
+// SC_HOME inside a scope root before creating anything, creates SC_HOME, takes
 // the single-instance lock, opens the store and the inotify instances.
 func New(cfg Config) (*Watcher, error) {
 	cfg = cfg.Defaults()
@@ -192,8 +195,13 @@ func New(cfg Config) (*Watcher, error) {
 		logged: map[string]bool{}, poke: make(chan struct{}, 1),
 		sshSet: map[string]bool{}, userRows: map[string]time.Time{},
 	}
-	roots, machine := w.usableRoots(sc)
+	roots, _, machine := w.usableRoots(sc)
 	w.scope = machine
+	if testHookRootsListed != nil {
+		testHookRootsListed()
+	}
+	// A login .ssh is not checked here: its user can swap it for a symlink
+	// after the lstat above, so the startup rescan skips it instead.
 	if err := checkHome(cfg.Home, roots); err != nil {
 		return nil, err
 	}
@@ -241,19 +249,18 @@ func (w *Watcher) sshRoots() []string {
 
 // usableRoots computes the roots (plan 6.2 step 1) and updates the scope
 // with the login roots. A root is used only if lstat shows a real
-// directory; a missing or symlinked one is skipped and logged once.
-func (w *Watcher) usableRoots(sc *scope.Scope) ([]string, *scope.Scope) {
+// directory; a missing or symlinked one is skipped and logged once. The
+// scope's roots (or cfg.Roots) and the login .ssh roots come back apart.
+func (w *Watcher) usableRoots(sc *scope.Scope) (fixed, login []string, machine *scope.Scope) {
 	ssh := w.sshRoots()
 	candidates := w.cfg.Roots
 	if candidates == nil {
-		candidates = append(sc.Roots(), ssh...)
+		candidates = sc.Roots()
 	}
 	extra := append([]string(nil), ssh...)
 	extra = append(extra, w.cfg.Roots...)
-	machine := sc.With(w.cfg.Home, extra)
-	var roots []string
-	for _, r := range candidates {
-		r = filepath.Clean(r)
+	machine = sc.With(w.cfg.Home, extra)
+	usable := func(r string) bool {
 		fi, err := os.Lstat(r)
 		switch {
 		case err != nil:
@@ -263,10 +270,21 @@ func (w *Watcher) usableRoots(sc *scope.Scope) ([]string, *scope.Scope) {
 		case !fi.IsDir():
 			w.logOnce("root "+r, prioWarning, fmt.Sprintf("not watching %s: not a directory", show(r)))
 		default:
-			roots = append(roots, r)
+			return true
+		}
+		return false
+	}
+	for _, r := range candidates {
+		if r = filepath.Clean(r); usable(r) {
+			fixed = append(fixed, r)
 		}
 	}
-	return roots, machine
+	for _, r := range ssh {
+		if r = filepath.Clean(r); usable(r) {
+			login = append(login, r)
+		}
+	}
+	return fixed, login, machine
 }
 
 func errText(err error) string {
@@ -716,7 +734,8 @@ func (w *Watcher) rescan(reason string) {
 		w.logOnce("scope", prioErr, err.Error())
 		return
 	}
-	roots, machine := w.usableRoots(base)
+	fixed, login, machine := w.usableRoots(base)
+	roots := append(fixed, login...)
 	var keep []string
 	for _, r := range roots {
 		if err := checkHome(w.cfg.Home, []string{r}); err != nil {
