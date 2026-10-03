@@ -38,9 +38,9 @@ fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): ch
 fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers in
 separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
-fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). **In
-progress:** step 13 (the second set of checkers) by two parallel agents;
-then step 14, `sc scope`.
+fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). Step 12 (`580e1d1`). Step 14 (`7ccb3d9`).
+**In progress:** step 13 (the second set of checkers) by two parallel
+agents; then the chunk D review.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -1000,3 +1000,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   not hold up rows, the queue bound (3 times, and under race). Checks:
   build, gofmt, vet, `go test ./...`, `watch` and `cmd/sc` as root,
   `watch` under race: clean. Not installed (gate G2).
+- **M3 step 14, `sc scope`, `7ccb3d9`** (built while the step 13 agents
+  work; no shared files): explains a path, one property a line: recorded
+  or not and the deciding scope line (or the excluded directory above
+  it, sc's own directory, or outside every watched directory), tier and
+  its line, fingerprint-only and its line, checker and when a change
+  applies. Uses the machine's scope (login `.ssh` roots, SC_HOME left
+  out). `scope.Explain` is tested to agree with `Recorded`, `Tier` and
+  `FingerprintOnly`. Scope lines go on their own line (80 columns).
+  Checks: build, gofmt, vet, `go test ./...`, the new tests as root:
+  clean.
