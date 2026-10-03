@@ -35,7 +35,9 @@ one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`).
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
 fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built and reviewed
 ([reviews/2026-10-03-m3-chunk-b.md](reviews/2026-10-03-m3-chunk-b.md),
-fixes `a946f6f`). **Next: chunk C** (steps 8-11), built by parallel agents.
+fixes `a946f6f`). **In progress: chunk C** (steps 8-11): four agents build the sudoers,
+sshd, unit and grub, and plain-rule checkers in separate worktrees; none
+commits. Claude integrates them one commit at a time.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
