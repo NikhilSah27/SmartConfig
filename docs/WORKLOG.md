@@ -31,8 +31,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 **Now: M3 is being built** ([M3_PLAN.md](M3_PLAN.md), approved 2026-10-03,
 "great go ahead": all 7 recommendations of its section 14, which also
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
-one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). **In progress: step 3** (chunk A),
-`check: fstab`. Gate G2 stands: nothing is installed or run on the real system
+one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). **In progress: step 4** (chunk A), `check:
+baseline diff`. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -823,3 +823,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   are not fingerprint-only. Plan change C1 (your OK): no `with` line,
   since M3 checks only the file that changed. Checks: build, gofmt, vet,
   `go test ./...`, both packages under race: clean.
+- **M3 step 3, `check: fstab`, `b665691`:** `Checks.Check` (graph lookup,
+  scratch copy, sorted findings) and the fstab checker: sc's own rules on
+  every line, then `findmnt --verify --tab-file` on the scratch copy.
+  Six rules with explanations. Severities follow what
+  `systemd-fstab-generator` does (probed, plan A14, change C2): blocker
+  only for a local filesystem without `nofail`/`noauto`; `/`, swap and
+  network filesystems are errors; `nofail`/`noauto` lines warnings.
+  Tests: 19-line fabricated fstab against a fake machine; findmnt outputs
+  captured here as golden files (user and root); a hanging findmnt; the
+  real findmnt where installed. Checks: build, gofmt, vet, `go test
+  ./...`, the package as root and twice under race, static: clean.

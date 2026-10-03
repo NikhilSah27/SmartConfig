@@ -279,6 +279,7 @@ Each has a recommendation, and the plan assumes it.
 | # | Date | Change | Why | Commit |
 |---|---|---|---|---|
 | C1 | 2026-10-03 | The graph has no `with` line. The built-in graph starts with its header only; each checker's `check`, `apply` and `mode` lines are added with the step that builds it. | Section 7 checks only the file that changed, so `with` would have been parsed and never read. Your OK (asked). | `95da13b` |
+| C2 | 2026-10-03 | fstab severities follow `systemd-fstab-generator` (A14): a missing device or misspelt option is a blocker only on a local filesystem without `nofail` or `noauto`; on `/`, swap and network filesystems it is an error; with `nofail` or `noauto` a warning. New rule `fstab-verify` (warning): a findmnt error sc has no rule for. `fstab-fields` is a line libmount ignores (fewer than three fields, or a non-numeric dump or pass field). findmnt's missing-mount-point error is not reported. | The generator requires swap from `swap.target`, which `sysinit.target` only wants, and network mounts from `remote-fs.target`; only `local-fs.target` fails into emergency mode. systemd creates a missing mount point. | `b665691` |
 
 ---
 
@@ -298,4 +299,5 @@ Inputs were fabricated files in a scratch directory (kept in `~/smartconfig-work
 - **A10 udevadm verify:** exit 1 with file and line; on the real system 113 of 121 rule files pass and 8 fail.
 - **A11 rejected for now:** `nft -c -f` fails as a user ("cache initialization failed") and reads kernel state as root; `logrotate -d` exits 1 on a good file; `apparmor_parser -Q -K` works (exit 1 with a line number) but is left for later.
 - **A12 editors:** `$EDITOR` and `$VISUAL` unset; `/usr/bin/editor` is nano; vi is vim.tiny.
+- **A14 systemd-fstab-generator** (run with `SYSTEMD_FSTAB` on a fabricated file, output into a scratch directory): a plain ext4 line lands in `local-fs.target.requires` with `Requires=systemd-fsck@…`; with `nofail` in `local-fs.target.wants`; with `noauto` nowhere; swap in `swap.target.requires`; nfs in `remote-fs.target.requires`. `sysinit.target` has `Wants=swap.target local-fs.target`; `local-fs.target` has `OnFailure=emergency.target`. findmnt reports a line with one or two fields, or a non-numeric fifth field, as `parse error at line N -- ignored`; three fields parse.
 - **A13 files per consumer here:** 1 active fstab line, 2 files in `sudoers.d` (one is its README), 0 sshd drop-ins, 2 netplan files, 14 service units in `/etc/systemd/system`, 5 udev rule files, 11 sysctl.d files, 31 pam.d files, 114 entries in `/etc/apparmor.d`.
