@@ -915,3 +915,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `store`, `check` and `cmd/sc` as root (one timeout of the M2 test
   `TestWatchSIGHUPRescans` under load; 8 of 8 alone), race on the new
   tests, `make m1-compat`: clean.
+- **M3 step 9, `check: sshd`, `4a3451c`** (parallel agent, reviewed and
+  integrated here): `sshd -t -f` on the scratch copy. One `sshd-invalid`
+  blocker per line of this file sshd names; the text names the keyword,
+  never the value; a problem in an included file is a note; deprecation
+  notices with exit 0 are nothing. A `HostKey` line naming a key that does
+  not exist, when sshd has no other, is a finding (the server would not
+  start; the agent's choice, kept). No host key a user may read, a
+  missing `/run/sshd` or a missing file is a note, never a clean run. 20
+  golden outputs from OpenSSH 9.6p1 on fabricated files. Checks: gofmt,
+  vet, the package as user and as root (the real-sshd test included) and
+  under race, static: clean. Step 8 (sudoers) follows when its agent
+  reports.
