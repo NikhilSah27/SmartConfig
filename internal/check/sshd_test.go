@@ -283,6 +283,13 @@ func TestSshdReal(t *testing.T) {
 		t.Fatalf("ssh-keygen: %v\n%s", err, out)
 	}
 	c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key}
+	// As root, sshd checks its privilege separation directory after the
+	// file; where ssh.service never ran (a CI runner) there is none, and a
+	// clean file is then a note, not a clean run.
+	cleanNotes := ""
+	if _, err := os.Stat("/run/sshd"); err != nil && os.Geteuid() == 0 {
+		cleanNotes = "sshd did not finish checking the file (Missing privilege separation directory: /run/sshd)"
+	}
 	for _, tc := range []struct {
 		path, data, want string
 	}{
@@ -295,7 +302,11 @@ func TestSshdReal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || len(rep.Notes) != 0 {
+		wantNotes := ""
+		if tc.want == "" {
+			wantNotes = cleanNotes
+		}
+		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != wantNotes {
 			t.Errorf("%q:\n%s\nwant:\n%s\nnotes %q", tc.data, got, tc.want, rep.Notes)
 		}
 		if tc.want != "" && !strings.HasPrefix(rep.Findings[0].Raw, tc.path) {
