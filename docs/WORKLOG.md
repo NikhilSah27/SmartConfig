@@ -45,7 +45,7 @@ your yes):
 2. done (`bd8fad9`): `deleted` rows when a root moves away (`mv ~/.ssh ~/.ssh.old`);
 3. done (`c0cfe77`): re-walk after a directory swap (`RENAME_EXCHANGE`);
 4. done (`465b30d`): remove stale watches after an overflow;
-5. trim directory listings after a walk;
+5. done (`d76a295`): trim directory listings after a walk;
 6. count orphan objects against the per-file limit for home files;
 7. report stale `.NAME.sc-tmp-*` files;
 8. needs your OK on the design first: a rate limit for a constantly
@@ -693,3 +693,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   gofmt, vet, `go test ./...` as user, `internal/watch` and `cmd/sc` as
   root, the test 5 times under race, `make race`: all clean. Not
   installed.
+- **M2 follow-up 5, listings only grew, fixed `d76a295`:** a walk merged
+  every name of the old listing into the new one (to keep names an event
+  added while it listed), so names of files removed long ago stayed, and
+  a file made later under such a name lost its proof of absence: `first
+  seen` instead of `did not exist` and `created` (reproduced). A name
+  from the old listing is now kept only if it is still there (`lstat`,
+  only for names the new listing lacks); one that exists is never
+  dropped, since a rename over it would then look like a create. New test
+  `TestWalkTrimsListing`; `TestProofOfAbsence` and the writer matrix
+  still pass. Checks: build, gofmt, vet, `go test ./...` as user,
+  `internal/watch` and `cmd/sc` as root, the proof tests 5 times under
+  race, `make race`: all clean. Not installed.
