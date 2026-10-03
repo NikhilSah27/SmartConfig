@@ -45,9 +45,8 @@ committed, not run (`2ff038b`). Chunk D is reviewed
 fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
 **M3 is built. Now: the sign-off runs** (plan section 11; your call,
 2026-10-03: close the M2 soak now and sign off, on the snapshot you
-already have). S1 passed (log). Next, each with your OK: S2 install the
-M3 build and review `sc check` on the real system with you (as root it
-finds nothing in 24 files); S3 the owner scenario; S4 final review and
+already have). S1 and S2 are done (log): the M3 build runs as scd. Next: S3
+the owner scenario (your yes, scripted by Claude); S4 final review and
 tag `m3`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
@@ -1109,3 +1108,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     - After each run the test unit, the runtime unit and the scratch
       directories were gone. The real scd started again with a baseline
       of 0 first seen, 0 changed, 0 deleted.
+- **M3 sign-off S2** (your yes). The M3 build of `468c633` (Go code as in
+  `2fb037e`; sha256 `8e96663f…`) is installed as `/usr/local/sbin/sc`.
+  The b6ab3cc build it replaces is kept as
+  `/var/backups/smartconfig/sc-b6ab3cc` (sha256 `396f84cb…`); to roll
+  back, install it again and restart scd. The unit file did not change.
+  scd restarted at 20:15:47 UTC: baseline 0 first seen, 0 changed,
+  0 deleted (1.1 s), 16 MB.
+  - `sudo sc check`: no problems found in 24 files, exit 0. There is
+    nothing to review.
+  - As a user: no problems in 19 files, exit 1. Five files only root may
+    read (grub.cfg, a 0600 netplan file, sudoers and two drop-ins) each
+    get a note, and so do three checks that were incomplete without root
+    (fstab types, the netplan merge, sshd's host keys).
