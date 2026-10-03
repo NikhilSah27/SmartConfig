@@ -201,3 +201,35 @@ func TestCheckCLISkipsUnrecorded(t *testing.T) {
 		}
 	}
 }
+
+// --as checks a file's content as if it were at the path given: the
+// path's checker runs, the file at that path is not read, and rules about
+// the file on disk do not apply.
+func TestCheckCLIAs(t *testing.T) {
+	dir, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644) // what is there now: clean
+	cand := filepath.Join(dir, "candidate")
+	os.WriteFile(cand, []byte(badFstab), 0o644)
+	r := sc(t, "check", "--as", fstab, cand)
+	if r.code != 2 || !strings.Contains(r.stdout, "blocker   "+fstab+" (from "+cand+")  1     fstab-source-missing") {
+		t.Fatalf("%+v", r)
+	}
+	// A relative path is taken from the working directory; so is the file.
+	t.Chdir(dir)
+	if r := sc(t, "check", "--as", "fstab", "candidate"); r.code != 2 || !strings.Contains(r.stdout, fstab+" (from candidate)") {
+		t.Errorf("relative: %+v", r)
+	}
+	for _, args := range [][]string{
+		{"check", "--as", fstab},
+		{"check", "--as", fstab, cand, cand},
+		{"check", "--as", fstab, filepath.Join(dir, "missing")},
+		{"check", "--as", fstab, dir},
+	} {
+		if r := sc(t, args...); r.code != 1 || r.stdout != "" || !strings.HasPrefix(r.stderr, "sc: ") || strings.Count(r.stderr, "\n") != 1 {
+			t.Errorf("%q: %+v", args, r)
+		}
+	}
+	if r := sc(t, "check", "--as", filepath.Join(dir, "nochecker"), cand); r.code != 0 || !strings.Contains(r.stdout, "no checker reads this file") {
+		t.Errorf("no checker: %+v", r)
+	}
+}

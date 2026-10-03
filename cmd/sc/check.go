@@ -41,19 +41,63 @@ func isRowID(arg string) bool {
 
 func newCheckCmd() *cobra.Command {
 	var verbose bool
+	var as string
 	cmd := &cobra.Command{
 		Use:   "check [path|id]...",
 		Short: "Check config files, or saved versions, for problems",
 		Long: `Check config files for problems before they bite. With no argument, every
 file on this machine that sc has a checker for; an id checks that saved
-version. Exit status 2 when a file has a blocker or an error, 1 when a
-file could not be checked.`,
+version; --as PATH FILE checks FILE as if it were PATH, before it is
+copied there. Exit status 2 when a file has a blocker or an error, 1
+when a file could not be checked.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if as != "" {
+				if len(args) != 1 {
+					return fmt.Errorf("--as %s takes one file to check", as)
+				}
+				return runCheckAs(cmd, as, args[0], verbose)
+			}
 			return runCheck(cmd, args, verbose)
 		},
 	}
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "explain each rule and show the validators' own lines")
+	cmd.Flags().StringVar(&as, "as", "", "check the one file given as if it were at this path")
 	return cmd
+}
+
+// runCheckAs checks the content of file as if it were at path: a candidate
+// before it is copied into place. Rules about the file on disk at path (its
+// mode) are left out, as for a saved version.
+func runCheckAs(cmd *cobra.Command, path, file string, verbose bool) error {
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	data, err := readCandidate(file)
+	if err != nil {
+		return err
+	}
+	return runTargets(cmd, []checkTarget{{p + " (from " + file + ")", p, data, true}}, nil, 0, verbose)
+}
+
+// readCandidate reads a file to check with --as, refusing what sc would
+// not keep (more than 8 MB) and anything that is not a regular file.
+func readCandidate(file string) ([]byte, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	switch {
+	case err != nil:
+		return nil, err
+	case !fi.Mode().IsRegular():
+		return nil, fmt.Errorf("%s is not a regular file", file)
+	case fi.Size() > fsutil.MaxSize:
+		return nil, fmt.Errorf("%s is larger than the %d MB limit", file, fsutil.MaxSize>>20)
+	}
+	return io.ReadAll(io.LimitReader(f, fsutil.MaxSize+1))
 }
 
 // checkTarget is one thing to check: a file as it is now, or a saved row.
@@ -65,16 +109,10 @@ type checkTarget struct {
 }
 
 func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
-	home, cleanup, err := scratchHome()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	c := &check.Checks{Home: home}
+	c := &check.Checks{} // for the graph the tests give
 	if testHookChecks != nil {
 		testHookChecks(c)
 	}
-	out := cmd.OutOrStdout()
 	var targets []checkTarget
 	var notes []string
 	unchecked := 0 // files with a checker that could not be read
@@ -101,6 +139,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		}
 	}
 	var s *store.Store
+	var err error
 	for _, a := range args {
 		if isRowID(a) {
 			if s == nil {
@@ -137,6 +176,22 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		targets = append(targets, checkTarget{p, p, st.Data, false})
 	}
 
+	return runTargets(cmd, targets, notes, unchecked, verbose)
+}
+
+// runTargets checks targets and prints the table, the notes and the
+// summary; notes and unchecked come from gathering the targets.
+func runTargets(cmd *cobra.Command, targets []checkTarget, notes []string, unchecked int, verbose bool) error {
+	home, cleanup, err := scratchHome()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	c := &check.Checks{Home: home}
+	if testHookChecks != nil {
+		testHookChecks(c)
+	}
+	out := cmd.OutOrStdout()
 	var rows []findingRow
 	checked := 0
 	for _, t := range targets {
