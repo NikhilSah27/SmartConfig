@@ -38,8 +38,8 @@ fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): ch
 fixes `a946f6f`). Chunk C (steps 8-11) is built: four agents built the checkers in
 separate worktrees, Claude reviewed and integrated each; reviewed
 ([reviews/2026-10-03-m3-chunk-c.md](reviews/2026-10-03-m3-chunk-c.md),
-fixes `41c87bf`). **Next: chunk D** (steps 12-14), after the timing-bound
-watch tests are made robust.
+fixes `41c87bf`). Timing-bound tests made robust (`5b1d5a5`). **Next: chunk D**
+(steps 12-14).
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -61,9 +61,7 @@ for your approval. The soak check, once scd has run about 24 h on this
 build: uptime, restarts, memory, log volume,
 unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
 `/var/backups/smartconfig`. Kernel 7.0.0-38 boots at your next restart.
-Also before M3 is built: make the timing-bound watch tests
-(`TestRescanUnderBusyEvents`, the overflow tests) less sensitive to a
-slow VM. To remove the watcher: README "Watch every change"; keep the
+To remove the watcher: README "Watch every change"; keep the
 store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
 drop every M2 row). One thing at a time: no review runs while the next
 step is built (your call, 2026-09-30).
@@ -979,3 +977,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   records (10 files here; snapd's generated units are left out, as in
   M2). Plan change C6. Checks: build, gofmt, vet, `go test ./...`, the
   check package as root and under race: clean.
+- **Timing-bound tests, `5b1d5a5`:** `TestRescanUnderBusyEvents` generated
+  files without end, so a slow worker hit the dirty bound for real and its
+  (correct) rescans failed the test; it now makes 60 files, below the
+  bound, and a mutation that counts rescan marks still fails it (15
+  rescans). The overflow tests and `TestWatchSIGHUPRescans` get 60 s
+  upper bounds (a full kernel queue to work through; sc watch's 10 s
+  rescan gap). Watch package: three race runs in a row clean; `make
+  race` clean.
