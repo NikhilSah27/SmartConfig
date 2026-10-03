@@ -208,8 +208,9 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 // under the write lock: anyone who sees the change and takes the write
 // lock to record it (the watcher) waits for this commit and finds the row.
 // It first checks that the path is still the version the caller read
-// (existed and stamp), and returns errChanged if not. With absentFirst, a
-// path that has no rows yet gets a "did not exist" row before c.
+// (existed and stamp), and returns errChanged if not. With absentFirst (the
+// path is absent), a row saying so goes before c unless the newest row
+// already does: "did not exist" for a path with no rows, else "deleted".
 func (s *Store) commitWrite(c *Change, existed bool, stamp fsutil.Stamp, absentFirst bool, write func() error) (wrote bool, err error) {
 	err = s.writeTx(true, func(ctx context.Context, conn *sql.Conn) error {
 		st, err := fsutil.LstatStamp(c.Path)
@@ -234,8 +235,13 @@ func (s *Store) commitWrite(c *Change, existed bool, stamp fsutil.Stamp, absentF
 			if err != nil {
 				return err
 			}
-			if last == nil {
+			// The path is absent now. Unless the newest row says so, say it
+			// first: the state before a write is always on record.
+			if last == nil || last.Kind != KindDeleted {
 				gone := Change{Path: c.Path, Kind: KindDeleted, Origin: c.Origin, Intent: "did not exist", TS: c.TS}
+				if last != nil {
+					gone.Intent = "deleted"
+				}
 				if err := insertTx(ctx, conn, &gone); err != nil {
 					return err
 				}

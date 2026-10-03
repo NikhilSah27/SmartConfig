@@ -100,7 +100,7 @@ func TestEditSaves(t *testing.T) {
 	}
 	f := strings.Fields(strings.TrimSpace(r.stdout))
 	// note: ... \n saved PATH as ID (before: ID); takes effect at the next boot
-	if !strings.Contains(r.stdout, "saved "+fstab+" as ") || !strings.HasSuffix(r.stdout, "); takes effect at the next boot\n") || len(f) < 6 {
+	if !strings.Contains(r.stdout, "saved "+fstab+" as ") || !strings.HasSuffix(r.stdout, ")\ntakes effect at the next boot\n") || len(f) < 6 {
 		t.Errorf("stdout %q", r.stdout)
 	}
 	if left, _ := filepath.Glob(filepath.Join(store.Home(), "tmp", "*")); len(left) != 0 {
@@ -133,11 +133,22 @@ func TestEditBlocker(t *testing.T) {
 		}
 	}
 
-	// End of input is quit: a failing file is never saved unattended.
+	// Quit throws the edit away, as asked.
+	if left, _ := filepath.Glob(filepath.Join(store.Home(), "tmp", "*")); len(left) != 0 {
+		t.Errorf("quit left %v", left)
+	}
+
+	// End of input: a failing file is never saved unattended, and the
+	// edit is kept, since nobody said to throw it away.
 	_, fstab = editEnv(t, "", badEdit)
 	os.WriteFile(fstab, []byte(goodFstab), 0o644)
-	if r := sc(t, "edit", fstab); r.code != 2 || content(fstab) != goodFstab || !strings.HasSuffix(r.stdout, prompt+"\nnot saved: "+fstab+" is unchanged\n") {
+	r = sc(t, "edit", fstab)
+	i := strings.LastIndex(r.stdout, prompt+"\nnot saved: "+fstab+" is unchanged; your version is kept at ")
+	if r.code != 2 || content(fstab) != goodFstab || i < 0 {
 		t.Fatalf("end of input: %+v", r)
+	}
+	if kept := strings.TrimSpace(r.stdout[strings.LastIndex(r.stdout, " at ")+4:]); content(kept) != badEdit {
+		t.Errorf("end of input: kept version %s holds %q", kept, content(kept))
 	}
 
 	// Edit again (the default), then a clean version: saved as a plain edit.
@@ -182,7 +193,7 @@ func TestEditNewFile(t *testing.T) {
 	os.Mkdir(filepath.Join(dir, "drop.d"), 0o755)
 	p := filepath.Join(dir, "drop.d", "90-new")
 	r := sc(t, "edit", p)
-	if r.code != 0 || content(p) != okEdit || !strings.Contains(r.stdout, "saved "+p+" as ") || !strings.Contains(r.stdout, " (new file); takes effect") {
+	if r.code != 0 || content(p) != okEdit || !strings.Contains(r.stdout, "saved "+p+" as ") || !strings.Contains(r.stdout, " (new file)\ntakes effect") {
 		t.Fatalf("%+v", r)
 	}
 	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o440 {
@@ -216,14 +227,20 @@ func TestEditFileChangedMeanwhile(t *testing.T) {
 	if content(kept) != okEdit || !strings.HasPrefix(kept, filepath.Join(store.Home(), "tmp", "kept-")) {
 		t.Errorf("kept version %s: %q", kept, content(kept))
 	}
-	// The next sc edit removes leftover copies, not kept versions.
+	// A copy that an interrupted sc edit left may hold someone's work: the
+	// next sc edit keeps it and says so.
 	os.Remove(hook)
-	os.MkdirAll(filepath.Join(store.Home(), "tmp", "edit-stale"), 0o700)
-	if r := sc(t, "edit", fstab); r.code != 0 {
+	stale := filepath.Join(store.Home(), "tmp", "edit-stale")
+	os.MkdirAll(stale, 0o700)
+	os.WriteFile(filepath.Join(stale, "fstab"), []byte("half an edit\n"), 0o600)
+	keptStale := filepath.Join(store.Home(), "tmp", "kept-stale")
+	r = sc(t, "edit", fstab)
+	if r.code != 0 || !strings.HasPrefix(r.stdout, "note: an earlier sc edit did not finish; its copy is kept in "+keptStale+"\n") ||
+		content(filepath.Join(keptStale, "fstab")) != "half an edit\n" {
 		t.Fatalf("next edit: %+v", r)
 	}
 	left, _ := filepath.Glob(filepath.Join(store.Home(), "tmp", "*"))
-	if len(left) != 1 || !strings.Contains(left[0], "kept-") {
+	if len(left) != 2 || !strings.Contains(left[0], "kept-") || !strings.Contains(left[1], "kept-") {
 		t.Errorf("tmp holds %v", left)
 	}
 }
@@ -278,5 +295,66 @@ func TestEditEditor(t *testing.T) {
 	t.Setenv("SUDO_EDITOR", script+" -w  --flag")
 	if r := sc(t, "edit", fstab); r.code != 0 || content(fstab) != okEdit {
 		t.Errorf("editor with arguments: %+v", r)
+	}
+}
+
+// A save that fails after the editor ran keeps the edited version and
+// says where: the user's work is never thrown away by an error.
+func TestEditKeepsWorkWhenSaveFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a read-only directory")
+	}
+	_, fstab := editEnv(t, "", okEdit)
+	os.WriteFile(fstab, []byte(goodFstab), 0o644)
+	objects := filepath.Join(store.Home(), "objects")
+	os.Chmod(objects, 0o500)
+	defer os.Chmod(objects, 0o700)
+	r := sc(t, "edit", fstab)
+	i := strings.LastIndex(r.stderr, ". Your version is kept at ")
+	if r.code != 1 || content(fstab) != goodFstab || i < 0 || strings.Count(r.stderr, "\n") != 1 {
+		t.Fatalf("%+v", r)
+	}
+	if kept := strings.TrimSpace(r.stderr[i+len(". Your version is kept at "):]); content(kept) != okEdit {
+		t.Errorf("kept version %s holds %q", kept, content(kept))
+	}
+
+	// More than sc reads back: not written, kept.
+	_, fstab = editEnv(t, "", strings.Repeat("# padding padding padding padding\n", 300000))
+	os.WriteFile(fstab, []byte(goodFstab), 0o644)
+	if r := sc(t, "edit", fstab); r.code != 1 || content(fstab) != goodFstab || !strings.Contains(r.stderr, "is larger than the 8 MB limit (file not changed). Your version is kept at ") {
+		t.Fatalf("too big: code %d stderr %q", r.code, r.stderr)
+	}
+}
+
+// The validator runs only when there is something to compare: not at all
+// for an unchanged file, once for a new file, twice for a changed one,
+// and both runs come after the editor.
+func TestEditValidatorRuns(t *testing.T) {
+	runs := func(t *testing.T, existing bool, rounds ...string) string {
+		dir, fstab := editEnv(t, "", rounds...)
+		tools := t.TempDir()
+		log := filepath.Join(tools, "runs")
+		os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\necho \"$(cat "+filepath.Dir(os.Getenv("EDITOR"))+"/n 2>/dev/null)\" >> "+log+"\n"), 0o755)
+		g, _ := check.ParseGraph("check fstab " + fstab + " " + dir + "/new")
+		testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{tools} }
+		p := filepath.Join(dir, "new")
+		if existing {
+			p = fstab
+			os.WriteFile(fstab, []byte(goodFstab), 0o644)
+		}
+		if r := sc(t, "edit", p); r.code != 0 {
+			t.Fatalf("%+v", r)
+		}
+		return strings.Join(strings.Fields(content(log)), " ")
+	}
+	// Each run logs how many times the editor had run by then.
+	if got := runs(t, true, ""); got != "" {
+		t.Errorf("unchanged: validator runs %q", got)
+	}
+	if got := runs(t, true, okEdit); got != "1 1" {
+		t.Errorf("changed: validator runs %q, want two after the editor", got)
+	}
+	if got := runs(t, false, okEdit); got != "1" {
+		t.Errorf("new file: validator runs %q, want one", got)
 	}
 }

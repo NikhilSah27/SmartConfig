@@ -36,6 +36,9 @@ var stopSignals = []os.Signal{
 // printing its result, so a signal never cuts that result short.
 var mutating atomic.Bool
 
+// editing is set while sc edit's editor runs.
+var editing atomic.Bool
+
 // received is the number of the first stop signal, or 0.
 var received atomic.Int32
 
@@ -104,12 +107,22 @@ func main() {
 // prints one line; SQLite rolls back an open transaction at the next open.
 func handleSignals(sigs <-chan os.Signal) {
 	sig := <-sigs
-	// sc watch: SIGHUP asks for a rescan (systemctl reload scd), as
-	// daemons treat it; it never stops the watcher.
-	for sig == syscall.SIGHUP && watchRescan.Load() != nil {
-		(*watchRescan.Load())()
+	for {
+		switch {
+		case sig == syscall.SIGHUP && watchRescan.Load() != nil:
+			// sc watch: SIGHUP asks for a rescan (systemctl reload scd),
+			// as daemons treat it; it never stops the watcher.
+			(*watchRescan.Load())()
+		case editing.Load() && (sig == os.Interrupt || sig == syscall.SIGQUIT):
+			// sc edit while its editor runs: Ctrl-C and Ctrl-\ go to the
+			// whole foreground group and are the editor's to handle, as
+			// with sudoedit and git. sc waits for the editor.
+		default:
+			goto stop
+		}
 		sig = <-sigs
 	}
+stop:
 	received.Store(int32(sig.(syscall.Signal)))
 	if c := watchCancel.Load(); c != nil && isStop(sig) {
 		// sc watch: stop watching, finish the batch, exit 0. A second

@@ -371,3 +371,30 @@ func secondSignalAfterRename(t *testing.T) (caught bool) {
 	}
 	return true
 }
+
+// Ctrl-C and Ctrl-\ while sc edit's editor runs go to the whole foreground
+// group and are the editor's to handle: sc waits for the editor and then
+// saves, as sudoedit and git do. It used to die at once, leaving the
+// editor behind and its work unsaved (chunk B review).
+func TestEditLeavesCtrlCToTheEditor(t *testing.T) {
+	bin := scBinary(t)
+	home := filepath.Join(t.TempDir(), "home")
+	dir := t.TempDir()
+	file := filepath.Join(dir, "conf")
+	os.WriteFile(file, []byte("before\n"), 0o644)
+	script := filepath.Join(dir, "editor")
+	os.WriteFile(script, []byte("#!/bin/sh\nkill -INT $PPID\nkill -QUIT $PPID\nsleep 0.5\necho edited > \"$1\"\n"), 0o755)
+	env := append(os.Environ(), "SC_HOME="+home, "SUDO_EDITOR=", "VISUAL=", "EDITOR="+script)
+	initCmd := exec.Command(bin, "init")
+	initCmd.Env = env
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("init: %v %s", err, out)
+	}
+	cmd := exec.Command(bin, "edit", file)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	b, _ := os.ReadFile(file)
+	if err != nil || string(b) != "edited\n" || !strings.Contains(string(out), "saved "+file+" as ") {
+		t.Fatalf("err %v, file %q, output %q", err, b, out)
+	}
+}

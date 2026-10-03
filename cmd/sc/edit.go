@@ -38,7 +38,7 @@ anyway or quit. The file is not touched until you save.`,
 	}
 }
 
-func runEdit(cmd *cobra.Command, arg string) error {
+func runEdit(cmd *cobra.Command, arg string) (err error) {
 	path, err := filepath.Abs(arg)
 	if err != nil {
 		return err
@@ -49,16 +49,26 @@ func runEdit(cmd *cobra.Command, arg string) error {
 	}
 	defer s.Close()
 	home := store.Home()
+	out := cmd.OutOrStdout()
 
-	// Refusals, before the editor opens.
+	// Refusals, before the editor opens. The file must hold still while it
+	// is read: a torn copy would only be refused at the save.
 	var base *fsutil.State
-	st, err := fsutil.ReadState(path)
-	switch {
-	case fsutil.IsNotExist(err):
-	case err != nil:
-		return err
-	default:
-		base = &st
+	for attempt := 1; ; attempt++ {
+		st, err := fsutil.ReadState(path)
+		if fsutil.IsNotExist(err) {
+			break
+		}
+		if err == nil && st.Stable {
+			base = &st
+			break
+		}
+		if err != nil && !errors.Is(err, fsutil.ErrReplaced) {
+			return err
+		}
+		if attempt == 3 {
+			return fmt.Errorf("%s kept changing while being read, try again", path)
+		}
 	}
 	if err := s.CanReplace(path, base); err != nil {
 		return err
@@ -70,28 +80,33 @@ func runEdit(cmd *cobra.Command, arg string) error {
 	defer unlock()
 
 	// The copy to edit, under the file's own name so the editor knows its
-	// syntax. Copies an interrupted sc edit left are removed first: the
-	// lock says no other sc edit is using them.
+	// syntax. A copy an interrupted sc edit left may hold someone's work:
+	// it is kept, never removed (the lock says no sc edit is using it).
 	tmp := filepath.Join(home, "tmp")
 	if err := os.MkdirAll(tmp, 0o700); err != nil {
 		return fmt.Errorf("edit %s: %w", path, err)
 	}
-	if old, _ := filepath.Glob(filepath.Join(tmp, "edit-*")); len(old) > 0 {
-		for _, d := range old {
-			os.RemoveAll(d)
-		}
+	old, _ := filepath.Glob(filepath.Join(tmp, "edit-*"))
+	for _, d := range old {
+		fmt.Fprintf(out, "note: an earlier sc edit did not finish; its copy is kept in %s\n", keepCopy(d))
 	}
 	dir, err := os.MkdirTemp(tmp, "edit-")
 	if err != nil {
 		return fmt.Errorf("edit %s: %w", path, err)
 	}
-	keep := false
-	defer func() {
-		if !keep {
-			os.RemoveAll(dir)
-		}
-	}()
 	copyPath := filepath.Join(dir, filepath.Base(path))
+	// Once the editor has changed the copy it is the user's work: any
+	// failure from then on keeps it and says where. Only a save, an
+	// unchanged file and an explicit quit remove it.
+	edited, discard := false, false
+	defer func() {
+		if err != nil && edited && !discard {
+			kept := filepath.Join(keepCopy(dir), filepath.Base(path))
+			err = fmt.Errorf("%w. Your version is kept at %s", err, kept)
+			return
+		}
+		os.RemoveAll(dir)
+	}()
 	var before []byte
 	if base != nil {
 		before = base.Data
@@ -108,14 +123,6 @@ func runEdit(cmd *cobra.Command, arg string) error {
 	if g == nil {
 		g = check.DefaultGraph()
 	}
-	oldRep, err := c.Check(cmd.Context(), path, before)
-	if err != nil {
-		return err
-	}
-	if base == nil {
-		oldRep.Findings = nil // a file that is not there has no problems to compare with
-	}
-	out := cmd.OutOrStdout()
 	answers := bufio.NewReader(editStdin)
 	intent := "sc edit"
 	var after []byte
@@ -131,11 +138,26 @@ func runEdit(cmd *cobra.Command, arg string) error {
 			fmt.Fprintf(out, "unchanged: %s was not written\n", show(path))
 			return nil
 		}
+		edited = true
+		if err := store.TooBig(path, after); err != nil {
+			return err
+		}
+		// The old content is checked now, right before the new, so both
+		// see the same machine; a file that was not there has no problems
+		// to compare with.
+		var had []check.Finding
+		if base != nil {
+			oldRep, err := c.Check(cmd.Context(), path, before)
+			if err != nil {
+				return err
+			}
+			had = oldRep.Findings
+		}
 		rep, err := c.Check(cmd.Context(), path, after)
 		if err != nil {
 			return err
 		}
-		added := check.Added(oldRep.Findings, rep.Findings)
+		added := check.Added(had, rep.Findings)
 		rows := make([]findingRow, len(added))
 		for i, f := range added {
 			rows[i] = findingRow{path, f}
@@ -156,8 +178,12 @@ func runEdit(cmd *cobra.Command, arg string) error {
 		answer, readErr := answers.ReadString('\n')
 		answer = strings.ToLower(strings.TrimSpace(answer))
 		if readErr != nil && answer == "" {
-			answer = "q" // end of input: a failing file is never saved unattended
-			fmt.Fprintln(out)
+			// End of input: a failing file is never saved unattended, and
+			// nobody said to throw the edit away.
+			kept := filepath.Join(keepCopy(dir), filepath.Base(path))
+			fmt.Fprintf(out, "\nnot saved: %s is unchanged; your version is kept at %s\n", show(path), kept)
+			discard = true
+			return exitCode(2)
 		}
 		switch {
 		case strings.HasPrefix(answer, "s"):
@@ -165,6 +191,7 @@ func runEdit(cmd *cobra.Command, arg string) error {
 			intent = "sc edit, saved with " + tally(n)
 		case strings.HasPrefix(answer, "q"):
 			fmt.Fprintf(out, "not saved: %s is unchanged\n", show(path))
+			discard = true
 			return exitCode(2)
 		default:
 			continue
@@ -179,13 +206,7 @@ func runEdit(cmd *cobra.Command, arg string) error {
 	mutating.Store(true)
 	row, prev, err := s.Replace(path, after, mode, uid, gid, base, store.OriginEdit, intent)
 	if errors.Is(err, store.ErrFileChanged) {
-		kept := filepath.Join(tmp, "kept-"+strings.TrimPrefix(filepath.Base(dir), "edit-"))
-		if os.Rename(dir, kept) == nil {
-			keep = true
-			return fmt.Errorf("%s changed on disk while you were editing; it was not written. Your version is kept at %s", path, filepath.Join(kept, filepath.Base(path)))
-		}
-		keep = true
-		return fmt.Errorf("%s changed on disk while you were editing; it was not written. Your version is kept at %s", path, copyPath)
+		return fmt.Errorf("%s changed on disk while you were editing; it was not written", path)
 	}
 	if err != nil {
 		return err
@@ -194,12 +215,22 @@ func runEdit(cmd *cobra.Command, arg string) error {
 	if prev != nil {
 		was = "before: " + prev.ID
 	}
-	fmt.Fprintf(out, "saved %s as %s (%s)", show(path), row.ID, was)
+	fmt.Fprintf(out, "saved %s as %s (%s)\n", show(path), row.ID, was)
 	if apply := g.Apply(path); apply != "" {
-		fmt.Fprintf(out, "; takes effect %s", apply)
+		fmt.Fprintf(out, "takes effect %s\n", apply)
 	}
-	fmt.Fprintln(out)
 	return nil
+}
+
+// keepCopy renames an sc edit scratch directory so that it is kept, and
+// returns its new name (its old one if the rename fails: the next sc edit
+// then keeps it).
+func keepCopy(dir string) string {
+	kept := filepath.Join(filepath.Dir(dir), "kept-"+strings.TrimPrefix(filepath.Base(dir), "edit-"))
+	if os.Rename(dir, kept) != nil {
+		return dir
+	}
+	return kept
 }
 
 // runEditor runs the user's editor on file and waits for it. The editor is
@@ -225,7 +256,12 @@ func runEditor(file string) error {
 	}
 	ed := exec.Command(argv[0], append(argv[1:], file)...)
 	ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := ed.Run(); err != nil {
+	// While the editor runs, Ctrl-C and Ctrl-\ are its to handle
+	// (handleSignals).
+	editing.Store(true)
+	err := ed.Run()
+	editing.Store(false)
+	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return fmt.Errorf("the editor (%s) ended with %s", argv[0], ee.ProcessState)

@@ -46,7 +46,7 @@ func TestCheckCLI(t *testing.T) {
 	os.WriteFile(fstab, []byte(badFstab), 0o644)
 	r := sc(t, "check", fstab)
 	lines := strings.Split(r.stdout, "\n")
-	if r.code != 2 || r.stderr != "" || len(lines) != 6 {
+	if r.code != 2 || r.stderr != "" || len(lines) != 7 {
 		t.Fatalf("findings: %+v", r)
 	}
 	for i, want := range [][]string{
@@ -59,9 +59,12 @@ func TestCheckCLI(t *testing.T) {
 			t.Errorf("line %d: %q, want %q", i, lines[i], want)
 		}
 	}
-	if lines[3] != "note: "+fstab+": "+strings.TrimSpace(noValidator) ||
-		lines[4] != "1 blocker, 1 warning in 1 file. sc check -v explains; sc log FILE lists the versions to restore." {
+	if lines[3] != "note: "+fstab+": "+strings.TrimSpace(noValidator) || lines[4] != "1 blocker, 1 warning in 1 file." ||
+		lines[5] != "sc check -v explains; sc log FILE lists the versions to restore." {
 		t.Errorf("tail: %q", lines[3:])
+	}
+	if len(lines[4]) > 80 || len(lines[5]) > 80 {
+		t.Errorf("a summary line is wider than 80 columns: %q", lines[4:6])
 	}
 
 	// With no argument: the files of the graph that are on disk.
@@ -114,13 +117,23 @@ func TestCheckCLIByID(t *testing.T) {
 	if r := sc(t, "check", fstab); r.code != 0 {
 		t.Errorf("the file now: %+v", r)
 	}
-	if r := sc(t, "check", "abcdef"); r.code != 1 || r.stdout != "" || !strings.HasPrefix(r.stderr, "sc: ") {
-		t.Errorf("unknown id: %+v", r)
+	// An id prefix and upper case work as for sc cat; an unknown id and
+	// something too long to be an id are one-line errors.
+	for _, a := range []string{id[:3], strings.ToUpper(id)} {
+		if r := sc(t, "check", a); r.code != 2 || !strings.Contains(r.stdout, " ("+id+") ") {
+			t.Errorf("id %q: %+v", a, r)
+		}
 	}
 	t.Chdir(dir)
-	os.WriteFile("abcdef", []byte("x\n"), 0o644)
-	if r := sc(t, "check", "./abcdef"); r.code != 0 || !strings.Contains(r.stdout, "abcdef: no checker reads this file") {
-		t.Errorf("./name: %+v", r)
+	for _, a := range []string{"abcdef", "deadbeef"} {
+		if r := sc(t, "check", a); r.code != 1 || r.stdout != "" || !strings.HasPrefix(r.stderr, "sc: ") || strings.Count(r.stderr, "\n") != 1 {
+			t.Errorf("%s: %+v", a, r)
+		}
+	}
+	// A file that exists is a path, whatever its name looks like.
+	os.WriteFile("cafe", []byte("x\n"), 0o644)
+	if r := sc(t, "check", "cafe"); r.code != 0 || !strings.Contains(r.stdout, "cafe: no checker reads this file") {
+		t.Errorf("a file named like an id: %+v", r)
 	}
 }
 
@@ -142,5 +155,20 @@ func TestCheckCLIWithoutStoreAccess(t *testing.T) {
 	}
 	if left, _ := os.ReadDir(tmp); len(left) != 0 {
 		t.Errorf("scratch directory left behind: %v", left)
+	}
+}
+
+// With no argument, a file sc has a checker for but may not read is not a
+// clean file: exit 1 and one line on stderr, after the notes.
+func TestCheckCLIUncheckedFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every file")
+	}
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o000)
+	r := sc(t, "check")
+	if r.code != 1 || r.stderr != "sc: 1 file not checked (see the notes)\n" ||
+		r.stdout != "note: "+fstab+": not checked: permission denied (run sc check as root)\n" {
+		t.Fatalf("%+v", r)
 	}
 }

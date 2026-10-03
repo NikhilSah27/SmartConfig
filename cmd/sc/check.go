@@ -22,18 +22,27 @@ import (
 // graph and where validators are looked up).
 var testHookChecks func(*check.Checks)
 
-// rowID is what an argument of sc check must look like to be a row id
-// rather than a path; a file with such a name is given as ./name.
-var rowID = regexp.MustCompile(`^[0-9a-f]{4,64}$`)
+// rowID is what an id or id prefix looks like to sc cat and sc restore. An
+// argument of sc check is an id when it looks like one and no file of that
+// name exists.
+var rowID = regexp.MustCompile(`^[0-9a-fA-F]{1,6}$`)
+
+func isRowID(arg string) bool {
+	if _, err := os.Lstat(arg); err == nil {
+		return false
+	}
+	return rowID.MatchString(arg)
+}
 
 func newCheckCmd() *cobra.Command {
 	var verbose bool
 	cmd := &cobra.Command{
 		Use:   "check [path|id]...",
 		Short: "Check config files, or saved versions, for problems",
-		Long: `Check config files for problems before they bite (exit status 2 when a
-file has a blocker or an error). With no argument, every file on this
-machine that sc has a checker for; an id checks that saved version.`,
+		Long: `Check config files for problems before they bite. With no argument, every
+file on this machine that sc has a checker for; an id checks that saved
+version. Exit status 2 when a file has a blocker or an error, 1 when a
+file could not be checked.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(cmd, args, verbose)
 		},
@@ -62,6 +71,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 	out := cmd.OutOrStdout()
 	var targets []checkTarget
 	var notes []string
+	unchecked := 0 // files with a checker that could not be read
 	if len(args) == 0 {
 		g := c.Graph
 		if g == nil {
@@ -71,8 +81,10 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 			st, err := fsutil.ReadState(p)
 			switch {
 			case errors.Is(err, os.ErrPermission):
+				unchecked++
 				notes = append(notes, show(p)+": not checked: permission denied (run sc check as root)")
 			case err != nil:
+				unchecked++
 				notes = append(notes, show(p)+": not checked: "+err.Error())
 			case st.Kind == "file":
 				targets = append(targets, checkTarget{p, p, st.Data})
@@ -81,7 +93,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 	}
 	var s *store.Store
 	for _, a := range args {
-		if rowID.MatchString(a) {
+		if isRowID(a) {
 			if s == nil {
 				if s, err = openStore(); err != nil {
 					return err
@@ -143,6 +155,12 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 	for _, note := range notes {
 		fmt.Fprintln(out, "note: "+note)
 	}
+	// A file that was not checked is not a clean file: exit 1, unless a
+	// finding already makes it 2.
+	var notChecked error
+	if unchecked > 0 {
+		notChecked = fmt.Errorf("%s not checked (see the notes)", count(unchecked, "file"))
+	}
 	if len(rows) == 0 {
 		switch {
 		case checked == 0 && len(notes) == 0:
@@ -150,23 +168,22 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		case checked > 0:
 			fmt.Fprintf(out, "no problems found in %s\n", count(checked, "file"))
 		}
-		return nil
+		return notChecked
 	}
-	fmt.Fprintf(out, "%s in %s.", tally(n), count(checked, "file"))
+	fmt.Fprintf(out, "%s in %s.\n", tally(n), count(checked, "file"))
 	if verbose {
-		fmt.Fprintln(out)
 		fs := make([]check.Finding, len(rows))
 		for i, r := range rows {
 			fs[i] = r.f
 		}
 		explain(out, fs)
 	} else {
-		fmt.Fprintln(out, " sc check -v explains; sc log FILE lists the versions to restore.")
+		fmt.Fprintln(out, "sc check -v explains; sc log FILE lists the versions to restore.")
 	}
 	if n[check.Blocker]+n[check.Error] > 0 {
 		return exitCode(2)
 	}
-	return nil
+	return notChecked
 }
 
 // findingRow is one line of the findings table.

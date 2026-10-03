@@ -100,11 +100,28 @@ func TestReplaceNewFile(t *testing.T) {
 	if _, err := os.Lstat(p); !os.IsNotExist(err) {
 		t.Fatal("restoring the did-not-exist row left the file")
 	}
-	// The path now has rows: a second creation adds only its edit row.
+	// The newest row already says the path is absent: a second creation
+	// adds only its edit row.
 	n := len(history(t, s, p))
 	replace(t, s, p, "again\n", 0o440, nil)
 	if h := history(t, s, p); len(h) != n+1 || h[len(h)-1] != "file sc edit" {
 		t.Fatalf("history %q", h)
+	}
+	// The file vanished with nobody recording it: the newest row is a
+	// stale file row, so the creation first records that the path was
+	// absent, and restoring that row undoes the creation.
+	os.Remove(p)
+	replace(t, s, p, "third\n", 0o440, nil)
+	h := history(t, s, p)
+	if len(h) != n+3 || h[len(h)-2] != "deleted deleted" || h[len(h)-1] != "file sc edit" {
+		t.Fatalf("history after an unrecorded deletion %q", h)
+	}
+	cs, _ = s.List(p, 2)
+	if _, _, err := s.Restore(cs[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(p); !os.IsNotExist(err) {
+		t.Fatal("restoring the deleted row left the file")
 	}
 }
 
@@ -154,6 +171,13 @@ func TestReplaceFileChanged(t *testing.T) {
 	if left, _ := filepath.Glob(filepath.Join(dir, ".conf.sc-tmp-*")); len(left) != 0 {
 		t.Fatalf("temp files left: %v", left)
 	}
+
+	// Content sc would refuse to read back is refused before it is written.
+	b = base(t, p)
+	_, _, err = s.Replace(p, make([]byte, fsutil.MaxSize+1), 0o644, os.Getuid(), os.Getgid(), b, OriginEdit, "sc edit")
+	if err == nil || !strings.Contains(err.Error(), "is larger than the 8 MB limit (file not changed)") || content(t, p) != "appeared\n" {
+		t.Fatalf("too big: %v", err)
+	}
 }
 
 // Refusals come before anything is written.
@@ -193,4 +217,13 @@ func TestReplaceRefusals(t *testing.T) {
 	if b, _ := os.ReadFile(key); string(b) != "PRIVATE\n" {
 		t.Fatal("the fingerprint-only file was written")
 	}
+}
+
+func content(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
