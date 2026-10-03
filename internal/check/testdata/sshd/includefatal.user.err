@@ -1,0 +1,1 @@
+/etc/ssh/sshd_config.d/50-fatal.conf line 1: unsupported option "maybe".

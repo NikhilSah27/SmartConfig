@@ -1,0 +1,3 @@
+Unable to load host key: /etc/ssh/ssh_host_ed25519_key
+Unable to load host key: /nonexistent/key
+sshd: no hostkeys available -- exiting.

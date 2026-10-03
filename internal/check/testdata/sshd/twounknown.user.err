@@ -1,0 +1,3 @@
+@FILE@: line 1: Bad configuration option: PermitRootLogn
+@FILE@: line 2: Bad configuration option: FooBar
+@FILE@: terminating, 2 bad configuration options

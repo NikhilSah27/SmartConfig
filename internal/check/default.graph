@@ -7,3 +7,5 @@
 # A checker's lines are added with the step that builds it.
 check fstab /etc/fstab
 apply fstab at the next boot (now: systemctl daemon-reload, then mount -a)
+check sshd /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
+apply sshd at the next start of ssh.service (systemctl restart ssh)

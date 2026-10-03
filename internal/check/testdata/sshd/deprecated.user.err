@@ -1,0 +1,3 @@
+@FILE@ line 2: Deprecated option RSAAuthentication
+@FILE@ line 3: Deprecated option UsePrivilegeSeparation
+@FILE@ line 4: Deprecated option KeyRegenerationInterval

@@ -1,0 +1,3 @@
+@FILE@: line 1: Bad configuration option: FooBar
+/etc/ssh/sshd_config.d/50-bad.conf: line 1: Bad configuration option: PermitRootLogn
+/etc/ssh/sshd_config.d/50-bad.conf: terminating, 1 bad configuration options

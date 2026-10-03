@@ -108,6 +108,7 @@ func TestGraphParseErrors(t *testing.T) {
 // read. Each step that adds a checker adds its lines here.
 var graphSamples = map[string][]string{
 	"fstab": {"/etc/fstab"},
+	"sshd":  {"/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d/50-local.conf"},
 }
 
 // The built-in graph parses, every checker in it has samples, each sample

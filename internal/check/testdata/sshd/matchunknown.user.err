@@ -1,0 +1,2 @@
+@FILE@: line 2: Bad configuration option: PermitRootLogn
+@FILE@ line 2: Directive 'PermitRootLogn' is not allowed within a Match block

@@ -1,0 +1,3 @@
+@FILE@ line 2: Deprecated option RSAAuthentication
+@FILE@: line 3: Bad configuration option: PermitRootLogn
+@FILE@: terminating, 1 bad configuration options
