@@ -33,7 +33,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
 one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built and reviewed
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
-fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). **Next: step 7** (chunk B), `sc edit`.
+fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built. **In progress:
+the chunk B review** (one reviewer); then chunk C.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -883,3 +884,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   grub, plain rules) are independent: they are built by parallel agents
   in separate worktrees after step 7, and integrated, checked and
   committed here one at a time. Shared code stays in the session.
+- **M3 step 7, `sc edit`, `c997865`:** the command of plan 6.2. The editor
+  opens a copy; the result is checked against the old content and only
+  what the edit added counts; a new blocker or error is explained and
+  asked about (edit again, save anyway, quit; end of input quits, exit
+  2); saved through `store.Replace` with the file's mode and owner. One
+  `sc edit` at a time (a lock); a file that changed on disk meanwhile is
+  not written and the edited version is kept under `$SC_HOME/tmp/kept-*`;
+  copies an interrupted `sc edit` left are removed by the next one.
+  Tests drive it with a script as editor: clean save, unchanged, quit,
+  end of input, edit again, save anyway, warning only, an old blocker not
+  blamed, new file, changed on disk, refusals, the lock, a failing or
+  missing editor, an editor with arguments. Checks: build, gofmt, vet,
+  `go test ./...`, `store` and `cmd/sc` as root, race on the new tests
+  and `store`, static: clean. Chunk B (steps 5-7) is built; its review
+  is next.
