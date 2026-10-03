@@ -33,8 +33,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
 one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). Step 3 (`b665691`). Step 4 (`efc2ce3`): chunk A is built and reviewed
 ([reviews/2026-10-03-m3-chunk-a.md](reviews/2026-10-03-m3-chunk-a.md),
-fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built. **In progress:
-the chunk B review** (one reviewer); then chunk C.
+fixes `a2e325f`). Step 5 (`afa9403`). Step 6 (`5f6068b`). Step 7 (`c997865`): chunk B is built and reviewed
+([reviews/2026-10-03-m3-chunk-b.md](reviews/2026-10-03-m3-chunk-b.md),
+fixes `a946f6f`). **Next: chunk C** (steps 8-11), built by parallel agents.
 Your call (2026-10-03): several agents where that stays accurate, so the
 independent checkers of chunk C are built in parallel in separate
 worktrees and integrated one commit at a time. Gate G2 stands: nothing is installed or run on the real system
@@ -899,3 +900,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `go test ./...`, `store` and `cmd/sc` as root, race on the new tests
   and `store`, static: clean. Chunk B (steps 5-7) is built; its review
   is next.
+- **M3 chunk B review closed**
+  ([reviews/2026-10-03-m3-chunk-b.md](reviews/2026-10-03-m3-chunk-b.md)):
+  one reviewer, 10 findings, all fixed in `a946f6f`. Two were high and lost
+  the user's work: `sc edit` deleted the edited copy when the save
+  failed, and a Ctrl-C from inside the editor killed sc and orphaned the
+  editor. Now the copy is kept after any failure and its path printed,
+  and SIGINT/SIGQUIT are the editor's while it runs. Also: `sc check`
+  exits 1 when a file could not be read; ids as `sc cat` takes them; a
+  `deleted` row before a creation after an unrecorded deletion; 80-column
+  lines. Plan change C5. Checks: build, gofmt, vet, `go test ./...`,
+  `store`, `check` and `cmd/sc` as root (one timeout of the M2 test
+  `TestWatchSIGHUPRescans` under load; 8 of 8 alone), race on the new
+  tests, `make m1-compat`: clean.
