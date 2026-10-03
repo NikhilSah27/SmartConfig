@@ -116,11 +116,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		targets = append(targets, checkTarget{p, p, st.Data})
 	}
 
-	type row struct {
-		label string
-		f     check.Finding
-	}
-	var rows []row
+	var rows []findingRow
 	checked := 0
 	for _, t := range targets {
 		rep, err := c.Check(cmd.Context(), t.path, t.data)
@@ -133,28 +129,16 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		}
 		checked++
 		for _, f := range rep.Findings {
-			rows = append(rows, row{t.label, f})
+			rows = append(rows, findingRow{t.label, f})
 		}
 		for _, n := range rep.Notes {
 			notes = append(notes, show(t.label)+": "+n)
 		}
 	}
 
-	var n [check.Blocker + 1]int
-	if len(rows) > 0 {
-		tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "SEVERITY\tFILE\tLINE\tRULE\tPROBLEM")
-		for _, r := range rows {
-			line := "-"
-			if r.f.Line > 0 {
-				line = fmt.Sprint(r.f.Line)
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.f.Severity, show(r.label), line, r.f.Rule, show(r.f.Text))
-			n[r.f.Severity]++
-		}
-		if err := tw.Flush(); err != nil {
-			return err
-		}
+	n, err := findingsTable(out, rows)
+	if err != nil {
+		return err
 	}
 	for _, note := range notes {
 		fmt.Fprintln(out, "note: "+note)
@@ -168,13 +152,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		}
 		return nil
 	}
-	var parts []string
-	for _, sev := range []check.Severity{check.Blocker, check.Error, check.Warning} {
-		if n[sev] > 0 {
-			parts = append(parts, count(n[sev], sev.String()))
-		}
-	}
-	fmt.Fprintf(out, "%s in %s.", strings.Join(parts, ", "), count(checked, "file"))
+	fmt.Fprintf(out, "%s in %s.", tally(n), count(checked, "file"))
 	if verbose {
 		fmt.Fprintln(out)
 		fs := make([]check.Finding, len(rows))
@@ -189,6 +167,42 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		return exitCode(2)
 	}
 	return nil
+}
+
+// findingRow is one line of the findings table.
+type findingRow struct {
+	label string // the file as shown: its path, or "path (id)"
+	f     check.Finding
+}
+
+// findingsTable prints the table of rows (nothing when there are none) and
+// returns how many findings of each severity it holds.
+func findingsTable(out io.Writer, rows []findingRow) (n [check.Blocker + 1]int, err error) {
+	if len(rows) == 0 {
+		return n, nil
+	}
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "SEVERITY\tFILE\tLINE\tRULE\tPROBLEM")
+	for _, r := range rows {
+		line := "-"
+		if r.f.Line > 0 {
+			line = fmt.Sprint(r.f.Line)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.f.Severity, show(r.label), line, r.f.Rule, show(r.f.Text))
+		n[r.f.Severity]++
+	}
+	return n, tw.Flush()
+}
+
+// tally is "1 blocker, 2 warnings" for the counts findingsTable returns.
+func tally(n [check.Blocker + 1]int) string {
+	var parts []string
+	for _, sev := range []check.Severity{check.Blocker, check.Error, check.Warning} {
+		if n[sev] > 0 {
+			parts = append(parts, count(n[sev], sev.String()))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // explain prints each rule's explanation once, in the order the findings

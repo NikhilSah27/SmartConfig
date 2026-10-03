@@ -236,6 +236,7 @@ func newRoot() *cobra.Command {
 		newRestoreCmd(),
 		newWatchCmd(),
 		newCheckCmd(),
+		newEditCmd(),
 	)
 	return root
 }

@@ -31,13 +31,7 @@ var ErrFileChanged = errors.New("the file changed on disk meanwhile")
 // path, a base that is not a regular file, and a directory that is not a
 // real directory owned by root or the caller.
 func (s *Store) Replace(path string, data []byte, mode os.FileMode, uid, gid int, base *fsutil.State, origin, intent string) (row Change, prev *Change, err error) {
-	if s.FingerprintOnly(path) {
-		return Change{}, nil, fmt.Errorf("%s is fingerprint-only; sc never writes it", path)
-	}
-	if base != nil && base.Kind != "file" {
-		return Change{}, nil, fmt.Errorf("%s is a symlink; sc writes regular files only", path)
-	}
-	if err := safeDirFor(path, "write", ""); err != nil {
+	if err := s.CanReplace(path, base); err != nil {
 		return Change{}, nil, err
 	}
 	if stopping() {
@@ -81,6 +75,18 @@ func (s *Store) Replace(path string, data []byte, mode os.FileMode, uid, gid int
 		return Change{}, prev, fmt.Errorf("file written but not recorded: %w (run: sc snapshot %s)", err, path)
 	}
 	return Change{}, prev, fmt.Errorf("write %s: %w (file not changed)", path, err)
+}
+
+// CanReplace returns Replace's refusal for path and base, or nil: sc edit
+// asks before it opens the editor, so nobody edits a file sc will not save.
+func (s *Store) CanReplace(path string, base *fsutil.State) error {
+	if s.FingerprintOnly(path) {
+		return fmt.Errorf("%s is fingerprint-only; sc never writes it", path)
+	}
+	if base != nil && base.Kind != "file" {
+		return fmt.Errorf("%s is a symlink; sc writes regular files only", path)
+	}
+	return safeDirFor(path, "write", "")
 }
 
 // testHookBeforeReplaceLock, if set by a test, runs in Replace after the
