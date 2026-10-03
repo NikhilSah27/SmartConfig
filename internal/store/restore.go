@@ -118,7 +118,13 @@ var testHookBeforePreRestore func()
 // or by the caller. A restore through a directory that another user
 // controls could be redirected (plan question 4; a dirfd restore is M4).
 func safeDir(src Change) error {
-	dir := filepath.Dir(src.Path)
+	return safeDirFor(src.Path, "restore", "; see it with: sc cat "+src.ID)
+}
+
+// safeDirFor is safeDir for any write of path: op is the verb of the
+// messages ("restore", "edit"), hint ends a refusal.
+func safeDirFor(path, op, hint string) error {
+	dir := filepath.Dir(path)
 	cur := "/"
 	for _, part := range strings.Split(strings.Trim(dir, "/"), "/") {
 		if part != "" {
@@ -126,16 +132,16 @@ func safeDir(src Change) error {
 		}
 		fi, err := os.Lstat(cur)
 		if err != nil {
-			return fmt.Errorf("restore %s: %w (file not changed)", src.Path, err)
+			return fmt.Errorf("%s %s: %w (file not changed)", op, path, err)
 		}
 		switch {
 		case fi.Mode()&os.ModeSymlink != 0:
-			return fmt.Errorf("refusing to restore into %s (a symlink); see it with: sc cat %s", cur, src.ID)
+			return fmt.Errorf("refusing to %s into %s (a symlink)%s", op, cur, hint)
 		case !fi.IsDir():
-			return fmt.Errorf("restore %s: %s is not a directory (file not changed)", src.Path, cur)
+			return fmt.Errorf("%s %s: %s is not a directory (file not changed)", op, path, cur)
 		}
 		if uid, _ := ownerOf(fi); uid != 0 && uid != os.Geteuid() {
-			return fmt.Errorf("refusing to restore into %s (owner uid %d, not root); see it with: sc cat %s", cur, uid, src.ID)
+			return fmt.Errorf("refusing to %s into %s (owner uid %d, not root)%s", op, cur, uid, hint)
 		}
 		if cur == dir {
 			break
@@ -186,8 +192,27 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 		Mode: src.Mode, UID: src.UID, GID: src.GID,
 		Origin: OriginRestore, Intent: "restored from " + src.ID,
 	}
+	wrote, err = s.commitWrite(&restored, existed, stamp, false, func() error {
+		switch src.Kind {
+		case KindLink:
+			return fsutil.SymlinkAtomic(src.Path, src.Target, src.UID, src.GID)
+		case KindDeleted:
+			return fsutil.RemoveFile(src.Path)
+		}
+		return pending.Commit()
+	})
+	return restored, wrote, err
+}
+
+// commitWrite records row c and makes its change on disk with write, all
+// under the write lock: anyone who sees the change and takes the write
+// lock to record it (the watcher) waits for this commit and finds the row.
+// It first checks that the path is still the version the caller read
+// (existed and stamp), and returns errChanged if not. With absentFirst, a
+// path that has no rows yet gets a "did not exist" row before c.
+func (s *Store) commitWrite(c *Change, existed bool, stamp fsutil.Stamp, absentFirst bool, write func() error) (wrote bool, err error) {
 	err = s.writeTx(true, func(ctx context.Context, conn *sql.Conn) error {
-		st, err := fsutil.LstatStamp(src.Path)
+		st, err := fsutil.LstatStamp(c.Path)
 		switch {
 		case existed && (err != nil || st != stamp):
 			return errChanged
@@ -195,7 +220,7 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 			return errChanged
 		}
 		// Last point where stopping leaves the path untouched. Past it, a
-		// forced stop (ForceStop) must wait for this restore to report.
+		// forced stop (ForceStop) must wait for this write to report.
 		pointMu.Lock()
 		if stopping() || forced {
 			pointMu.Unlock()
@@ -203,19 +228,23 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 		}
 		passedPoint = true
 		pointMu.Unlock()
-		restored.TS = s.now().Unix()
-		if err := insertTx(ctx, conn, &restored); err != nil {
+		c.TS = s.now().Unix()
+		if absentFirst {
+			last, err := latestTx(ctx, conn, c.Path)
+			if err != nil {
+				return err
+			}
+			if last == nil {
+				gone := Change{Path: c.Path, Kind: KindDeleted, Origin: c.Origin, Intent: "did not exist", TS: c.TS}
+				if err := insertTx(ctx, conn, &gone); err != nil {
+					return err
+				}
+			}
+		}
+		if err := insertTx(ctx, conn, c); err != nil {
 			return err
 		}
-		switch src.Kind {
-		case KindLink:
-			err = fsutil.SymlinkAtomic(src.Path, src.Target, src.UID, src.GID)
-		case KindDeleted:
-			err = fsutil.RemoveFile(src.Path)
-		default:
-			err = pending.Commit()
-		}
-		if err != nil {
+		if err := write(); err != nil {
 			return err
 		}
 		wrote = true
@@ -224,5 +253,5 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 		}
 		return nil
 	})
-	return restored, wrote, err
+	return wrote, err
 }

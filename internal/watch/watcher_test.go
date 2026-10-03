@@ -464,6 +464,50 @@ func TestStaleTempReported(t *testing.T) {
 	e.want(fresh)
 }
 
+// An sc edit (store.Replace) while the watcher runs leaves the edit row
+// newest, with no auto row after it: the write and its row are one commit
+// (M3 plan 6.2).
+func TestReplaceWhileWatching(t *testing.T) {
+	e := newEnv(t)
+	conf := filepath.Join(e.root, "conf")
+	put(t, conf, "v0\n", 0o644)
+	processed := make(chan string, 100)
+	testHookProcessed = func(p string) {
+		select {
+		case processed <- p:
+		default:
+		}
+	}
+	// Reset after the watcher stops: cleanups run last-registered first.
+	t.Cleanup(func() { testHookProcessed = nil })
+	e.start()
+	for i := 1; i <= 20; i++ {
+		st, err := fsutil.ReadState(conf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		row, _, err := e.st.Replace(conf, []byte(fmt.Sprintf("v%d\n", i)), 0o644, os.Getuid(), os.Getgid(), &st, store.OriginEdit, "sc edit")
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.After(5 * time.Second)
+		for seen := false; !seen; {
+			select {
+			case p := <-processed:
+				seen = p == conf
+			case <-deadline:
+				t.Fatalf("round %d: the watcher never looked at %s", i, conf)
+			}
+		}
+		if c := e.newest(conf); c.ID != row.ID || c.Origin != store.OriginEdit {
+			t.Fatalf("round %d: newest row %+v, want the edit row %s", i, c, row.ID)
+		}
+	}
+	if h := e.history(conf); len(h) != 21 {
+		t.Fatalf("history: %q", h)
+	}
+}
+
 // A restore of a file, a link or a "did not exist" row leaves the restore
 // and pre-restore rows newest, with no auto row after them.
 func TestRestoreWhileWatching(t *testing.T) {

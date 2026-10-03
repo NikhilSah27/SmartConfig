@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"smartconfig/internal/fsutil"
 )
 
 // pathState is what a refused restore must not change about a path: the
@@ -106,6 +108,29 @@ func TestM1Compat(t *testing.T) {
 	if b, _ := os.ReadFile(file); string(b) != "127.0.0.1 localhost\n" {
 		t.Fatalf("restored %q", b)
 	}
+	// A row written by sc edit (M3) is a file row to sc-m1: it lists the
+	// origin as it is and restores the row.
+	edited := filepath.Join(dir, "edited.conf")
+	write(t, edited, "before\n", 0o644)
+	st, err := fsutil.ReadState(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editRow, _, err := s.Replace(edited, []byte("after\n"), 0o644, os.Getuid(), os.Getgid(), &st, OriginEdit, "sc edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, edited, "broken\n", 0o644)
+	if code, out, _ := m1("log", edited); code != 0 || !strings.Contains(out, editRow.ID+"  ") || !strings.Contains(out, "  edit  ") {
+		t.Fatalf("sc-m1 log of an edit row: %d %q", code, out)
+	}
+	if code, _, errs := m1("restore", editRow.ID); code != 0 {
+		t.Fatalf("sc-m1 restore of an edit row: %d %q", code, errs)
+	}
+	if b, _ := os.ReadFile(edited); string(b) != "after\n" {
+		t.Fatalf("sc-m1 restored %q", b)
+	}
+	total, _ = storeShape(t, s)
 
 	// Every other kind: one line, exit 1, nothing changed, no row.
 	for _, c := range []struct {

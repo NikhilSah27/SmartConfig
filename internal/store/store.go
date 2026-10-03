@@ -34,6 +34,7 @@ const (
 	OriginManual     = "manual"
 	OriginPreRestore = "pre-restore"
 	OriginRestore    = "restore"
+	OriginEdit       = "edit" // written by sc edit (M3)
 )
 
 const idLen = 6
