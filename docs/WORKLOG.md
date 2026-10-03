@@ -777,3 +777,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   all clean. Not installed.
 - **All M2 follow-ups are done.** Next: install the new build (your pick:
   once, after 8), then the soak check (S6).
+- **New build installed** (your pick: once, after follow-up 8): the build
+  of `b6ab3cc` (M2 plus follow-ups 1-8; static, sha256 `396f84cb…`, clean
+  tree) to `/usr/local/sbin/sc`; the `m2` binary kept as
+  `/var/backups/smartconfig/sc-m2` (sha256 `03fbc30d…`). Unit unchanged
+  since `m2`, store schema unchanged (`user_version` 1). scd restarted:
+  baseline 0 first seen, 0 changed, 0 deleted (368 ms), 0 restarts, 13 MB;
+  integrity ok, 1546 rows. The `m2` build's run before it (about 7 h, 2 of
+  them paused): 4.5 s CPU, 12.7 MB peak, 0 restarts, one row
+  (`grub.cfg`, the upgrade). PROJECT_LOG: VM state and recovery guide now
+  name the new build and `sc-m2`.

@@ -130,8 +130,8 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
-| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (about 2,100 rows then); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
-| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc`; `sudo journalctl -u scd` |
+| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,546 rows on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
+| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc` (since 2026-10-03 the build of `b6ab3cc`, M2 plus follow-ups 1-8, sha256 `396f84cb…`); the `m2` build is `/var/backups/smartconfig/sc-m2`; `sudo journalctl -u scd` |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
 | Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
@@ -175,7 +175,7 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-SC=/usr/local/sbin/sc               # if it is gone: /var/backups/smartconfig/sc-m1 (file rows only)
+SC=/usr/local/sbin/sc               # if it is gone: /var/backups/smartconfig/sc-m2, else sc-m1 (file rows only)
 sudo $SC log /etc/fstab             # find the last good id
 sudo $SC diff <id>                  # confirm what changed
 sudo $SC restore <id>               # put it back; the broken state is saved too
@@ -197,7 +197,9 @@ original file of this VM.
 4. Restore with a static `sc`, or fix the file with nano:
    - `/usr/local/sbin/sc restore <id>`, the M2 binary, which also restores
      links and undoes creations;
-   - if it is gone: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
+   - if it is gone: `/var/backups/smartconfig/sc-m2 restore <id>` (the `m2`
+     build, the same restores);
+   - if that is gone too: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
      build). It still restores file rows on the migrated store and refuses
      link, deleted and fingerprint rows with one line (`make m1-compat`
      proves this).
@@ -211,7 +213,9 @@ If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
 `store-m1.tar` (the SmartConfig store; `2c6901` is this VM's original
 fstab), `etc-boot-m1.tar.zst` (`/etc` and `/boot/grub`), `manifest-m1.txt`
 and `sha256-m1.txt` (mode, owner, size and checksum of every file, to see
-exactly what changed after a risky test).
+exactly what changed after a risky test). Added later: `sc-m2` (the `m2`
+build, 2026-10-03), and the manifests and checksums before S2, before S5
+and after the S5 `apt upgrade`.
 
 ### VirtualBox snapshot
 
