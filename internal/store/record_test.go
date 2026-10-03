@@ -210,6 +210,27 @@ func TestRecordDigest(t *testing.T) {
 	}
 }
 
+// A digest row's id is random: the journal prints ids, and one derived
+// from the fingerprint would let a reader test guesses at a short secret
+// (final review). File rows keep the formula (TestIDFormula).
+func TestDigestIDRandom(t *testing.T) {
+	s, dir := setup(t)
+	key := filepath.Join(dir, "ssh_host_ed25519_key")
+	write(t, key, "PRIVATE KEY\n", 0o600)
+	s.SetFingerprintOnly(func(p string) bool { return p == key })
+	record(t, s, observe(t, key))
+	cs, _ := s.List(key, 1)
+	c := cs[0]
+	if len(c.ID) != idLen || strings.Trim(c.ID, "0123456789abcdef") != "" {
+		t.Fatalf("id %q", c.ID)
+	}
+	for n := 0; n < 10; n++ {
+		if c.ID == makeID(c.Path, c.TS, c.Blob, n) {
+			t.Fatalf("digest id %s follows the formula (attempt %d)", c.ID, n)
+		}
+	}
+}
+
 // A path that changed after it was read gives Moved and no row; the rest
 // of the batch is recorded.
 func TestRecordMoved(t *testing.T) {

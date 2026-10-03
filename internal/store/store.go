@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
@@ -265,10 +266,10 @@ func latestTx(ctx context.Context, conn *sql.Conn, path string) (*Change, error)
 	return &cs[0], nil
 }
 
-// makeID derives an id from path, timestamp and key: the blob for file and
-// digest rows (so M1's ids are reproduced), "link\n"+target for links and
-// "deleted" for deletions. If that id is taken, attempt n>0 appends "\n<n>"
-// to the hashed text.
+// makeID derives an id from path, timestamp and key: the blob for file rows
+// (so M1's ids are reproduced), "link\n"+target for links and "deleted" for
+// deletions. If that id is taken, attempt n>0 appends "\n<n>" to the hashed
+// text. Digest rows get randomID instead.
 func makeID(path string, ts int64, key string, attempt int) string {
 	text := path + "\n" + strconv.FormatInt(ts, 10) + "\n" + key
 	if attempt > 0 {
@@ -276,6 +277,14 @@ func makeID(path string, ts int64, key string, attempt int) string {
 	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])[:idLen]
+}
+
+// randomID is a digest row's id. The journal prints ids, and one derived
+// from the fingerprint would let a reader test guesses at a short secret.
+func randomID() string {
+	b := make([]byte, idLen/2)
+	rand.Read(b) // crypto/rand: never returns an error
+	return hex.EncodeToString(b)
 }
 
 // idKey is the part of a row's id that stands for its state (plan 5.2).
@@ -361,6 +370,9 @@ func isBusy(err error) bool {
 func insertTx(ctx context.Context, conn *sql.Conn, c *Change) error {
 	for attempt := 0; ; attempt++ {
 		id := makeID(c.Path, c.TS, idKey(c), attempt)
+		if c.Kind == KindDigest {
+			id = randomID()
+		}
 		var one int
 		err := conn.QueryRowContext(ctx, `SELECT 1 FROM changes WHERE id = ?`, id).Scan(&one)
 		if errors.Is(err, sql.ErrNoRows) {
