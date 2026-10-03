@@ -74,7 +74,6 @@ One text file built into the binary, parsed like the scope (first matching line 
 
 ```
 # check NAME GLOB…      these files are read by checker NAME
-# with  NAME GLOB…      also re-check NAME when one of these changes
 # apply NAME TEXT       when a saved change takes effect
 # mode  GLOB OCTAL      mode for a file sc edit creates (default 0644)
 check fstab    /etc/fstab
@@ -274,6 +273,12 @@ Each has a recommendation, and the plan assumes it.
 5. **No store change:** findings are not stored. *Recommendation: yes; it keeps `sc-m2` as a fallback.*
 6. **Reviews:** one review per chunk by a single reviewer, and one final multi-agent review before the tag (I ask before starting it). *Recommendation: yes; M2's five multi-agent chunk reviews were its largest cost.*
 7. **Sign-off on the real system** (section 11, S2 and S3), each after a snapshot and your OK, and only after the M2 soak check. *Recommendation: yes.*
+
+## 15. Changes after approval
+
+| # | Date | Change | Why | Commit |
+|---|---|---|---|---|
+| C1 | 2026-10-03 | The graph has no `with` line. The built-in graph starts with its header only; each checker's `check`, `apply` and `mode` lines are added with the step that builds it. | Section 7 checks only the file that changed, so `with` would have been parsed and never read. Your OK (asked). | `95da13b` |
 
 ---
 

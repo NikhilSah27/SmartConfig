@@ -31,8 +31,8 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 **Now: M3 is being built** ([M3_PLAN.md](M3_PLAN.md), approved 2026-10-03,
 "great go ahead": all 7 recommendations of its section 14, which also
 passes gate G1, scd may run validators as root). 16 steps in five chunks,
-one at a time. Done: step 1 (`45df7da`). **In progress: step 2** (chunk A), `check: file
-graph`. Gate G2 stands: nothing is installed or run on the real system
+one at a time. Done: step 1 (`45df7da`). Step 2 (`95da13b`). **In progress: step 3** (chunk A),
+`check: fstab`. Gate G2 stands: nothing is installed or run on the real system
 before the M2 soak check and your yes. Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
@@ -815,3 +815,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   run. A mutation (kill the tool only, not its group) fails
   `TestRunTimeoutKillsGroup`. Checks: build, gofmt, vet, `go test ./...`
   as user, the package as root and 3 times under race, static: clean.
+- **M3 step 2, `check: file graph`, `95da13b`:** `default.graph` and its
+  parser (`check`, `apply`, `mode` lines; first match wins), with the
+  scope's glob language exported as `scope.Glob`. The built-in graph
+  holds only its header until the checkers arrive; `TestDefaultGraph`
+  then requires sample paths per checker that the scope records and that
+  are not fingerprint-only. Plan change C1 (your OK): no `with` line,
+  since M3 checks only the file that changed. Checks: build, gofmt, vet,
+  `go test ./...`, both packages under race: clean.
