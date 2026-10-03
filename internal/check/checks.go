@@ -37,9 +37,12 @@ type input struct {
 
 // checkers maps the graph's checker names to their code.
 var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []string, error){
-	"fstab":   checkFstab,
-	"sudoers": checkSudoers,
-	"sshd":    checkSshd,
+	"fstab":    checkFstab,
+	"sudoers":  checkSudoers,
+	"sshd":     checkSshd,
+	"unit":     checkUnit,
+	"shsyntax": checkShSyntax,
+	"grubcfg":  checkGrubCfg,
 }
 
 // Check runs the checker the graph names for path on data, which need not

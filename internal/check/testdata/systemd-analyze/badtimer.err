@@ -1,0 +1,3 @@
+/SCRATCH/my.timer:2: Failed to parse calendar specification, ignoring: evry day
+my.timer: Timer unit lacks value setting. Refusing.
+Unit my.timer has a bad unit file setting.

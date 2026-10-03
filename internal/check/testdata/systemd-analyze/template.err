@@ -1,0 +1,2 @@
+/SCRATCH/my@.service:3: Unknown key name 'Restrt' in section 'Service', ignoring.
+my@i.service: Command /usr/bin/sc-no-such-binary is not executable: No such file or directory

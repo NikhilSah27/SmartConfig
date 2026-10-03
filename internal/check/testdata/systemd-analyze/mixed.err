@@ -1,0 +1,4 @@
+/SCRATCH/my.service:6: Unknown key name 'Restrt' in section 'Service', ignoring.
+/SCRATCH/my.service:7: Failed to parse service restart specifier, ignoring: sometimes
+/SCRATCH/my.service:9: Invalid section header '[Servce'
+Unit my.service failed to load properly, please adjust/correct and reload service manager: Bad message

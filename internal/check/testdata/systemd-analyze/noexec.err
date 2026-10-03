@@ -1,0 +1,2 @@
+my.service: Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing.
+Unit my.service has a bad unit file setting.

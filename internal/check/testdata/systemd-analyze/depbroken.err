@@ -1,0 +1,3 @@
+/SCRATCH/third.service:3: Unknown key name 'Restrt' in section 'Service', ignoring.
+other.service: Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing.
+my.service: Failed to create my.service/start: Unit other.service has a bad unit file setting.

@@ -12,3 +12,9 @@ mode /etc/sudoers.d/* 0440
 apply sudoers at the next sudo
 check sshd /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
 apply sshd at the next start of ssh.service (systemctl restart ssh)
+check unit /etc/systemd/system/*.{service,socket,timer,mount,path,target}
+apply unit after systemctl daemon-reload
+check shsyntax /etc/default/grub
+apply shsyntax after update-grub, at the next boot
+check grubcfg /boot/grub/{grub.cfg,custom.cfg}
+apply grubcfg at the next boot

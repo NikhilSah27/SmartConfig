@@ -1,0 +1,2 @@
+/SCRATCH/my.service:4: Invalid section header '[Service'
+Unit my.service failed to load properly, please adjust/correct and reload service manager: Bad message
