@@ -28,6 +28,19 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
+**VM rolled back, waiting for you (2026-10-03).** At about 00:01 UTC
+(05:31 IST) the VM came back from the live snapshot taken before S5
+(22:22 UTC). Everything done on the VM after that is gone from it: the
+`apt upgrade` (kernel 7.0.0-38), the `m2` install (`/usr/local/sbin/sc`
+is `a0bee866…` again), the store rows written after it (2121 then, 1545
+now; integrity ok), `manifest-post-s5apt.txt`, and the S5 scripts and
+logs in `~/smartconfig-work/signoff/`. GitHub has all the code, the docs
+and the tag. Your choice:
+1. If a snapshot taken after 23:54 UTC exists (`m2-accepted`), restore it.
+2. If not, redo on this VM, each with your yes: install the `m2` build,
+   then the `apt upgrade` and a new post-upgrade manifest.
+The soak check below waits until then. Details in the log, 2026-10-03.
+
 **Now: M2 follow-ups** (your "go ahead", 2026-10-02). M2 is done (tag
 `m2`). Waiting for you: the VirtualBox snapshot `m2-accepted`. The
 follow-ups from the final review, one at a time, each with a test, checks,
@@ -577,3 +590,29 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `m2` (sha256 `03fbc30d…`, static; was `a0bee866…` from `595b440`), scd
   restarted: baseline 0 first seen, 0 changed, 0 deleted (2.2 s),
   integrity ok, 2121 rows, 15 MB. CI green on `112bceb` (tag `m2`).
+
+### 2026-10-03
+
+- **VM rolled back to the pre-S5 snapshot, then 3 hard resets** (found
+  by Claude in the journal; nothing in the repo changed):
+  - The VM resumed at 00:01 UTC from the live snapshot of 22:22 UTC
+    (clock jump, NIC and USB reset in that boot's journal). It was the
+    snapshot taken for S5, so the VM's disk and memory went back to before
+    S5; "Now" lists what that undid.
+  - Right after the resume rtkit reported its canary thread starving; the
+    log stops at 00:02:28 and the VM was reset.
+  - The next two boots were normal up to login (scd baseline 0/0/0 in 2.3
+    and 3.7 s, graphical.target at 12 and 17 s, password accepted), then
+    the desktop stayed black and the VM was reset again. The desktop
+    session's journal of both boots was lost (0 lines). The boot after
+    them is fine.
+  - Same picture as the first boot after S4. scd is not implicated: idle
+    before each login, 0 restarts, 25 MB, about 2 s CPU. What the logs do
+    show: every boot has kernel `clocksource: Long readout interval`
+    warnings (the host holds the vCPUs off for up to 5.6 s), several have
+    rtkit starvation; 9 vCPUs on an i7-13700HX host; GNOME on Wayland with
+    software rendering (VirtualBox graphics adapter, no 3D). Suggested on
+    the host, before the soak: 4 vCPUs and the VMSVGA graphics controller.
+  - After: store integrity ok, 1545 rows; `/etc` and `/boot/grub` match
+    `manifest-pre-s5.txt` except `cups/subscriptions.conf{,.O}` (cupsd,
+    excluded).
