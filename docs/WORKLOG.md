@@ -49,8 +49,17 @@ already have). S1, S2 and S3 are done, and S4's final review is
 closed ([reviews/2026-10-03-m3-final.md](reviews/2026-10-03-m3-final.md),
 fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 `accept-m3` passes on the fixed build. **M3 is done: tag `m3`**
-(2026-10-03); the fixed build runs as scd. **Next: the M4 plan** (rescue
-path), drafted in the session, for your approval.
+(2026-10-03); the fixed build runs as scd.
+
+**Now: M4 plan research** (your call, 2026-10-03: "QEMU research, then
+plan"). A background agent proves the rescue recipe in a throwaway QEMU
+VM (TCG, a copy-on-write overlay of the Ubuntu 24.04 cloud image, in the
+session scratch area; this VM's own boot is never touched): a root shell
+without a password while root is locked, a read-only root, the static sc
+reading the store (also with a hot journal), a GRUB entry, a console
+service in rescue mode, and a boot-ok marker. Then Claude drafts
+`docs/M4_PLAN.md` for your approval. No M4 code before that. A check-in
+every 30 min resumes the work after a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
