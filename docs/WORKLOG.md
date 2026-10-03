@@ -45,9 +45,8 @@ committed, not run (`2ff038b`). Chunk D is reviewed
 fixes `2fb037e`, plan change C8). Step 15, the docs, is in (see the log).
 **M3 is built. Now: the sign-off runs** (plan section 11; your call,
 2026-10-03: close the M2 soak now and sign off, on the snapshot you
-already have). S1 and S2 are done (log): the M3 build runs as scd. Next: S3
-the owner scenario (your yes, scripted by Claude); S4 final review and
-tag `m3`.
+already have). S1, S2 and S3 are done (log): the M3 build runs as scd.
+Next: S4, the final review of M3, then the docs and the `m3` tag.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1121,3 +1120,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     read (grub.cfg, a 0600 netplan file, sudoers and two drop-ins) each
     get a note, and so do three checks that were incomplete without root
     (fstab types, the netplan merge, sshd's host keys).
+- **M3 sign-off S3, the owner scenario, passed** (your yes; Claude ran
+  the editors from a script).
+  - fstab: `sudo sc edit /etc/fstab`, where the editor adds a data disk
+    with a mistyped UUID (made up). sc showed `fstab-source-missing` as a
+    blocker on the new line, with its explanation (a 90 s wait, then
+    emergency mode with root locked), and the prompt. Answering `q`
+    gave "not saved" and exit 2. fstab kept its sha256 (`9d71ab60…`), no
+    row was added and no copy left behind.
+  - sshd: `PermitRootLogn no` appended in place to the real
+    `/etc/ssh/sshd_config`, as nano saves. Within about 1 s scd logged
+    the row (`c89eb3`, T2) and `check: blocker sshd-invalid, line 132`
+    at err. `sudo sc check` showed the same, exit 2. `sc restore 2043f5`
+    put the file back: sha256 `64325541…` as before, 0644 root:root,
+    `sshd -t` clean, `sc check` clean, ssh.service never restarted.
+  - Seen here, for the final review: scd says nothing after a restore
+    (restore rows are not checked, plan section 7), so no "ok again".
+    It also still holds sshd_config as failing, so an unrelated later
+    change would log "ok again" at that point.
