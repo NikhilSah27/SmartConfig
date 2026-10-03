@@ -28,8 +28,9 @@ recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
 5. Planning and design agents run on Fable; work that needs several agents
    (chunk reviews, checks) runs as ultracode workflows.
 
-**Now: the M3 plan is being drafted** (2026-10-03, docs only; no M3 code
-until you approve `docs/M3_PLAN.md`). Your picks: M3 (checkers) before
+**Now: the M3 plan waits for your approval** ([M3_PLAN.md](M3_PLAN.md),
+2026-10-03; 7 questions in its section 14, each with a recommendation; no
+M3 code until you approve). Your picks: M3 (checkers) before
 M4 (rescue path), which answers NEXT_STEPS question 1; Claude drafts the
 plan in the session, not a multi-agent workflow.
 
@@ -784,3 +785,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   order M3 before M4, plan drafted by Claude in the session. The soak
   keeps running on the build of `b6ab3cc`. The VM settings (4 vCPUs,
   VMSVGA) and the snapshot are still open on your side.
+- **M3 plan drafted** ([M3_PLAN.md](M3_PLAN.md)): `sc edit`, `sc check`,
+  checks in scd after a recorded change, a built-in file graph; no store
+  change; 16 steps in five chunks. Probed on this VM first (fabricated
+  files in `~/smartconfig-work/m3plan/`; the real `/etc` only read), which
+  changed the design: a stock system already fails some validators (pwck
+  exit 2, 8 of 121 udev rule files), so only findings an edit adds are
+  blamed on it; `netplan generate --root-dir` still asks for a
+  daemon-reload, so the generator binary is used; `findmnt --verify`
+  accepts a misspelt option and reports a missing disk as an error even
+  with `nofail`, so our rules set the severity. Waiting for you: the 7
+  questions in section 14.
