@@ -59,9 +59,13 @@ fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
 fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built and reviewed
 ([reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md),
-fixes `683678a`, plan change C5). Next: chunk D, step 11, the QEMU lab
-in the repo with `make lab-e2e`. A design workflow already wrote its
-spec (`~/smartconfig-work/m4lab/STEP11_DESIGN.md`). The QEMU lab is in
+fixes `683678a`, plan change C5). **Now: step 11**, the QEMU lab in
+the repo (`make lab-e2e`), built from the design workflow's spec
+(`~/smartconfig-work/m4lab/STEP11_DESIGN.md`). A workflow spikes
+S1-S4 in QEMU, then agents build `lab/` in the git worktree
+`~/code/sc-step11` (branch `m4-step11`; nothing is committed until
+Claude reviews it). Then the end-to-end runs (UEFI and BIOS), the
+commit, and the chunk D review. The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
