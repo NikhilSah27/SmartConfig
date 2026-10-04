@@ -55,7 +55,8 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
 steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
-fixes `49a0a5b`). Next: chunk B, step 4 (boot verdicts, `sc boot`). The QEMU lab is in
+fixes `49a0a5b`). Done: step 4 (log). Next: step 5, the sc-boot-seen
+and sc-boot-ok units. The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1255,3 +1256,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     is now 60 s.
   - Checks: tests pass as a user, as root and under race, and
     m1-compat passes.
+- **M4 step 4, boot verdicts.**
+  - `internal/boot` keeps `$SC_HOME/boots` (seen and verdict lines,
+    append-only, trimmed past 1 MiB). The hidden `sc boot seen` and
+    `sc boot verdict` ask systemctl through the M3 runner.
+  - On this VM, as a user with a throwaway home, the verdict is "ok",
+    with failed-units=2 (whoopsie).
+  - Plan change C3: failed units are counted, not decisive; otherwise
+    every boot here would be "bad" and keep the menu showing.
+  - Checks: gofmt, vet and tests clean; boot, cmd/sc and store pass as
+    root and under race.

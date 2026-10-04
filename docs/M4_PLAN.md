@@ -346,6 +346,7 @@ plus your time for S2 and S3, which need reboots of this VM.
 |---|---|---|---|---|
 | C1 | 2026-10-04 | A store at an older schema on a read-only root is not read through its old columns (section 3.5): Open says to remount read-write so sc can upgrade it. | Every store sc has written since M2 is at the current schema, and M4 does not change it; reading old columns would be code for a case that cannot occur here. | step 2 |
 | C2 | 2026-10-04 | With no writable scratch directory at all, `sc check` fails with one line naming every place it tried; it does not run sc's own rules alone (section 3.5). | netplan and the account checkers write companion files before their validator runs, so a check without a scratch directory would need each checker rewired. On Ubuntu `/run` (root), the runtime directory (a user) and `/dev/shm` are tmpfs and writable in the rescue shell. | step 3 |
+| C3 | 2026-10-04 | The boot verdict does not count failed units: "ok" needs `local-fs.target` active and neither emergency nor rescue mode (goal 5 and section 3.2 said "no failed units"); the count is recorded in the line. | This healthy VM has two failed units (whoopsie.path and .service), and a "bad" verdict keeps the boot menu showing: every boot would show it. The lab's failure is caught by `local-fs.target` alone. | step 4 |
 
 ---
 
