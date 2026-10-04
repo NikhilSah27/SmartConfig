@@ -57,9 +57,11 @@ steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
 fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
-fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built (log). Next:
-the chunk C review (steps 7-10); then chunk D, step 11 (the QEMU lab
-in the repo, `make lab-e2e`). The QEMU lab is in
+fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built and reviewed
+([reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md),
+fixes `683678a`, plan change C5). Next: chunk D, step 11, the QEMU lab
+in the repo with `make lab-e2e`. A design workflow already wrote its
+spec (`~/smartconfig-work/m4lab/STEP11_DESIGN.md`). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1322,3 +1324,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   Tested as root with chattr.
   - Checks: tests pass as a user, as root and under race, and m1-compat
     passes.
+- **M4 chunk C review closed**
+  ([reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md),
+  fixes `683678a`, plan change C5).
+  - The review: 11 lab boots, UEFI and BIOS; nothing high or medium; 8
+    low findings and 5 cleanups.
+  - The fixes were then checked by a four-agent adversarial workflow
+    (ultracode). It refuted one fix (the console could still overflow
+    80x25) and raised 18 smaller issues; all are fixed in the same
+    commit.
+  - The step 11 design workflow, run alongside, found one more bug: in
+    the emergency drop-in, `sc status` said "normal" because only the
+    service is activating there. Fixed.
+  - Deferred: multipath `root=`, a whole-boot ordering test.
+  - Checks: tests pass as a user, as root and under race; sc builds for
+    six architectures.
