@@ -55,8 +55,9 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
 steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
-fixes `49a0a5b`). Done: steps 4-5 (log). Next: step 6, `sc status`
-(then the chunk B review). The QEMU lab is in
+fixes `49a0a5b`). Done: steps 4-6, chunk B built (log). Next: the
+chunk B review (steps 4-6); then chunk C (GRUB entry, menu flag,
+drop-ins, +i/+a). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1275,3 +1276,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - `scripts/sc-boot-ok.service` runs after `multi-user.target`.
   - `systemd-analyze verify` is clean for both. They are not installed;
     that is sign-off S2.
+- **M4 step 6, `sc status`.**
+  - It shows this boot, the last healthy boot, the boots that failed
+    since, and scd's state (read from /proc, never its lock).
+  - It lists the files changed since the last healthy boot with the
+    problem each change added, and gives the undo commands for the
+    newest blocker; in the rescue boot, with remount and reboot.
+  - `--console` caps time at 10 s and output at 20 lines, but judges
+    every change, a fix found while testing.
+  - Store.Rows and Store.AsOf.
+  - Checks: tests pass as a user, as root and under race.
