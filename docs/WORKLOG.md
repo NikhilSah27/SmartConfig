@@ -1184,6 +1184,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   baseline 0 first seen, 0 changed, 0 deleted, 14 MB. `sudo sc check`:
   no problems in 24 files. The annotated tag `m3` is on `c253cfd` and
   pushed.
+
+### 2026-10-04
+
 - **M4 boot research done** (QEMU, TCG, Ubuntu 24.04 cloud image,
   root locked; your call "QEMU research, then plan"). Results:
   - The rescue recipe `ro fstab=no systemd.unit=rescue.target
