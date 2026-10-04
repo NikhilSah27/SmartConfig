@@ -178,3 +178,33 @@ func TestGrubScript(t *testing.T) {
 		t.Errorf("no kernel:\n%s", out)
 	}
 }
+
+// The rescue and emergency drop-in runs sc status --console before the
+// shell, never stopping it; systemd-analyze accepts rescue.service and
+// emergency.service with it (sc replaced by /bin/true, which a test
+// machine may not have installed).
+func TestRescueDropIn(t *testing.T) {
+	unit := unitLines(t, "smartconfig-rescue.conf")
+	if unit != "\n[Service]\nExecStartPre=-/usr/local/sbin/sc status --console\n" {
+		t.Errorf("drop-in:%q", unit)
+	}
+	analyze, err := exec.LookPath("systemd-analyze")
+	if err != nil {
+		t.Skip("no systemd-analyze")
+	}
+	b, _ := os.ReadFile("../../scripts/smartconfig-rescue.conf")
+	for _, svc := range []string{"rescue.service", "emergency.service"} {
+		src := "/usr/lib/systemd/system/" + svc
+		orig, err := os.ReadFile(src)
+		if err != nil {
+			t.Skip("no " + src)
+		}
+		dir := t.TempDir()
+		os.WriteFile(dir+"/"+svc, orig, 0o644)
+		os.MkdirAll(dir+"/"+svc+".d", 0o755)
+		os.WriteFile(dir+"/"+svc+".d/50-smartconfig.conf", []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc status --console", "/bin/true")), 0o644)
+		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+svc).CombinedOutput(); err != nil {
+			t.Errorf("%s: %v\n%s", svc, err, out)
+		}
+	}
+}
