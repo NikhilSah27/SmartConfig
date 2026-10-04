@@ -51,17 +51,12 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 `accept-m3` passes on the fixed build. **M3 is done: tag `m3`**
 (2026-10-03); the fixed build runs as scd.
 
-**Now: the M4 plan is drafted, for your approval**
-([M4_PLAN.md](M4_PLAN.md), 2026-10-04). It was drafted from boot
-research in a throwaway QEMU VM (its Appendix A; the lab is in
-`~/smartconfig-work/m4lab`, this VM's own boot never touched). The
-research found that Ubuntu 24.04's emergency mode does give a console
-root shell (Ubuntu's sulogin patch), so our "no shell" texts are wrong
-(plan step 1). The recipe that works is `ro fstab=no
-systemd.unit=rescue.target`. Ubuntu's recordfail misses failures that
-reach multi-user. No M4 code before your OK; section 10 has 7 questions
-with recommendations. A check-in every 30 min resumes work after a usage
-limit (your ask).
+**Now: M4 is being built** ([M4_PLAN.md](M4_PLAN.md), approved
+2026-10-04, "approved": all 7 recommendations of its section 10). 13
+steps in five chunks, one at a time. Next: step 1, correct the "no
+shell in emergency mode" texts. The QEMU lab is in
+`~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
+a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -83,8 +78,6 @@ step is built (your call, 2026-09-30).
 
 **Still waiting for you:**
 
-- [ ] Approve the M4 plan ([M4_PLAN.md](M4_PLAN.md)), or say what to
-  change; section 10 lists 7 questions with recommendations.
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
@@ -1211,3 +1204,5 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   chunks, no store schema change (boot verdicts in `$SC_HOME/boots`, so
   sc-m1, sc-m2 and sc-m3 keep reading the store), and an automated
   QEMU owner scenario (`make lab-e2e`). Waiting for your approval.
+- **M4 plan approved** (your "approved": every recommendation of its
+  section 10). Building starts with step 1.

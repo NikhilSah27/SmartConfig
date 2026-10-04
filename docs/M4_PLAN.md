@@ -1,8 +1,8 @@
 # M4 plan: the rescue path
 
-Status: **draft for your approval** (2026-10-04). Drafted in the session
-from the boot research in a throwaway QEMU VM (Appendix A). Nothing of
-M4 is built before you approve it.
+Status: **approved** (2026-10-04, "approved": every recommendation of
+section 10). Drafted in the session from the boot research in a
+throwaway QEMU VM (Appendix A).
 
 ## 0. Summary
 
