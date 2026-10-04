@@ -1,0 +1,24 @@
+[Unit]
+Description=SmartConfig: record that this boot started (sc boot seen)
+Documentation=https://github.com/NikhilSah27/SmartConfig
+# Early, so a boot that never reaches multi-user (a missing disk, then
+# emergency mode) is still seen: DefaultDependencies=no keeps it out of
+# local-fs.target's failure, and RequiresMountsFor= waits only for the
+# filesystem of the store. A read-only root (the rescue boot) writes
+# nothing.
+DefaultDependencies=no
+After=systemd-remount-fs.service
+RequiresMountsFor=/var/lib/smartconfig
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+ConditionPathIsReadWrite=/var/lib
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sc boot seen
+SyslogIdentifier=sc-boot
+Environment=GOTRACEBACK=none
+TimeoutStartSec=10s
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=SmartConfig: record whether this boot came up healthy (sc boot verdict)
+Documentation=https://github.com/NikhilSah27/SmartConfig
+# Once multi-user.target is reached: ok when local-fs.target is active and
+# the boot is in neither emergency nor rescue mode. A boot that never gets
+# here keeps only its "seen" line, and counts as failed.
+After=multi-user.target
+ConditionPathIsReadWrite=/var/lib
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sc boot verdict
+SyslogIdentifier=sc-boot
+Environment=GOTRACEBACK=none
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=multi-user.target
