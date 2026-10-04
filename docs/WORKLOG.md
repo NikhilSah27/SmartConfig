@@ -55,8 +55,8 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
 steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
-fixes `49a0a5b`). Done: step 4 (log). Next: step 5, the sc-boot-seen
-and sc-boot-ok units. The QEMU lab is in
+fixes `49a0a5b`). Done: steps 4-5 (log). Next: step 6, `sc status`
+(then the chunk B review). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1266,3 +1266,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     every boot here would be "bad" and keep the menu showing.
   - Checks: gofmt, vet and tests clean; boot, cmd/sc and store pass as
     root and under race.
+- **M4 step 5, the boot units.**
+  - `scripts/sc-boot-seen.service` runs early, outside `local-fs.target`,
+    so a boot that fails on a disk is still seen. It waits only for the
+    store's filesystem (`RequiresMountsFor`): the lab prototype's
+    `Before=local-fs.target` would write under a separate `/var`'s mount
+    point.
+  - `scripts/sc-boot-ok.service` runs after `multi-user.target`.
+  - `systemd-analyze verify` is clean for both. They are not installed;
+    that is sign-off S2.
