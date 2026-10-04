@@ -345,15 +345,33 @@ func count(n int, word string) string {
 // scratchHome returns where the validators' scratch copies go: $SC_HOME
 // when this user may write there (root), else a private directory of its
 // own that cleanup removes, so a file the user can read can be checked
-// without sudo.
+// without sudo. On a read-only root (the rescue shell) $SC_HOME and
+// $TMPDIR are read-only too, and a tmpfs takes the copies: /run (root),
+// the user's runtime directory, /dev/shm.
 func scratchHome() (dir string, cleanup func(), err error) {
 	home := store.Home()
 	if os.MkdirAll(filepath.Join(home, "tmp"), 0o700) == nil && syscall.Access(filepath.Join(home, "tmp"), 2 /* W_OK */) == nil {
 		return home, func() {}, nil
 	}
-	dir, err = os.MkdirTemp("", "sc-check-")
-	if err != nil {
-		return "", nil, fmt.Errorf("scratch directory: %w", err)
+	var tried []string
+	for _, parent := range scratchParents() {
+		dir, err = os.MkdirTemp(parent, "sc-check-")
+		if err == nil {
+			return dir, func() { os.RemoveAll(dir) }, nil
+		}
+		tried = append(tried, fmt.Sprintf("%s (%s)", parent, fsutil.ErrText(err)))
 	}
-	return dir, func() { os.RemoveAll(dir) }, nil
+	return "", nil, fmt.Errorf("no writable scratch directory for the validators' copies: %s/tmp, %s", home, strings.Join(tried, ", "))
+}
+
+// scratchParents are the places tried, in turn, for a private scratch
+// directory when $SC_HOME may not be written. Tests replace it.
+var scratchParents = func() []string {
+	out := []string{os.TempDir()}
+	if os.Geteuid() == 0 {
+		out = append(out, "/run")
+	} else if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
+		out = append(out, d)
+	}
+	return append(out, "/dev/shm")
 }

@@ -213,6 +213,40 @@ func TestCheckCLIRelativeHome(t *testing.T) {
 	}
 }
 
+// On a read-only root (the rescue shell) $SC_HOME and $TMPDIR are
+// read-only too: the copies go to the next writable place (a tmpfs) and
+// are removed; with none, one line names every place tried.
+func TestCheckCLIScratchFallback(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through file modes")
+	}
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	ro := func() string {
+		d := t.TempDir()
+		os.Chmod(d, 0o500)
+		t.Cleanup(func() { os.Chmod(d, 0o700) })
+		return d
+	}
+	home := ro()
+	t.Setenv("SC_HOME", home)
+	shm := t.TempDir()
+	old := scratchParents
+	t.Cleanup(func() { scratchParents = old })
+	scratchParents = func() []string { return []string{ro(), shm} }
+	if r := sc(t, "check", fstab); r.code != 0 || !strings.Contains(r.stdout, "no problems found in 1 file") {
+		t.Fatalf("fallback: %+v", r)
+	}
+	if left, _ := os.ReadDir(shm); len(left) != 0 {
+		t.Errorf("scratch left: %v", left)
+	}
+	scratchParents = func() []string { return []string{ro(), ro()} }
+	if r := sc(t, "check", fstab); r.code != 1 || !strings.HasPrefix(r.stderr, "sc: no writable scratch directory for the validators' copies: "+home+"/tmp, ") ||
+		strings.Count(r.stderr, "permission denied") != 2 || strings.Count(r.stderr, "\n") != 1 {
+		t.Errorf("none writable: %+v", r)
+	}
+}
+
 // With no argument, sc check looks only at files sc keeps: an editor's
 // backup next to a checked file is left out.
 func TestCheckCLISkipsUnrecorded(t *testing.T) {
