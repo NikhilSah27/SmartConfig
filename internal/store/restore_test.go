@@ -3,6 +3,7 @@ package store
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -403,5 +404,63 @@ func TestRestoreLinkOwner(t *testing.T) {
 	st, err := fsutil.ReadState(l)
 	if err != nil || st.Meta.UID != 1234 || st.Meta.GID != 5678 || st.Target != "/nonexistent" {
 		t.Fatalf("%+v %v", st, err)
+	}
+}
+
+// An immutable (+i) target, or an append-only (+a) directory, is refused
+// before anything is written, with the chattr to run (M2's deferred
+// "+i/+a precheck"). Setting the flags needs root.
+func TestRestoreRefusesImmutable(t *testing.T) {
+	chattr, err := exec.LookPath("chattr")
+	if os.Geteuid() != 0 || err != nil {
+		t.Skip("needs root and chattr")
+	}
+	home := filepath.Join(t.TempDir(), "home")
+	if err := Init(home); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	dir := t.TempDir()
+	f := filepath.Join(dir, "conf")
+	os.WriteFile(f, []byte("good\n"), 0o644)
+	c, _, err := s.Snapshot(f, OriginManual, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(f, []byte("bad\n"), 0o644)
+	for _, tc := range []struct{ flag, on, want string }{
+		{"+i", f, "is immutable (chattr +i), so it cannot be replaced: run chattr -i " + f + " first"},
+		{"+a", dir, "is append-only (chattr +a), so it cannot be replaced: run chattr -a " + dir + " first"},
+	} {
+		if out, err := exec.Command(chattr, tc.flag, tc.on).CombinedOutput(); err != nil {
+			t.Skipf("chattr %s: %v %s (a filesystem without the flag)", tc.flag, err, out)
+		}
+		_, _, err := s.Restore(c.ID)
+		off := "-" + tc.flag[1:]
+		exec.Command(chattr, off, tc.on).Run()
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasSuffix(err.Error(), "(file not changed)") {
+			t.Errorf("%s: %v", tc.flag, err)
+		}
+		if b, _ := os.ReadFile(f); string(b) != "bad\n" {
+			t.Errorf("%s: the file changed: %q", tc.flag, b)
+		}
+		if left, _ := filepath.Glob(filepath.Join(dir, ".*sc-tmp*")); len(left) != 0 {
+			t.Errorf("%s: temp files left: %v", tc.flag, left)
+		}
+	}
+	// sc edit asks before the editor opens.
+	exec.Command(chattr, "+i", f).Run()
+	err = s.CanReplace(f, nil)
+	exec.Command(chattr, "-i", f).Run()
+	if err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Errorf("can replace: %v", err)
+	}
+	// Without the flags, a restore goes through.
+	if _, _, err := s.Restore(c.ID); err != nil {
+		t.Errorf("restore: %v", err)
 	}
 }

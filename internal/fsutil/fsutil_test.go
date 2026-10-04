@@ -385,3 +385,16 @@ func TestTempParents(t *testing.T) {
 		t.Errorf("another user's runtime directory: %q", p)
 	}
 }
+
+// A plain file, a missing one, and one in a missing directory are not
+// refused (store's TestRestoreRefusesImmutable sets the flags, as root).
+func TestReplaceRefusedPlain(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "f")
+	os.WriteFile(f, nil, 0o644)
+	for _, p := range []string{f, filepath.Join(dir, "missing"), filepath.Join(dir, "no", "such")} {
+		if err := ReplaceRefused(p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+}

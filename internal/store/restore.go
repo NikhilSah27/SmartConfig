@@ -33,6 +33,9 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	if err != nil {
 		return Change{}, nil, err
 	}
+	if err := fsutil.ReplaceRefused(src.Path); err != nil {
+		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.ID, err)
+	}
 	if s.FingerprintOnly(src.Path) {
 		return Change{}, nil, fmt.Errorf("%s is fingerprint-only; sc never restores it", src.Path)
 	}
