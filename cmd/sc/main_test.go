@@ -157,3 +157,26 @@ func TestLogOrderIgnoresClock(t *testing.T) {
 		t.Fatalf("log, want %s then %s:\n%s", id2, id1, strings.Join(lines, "\n"))
 	}
 }
+
+// A store sc may not write (a read-only root): sc log reads it, and a
+// write says what to do in one line.
+func TestReadOnlyStoreCLI(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through file modes")
+	}
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("SC_HOME", home)
+	f := filepath.Join(t.TempDir(), "hosts")
+	os.WriteFile(f, []byte("a\n"), 0o644)
+	mustSC(t, "init")
+	mustSC(t, "snapshot", f)
+	os.Chmod(home, 0o500)
+	t.Cleanup(func() { os.Chmod(home, 0o700) })
+	if r := sc(t, "log", f); r.code != 0 || !strings.Contains(r.stdout, f) || r.stderr != "" {
+		t.Errorf("log: %+v", r)
+	}
+	os.WriteFile(f, []byte("b\n"), 0o644)
+	if r := sc(t, "snapshot", f); r.code != 1 || !strings.Contains(r.stderr, "remount it read-write first") || strings.Count(r.stderr, "\n") != 1 {
+		t.Errorf("snapshot: %+v", r)
+	}
+}

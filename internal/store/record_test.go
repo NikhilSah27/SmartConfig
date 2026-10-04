@@ -328,6 +328,32 @@ func TestCrashMidRecord(t *testing.T) {
 	if err := Init(home); err != nil {
 		t.Fatal(err)
 	}
+	leaveHotJournal(t, home)
+	db := filepath.Join(home, "changes.db")
+
+	s, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	cs, err := s.List("", 0)
+	if err != nil || len(cs) != 5 {
+		t.Fatalf("%d rows after the crash, want the 5 committed: %v", len(cs), err)
+	}
+	var ok string
+	if err := s.db.QueryRow("PRAGMA integrity_check").Scan(&ok); err != nil || ok != "ok" {
+		t.Fatalf("integrity_check %q %v", ok, err)
+	}
+	if _, err := os.Stat(db + "-journal"); !os.IsNotExist(err) {
+		t.Fatalf("journal left: %v", err)
+	}
+}
+
+// leaveHotJournal kills a writer inside Record's transaction after SQLite
+// spilled pages into the database file of the store in home: 5 rows are
+// committed, and a hot journal is left to roll back.
+func leaveHotJournal(t *testing.T, home string) {
+	t.Helper()
 	cmd := helper("record-crash", home)
 	cmd.Env = append(cmd.Env, "SC_TEST_DIR="+t.TempDir())
 	out, err := cmd.StdoutPipe()
@@ -359,23 +385,6 @@ func TestCrashMidRecord(t *testing.T) {
 	}
 	cmd.Process.Kill()
 	cmd.Wait()
-
-	s, err := Open(home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	cs, err := s.List("", 0)
-	if err != nil || len(cs) != 5 {
-		t.Fatalf("%d rows after the crash, want the 5 committed: %v", len(cs), err)
-	}
-	var ok string
-	if err := s.db.QueryRow("PRAGMA integrity_check").Scan(&ok); err != nil || ok != "ok" {
-		t.Fatalf("integrity_check %q %v", ok, err)
-	}
-	if _, err := os.Stat(db + "-journal"); !os.IsNotExist(err) {
-		t.Fatalf("journal left: %v", err)
-	}
 }
 
 // recordCrashHelper is the process TestCrashMidRecord kills: it commits 5

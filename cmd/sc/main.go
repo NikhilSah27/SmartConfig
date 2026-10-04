@@ -205,6 +205,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 			code = 1
 		}
 	}()
+	noteOut = stderr
 	root := newRoot()
 	root.SetArgs(args)
 	root.SetOut(stdout)
@@ -257,11 +258,20 @@ func newRoot() *cobra.Command {
 
 func openStore() (*store.Store, error) {
 	s, err := store.Open(store.Home())
+	if err == nil && s.Copied() {
+		// A crash left a write unfinished where sc may not write (the
+		// rescue shell's read-only root): what sc shows is the store as
+		// of before that write.
+		fmt.Fprintln(noteOut, "sc: note: the store has a write a crash left unfinished; sc reads a repaired copy, and the store itself is repaired by the next sc run on a writable root")
+	}
 	if err == nil && testHookOpenStore != nil {
 		testHookOpenStore(s)
 	}
 	return s, err
 }
+
+// noteOut is where a command's one-line notes go: the run's stderr.
+var noteOut io.Writer = os.Stderr
 
 // testHookOpenStore, if set by a test, runs on every store a command opens
 // (to set the fingerprint rule, say).
