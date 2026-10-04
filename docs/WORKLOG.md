@@ -53,8 +53,9 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 
 **Now: M4 is being built** ([M4_PLAN.md](M4_PLAN.md), approved
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
-steps in five chunks, one at a time. Done: steps 1-3, chunk A built (log). Next: the
-chunk A review (steps 1-3); then chunk B (boot verdicts, `sc status`). The QEMU lab is in
+steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
+([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
+fixes `49a0a5b`). Next: chunk B, step 4 (boot verdicts, `sc boot`). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1239,3 +1240,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     directory, since several checkers write companion files first.
   - Checks: gofmt, vet and tests clean; cmd/sc and store pass as root
     and under race.
+- **M4 chunk A review closed**
+  ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
+  fixes `49a0a5b`).
+  - One medium finding: a repaired store copy or a scratch directory
+    outlived a signal or a broken pipe (`sc log | head` left a full copy
+    in /run per run). They are now tracked private directories, removed
+    on signals and swept after an hour, and SIGPIPE is caught.
+  - Low findings: four surviving mutations and no root coverage, now
+    tested (including a read-only bind mount in `unshare --mount`);
+    migrations on the copy; a journal race; messages; the copy's
+    location; two film lines.
+  - Also: a watcher test's 5 s wait (a flake under a loaded root pass)
+    is now 60 s.
+  - Checks: tests pass as a user, as root and under race, and
+    m1-compat passes.
