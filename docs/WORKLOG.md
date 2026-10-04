@@ -57,8 +57,8 @@ steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
 fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
-fixes `40288d8`, plan change C4). Next: chunk C, step 7
-(`42_smartconfig`, the GRUB entry). The QEMU lab is in
+fixes `40288d8`, plan change C4). Done: step 7 (log). Next: step 8,
+the grubenv flag set by `sc boot seen` and cleared by a healthy verdict. The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1300,3 +1300,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Low: eleven more, fixed or deferred (the scd rescan race).
   - The ten surviving mutations are now tested.
   - Checks: tests pass as a user, as root and under race.
+- **M4 step 7, `scripts/42_smartconfig`.** It adds the "SmartConfig
+  rescue" GRUB entry: the newest kernel with an initrd, root= as
+  10_linux gives it, and the lab's rescue arguments. It also adds the
+  `smartconfig_pending` menu flag. btrfs and ZFS roots get no entry.
+  Tested on fabricated `/boot` trees; `grub-script-check` accepts the
+  output.
