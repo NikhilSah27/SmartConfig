@@ -53,8 +53,8 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 
 **Now: M4 is being built** ([M4_PLAN.md](M4_PLAN.md), approved
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
-steps in five chunks, one at a time. Done: steps 1-2 (log). Next: step 3,
-`sc check` scratch fallback on a read-only root; then the chunk A review. The QEMU lab is in
+steps in five chunks, one at a time. Done: steps 1-3, chunk A built (log). Next: the
+chunk A review (steps 1-3); then chunk B (boot verdicts, `sc status`). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1231,3 +1231,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     read through old columns.
   - Checks: gofmt, vet, tests as a user, as root and under race, and
     m1-compat clean.
+- **M4 step 3, scratch fallback for `sc check`.**
+  - With `$SC_HOME` and `$TMPDIR` read-only, the copies go to `/run`
+    (root) or the runtime directory, then `/dev/shm`, and are removed.
+    With none writable, one line names the places tried.
+  - Plan change C2: no "own rules only" check without any scratch
+    directory, since several checkers write companion files first.
+  - Checks: gofmt, vet and tests clean; cmd/sc and store pass as root
+    and under race.

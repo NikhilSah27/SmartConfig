@@ -345,6 +345,7 @@ plus your time for S2 and S3, which need reboots of this VM.
 | # | Date | Change | Why | Commit |
 |---|---|---|---|---|
 | C1 | 2026-10-04 | A store at an older schema on a read-only root is not read through its old columns (section 3.5): Open says to remount read-write so sc can upgrade it. | Every store sc has written since M2 is at the current schema, and M4 does not change it; reading old columns would be code for a case that cannot occur here. | step 2 |
+| C2 | 2026-10-04 | With no writable scratch directory at all, `sc check` fails with one line naming every place it tried; it does not run sc's own rules alone (section 3.5). | netplan and the account checkers write companion files before their validator runs, so a check without a scratch directory would need each checker rewired. On Ubuntu `/run` (root), the runtime directory (a user) and `/dev/shm` are tmpfs and writable in the rescue shell. | step 3 |
 
 ---
 
