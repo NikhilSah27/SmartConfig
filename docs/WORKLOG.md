@@ -55,9 +55,10 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
 steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
-fixes `49a0a5b`). Done: steps 4-6, chunk B built (log). Next: the
-chunk B review (steps 4-6); then chunk C (GRUB entry, menu flag,
-drop-ins, +i/+a). The QEMU lab is in
+fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
+([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
+fixes `40288d8`, plan change C4). Next: chunk C, step 7
+(`42_smartconfig`, the GRUB entry). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1285,4 +1286,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - `--console` caps time at 10 s and output at 20 lines, but judges
     every change, a fix found while testing.
   - Store.Rows and Store.AsOf.
+  - Checks: tests pass as a user, as root and under race.
+- **M4 chunk B review closed**
+  ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
+  fixes `40288d8`, plan change C4). The reviewer also booted the units
+  in a throwaway QEMU guest.
+  - One high finding: `sc-boot-seen`'s 10 s timeout killed it on slow
+    boots, so the failed boot left no trace. It no longer holds up
+    sysinit and gets 90 s.
+  - Medium: the healthy boot after a fix still reported failure; the
+    console's time cap could drop a blocker; the console did not fit
+    80x25.
+  - Low: eleven more, fixed or deferred (the scd rescan race).
+  - The ten surviving mutations are now tested.
   - Checks: tests pass as a user, as root and under race.
