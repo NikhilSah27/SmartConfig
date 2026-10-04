@@ -57,8 +57,8 @@ steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
 fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
-fixes `40288d8`, plan change C4). Done: step 7 (log). Next: step 8,
-the grubenv flag set by `sc boot seen` and cleared by a healthy verdict. The QEMU lab is in
+fixes `40288d8`, plan change C4). Done: steps 7-8 (log). Next: step 9, the
+rescue and emergency drop-ins that print `sc status --console`. The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1306,3 +1306,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `smartconfig_pending` menu flag. btrfs and ZFS roots get no entry.
   Tested on fabricated `/boot` trees; `grub-script-check` accepts the
   output.
+- **M4 step 8, the menu flag.** `sc boot seen` sets
+  `smartconfig_pending=1` in grubenv, and a healthy verdict unsets it.
+  It is left alone where grubenv is not GRUB's 1024-byte block, such as
+  a separate /boot that is not mounted yet. Tested with a fake and with
+  the real `grub-editenv`.
