@@ -53,8 +53,8 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 
 **Now: M4 is being built** ([M4_PLAN.md](M4_PLAN.md), approved
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
-steps in five chunks, one at a time. Next: step 1, correct the "no
-shell in emergency mode" texts. The QEMU lab is in
+steps in five chunks, one at a time. Done: step 1 (log). Next: step 2,
+the store on a read-only root (hot journal copy). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1206,3 +1206,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   QEMU owner scenario (`make lab-e2e`). Waiting for your approval.
 - **M4 plan approved** (your "approved": every recommendation of its
   section 10). Building starts with step 1.
+- **M4 step 1, "Ubuntu's emergency mode gives a root shell"** (commit
+  below).
+  - Rule explanations corrected (fstab-source-missing, sudoers-no-rules,
+    group-no-admin), with a test against "no shell" claims; it fails on
+    the old texts.
+  - PROJECT_LOG's recovery guide rewritten: Enter at "Press Enter for
+    maintenance" first, then the lab's rescue arguments, `init=/bin/bash`
+    last; the backup binaries listed as they are now.
+  - docs/README and JOURNEY corrected.
+  - The "without SmartConfig" film rewritten to the real 24.04 screen (a
+    shell that tells nothing, a blind fix); it loads in headless Chrome
+    with its chapters built.
+  - Checks: gofmt, vet and tests clean.
