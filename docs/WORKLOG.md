@@ -53,8 +53,8 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 
 **Now: M4 is being built** ([M4_PLAN.md](M4_PLAN.md), approved
 2026-10-04, "approved": all 7 recommendations of its section 10). 13
-steps in five chunks, one at a time. Done: step 1 (log). Next: step 2,
-the store on a read-only root (hot journal copy). The QEMU lab is in
+steps in five chunks, one at a time. Done: steps 1-2 (log). Next: step 3,
+`sc check` scratch fallback on a read-only root; then the chunk A review. The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1219,3 +1219,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     shell that tells nothing, a blind fix); it loads in headless Chrome
     with its chapters built.
   - Checks: gofmt, vet and tests clean.
+- **M4 step 2, the store on a read-only root.**
+  - Opened with `mode=ro` where `access(2)` says sc may not write. Every
+    write returns "remount it read-write first".
+  - A hot journal is read from a repaired private copy (`/run` for root),
+    and the store is untouched. Tested by chmod as a user with the
+    existing crash helper; a mutation gives the lab's error 776. Checked
+    by hand with a SIGKILLed Python writer: one note line, the committed
+    rows, and a self-repair once writable.
+  - Plan change C1: an older schema on a read-only root is an error, not
+    read through old columns.
+  - Checks: gofmt, vet, tests as a user, as root and under race, and
+    m1-compat clean.

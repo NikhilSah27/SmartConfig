@@ -344,6 +344,7 @@ plus your time for S2 and S3, which need reboots of this VM.
 
 | # | Date | Change | Why | Commit |
 |---|---|---|---|---|
+| C1 | 2026-10-04 | A store at an older schema on a read-only root is not read through its old columns (section 3.5): Open says to remount read-write so sc can upgrade it. | Every store sc has written since M2 is at the current schema, and M4 does not change it; reading old columns would be code for a case that cannot occur here. | step 2 |
 
 ---
 
