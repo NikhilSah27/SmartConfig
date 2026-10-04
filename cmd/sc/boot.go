@@ -19,6 +19,10 @@ import (
 // point it at a fake.
 var bootRunner = check.Runner{Timeout: 30 * time.Second}
 
+// grubenvPath is GRUB's environment block, where 42_smartconfig's code in
+// grub.cfg reads smartconfig_pending. Tests point it elsewhere.
+var grubenvPath = "/boot/grub/grubenv"
+
 // newBootCmd is sc boot, run by two units at every boot (M4 plan 3.2),
 // not by people: hidden.
 func newBootCmd() *cobra.Command {
@@ -41,7 +45,15 @@ func newBootCmd() *cobra.Command {
 			if err := os.MkdirAll(home, 0o700); err != nil {
 				return err
 			}
-			return boot.Seen(home, id, time.Now())
+			if err := boot.Seen(home, id, time.Now()); err != nil {
+				return err
+			}
+			// Until a healthy verdict unsets it, the next boot shows the
+			// menu with "SmartConfig rescue" (plan 3.3).
+			if note := menuFlag(cmd.Context(), true); note != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), note)
+			}
+			return nil
 		},
 	}, &cobra.Command{
 		Use:   "verdict",
@@ -90,7 +102,38 @@ func runBootVerdict(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "boot %s: %s (%s)\n", id, verdict, why)
+	if verdict == "ok" {
+		if note := menuFlag(ctx, false); note != "" {
+			fmt.Fprintln(cmd.OutOrStdout(), note)
+		}
+	}
 	return nil
+}
+
+// menuFlag sets or unsets smartconfig_pending in grubenv with
+// grub-editenv, through the runner. A grubenv that is not GRUB's
+// 1024-byte block (none, or a separate /boot not mounted yet, where the
+// mount point is an empty directory) is left alone. It returns what went
+// wrong, for the journal, or "".
+func menuFlag(ctx context.Context, set bool) string {
+	fi, err := os.Lstat(grubenvPath)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() != 1024 {
+		return "no GRUB environment block at " + grubenvPath + ": the menu does not come back by itself after a failed boot"
+	}
+	args := []string{grubenvPath, "unset", "smartconfig_pending"}
+	if set {
+		args = []string{grubenvPath, "set", "smartconfig_pending=1"}
+	}
+	res, err := bootRunner.Run(ctx, "/", "grub-editenv", args...)
+	switch {
+	case err != nil:
+		return err.Error()
+	case !res.Found:
+		return "grub-editenv not found: the menu does not come back by itself after a failed boot"
+	case res.TimedOut || res.Exit != 0:
+		return fmt.Sprintf("grub-editenv %s failed (exit %d): the menu flag is not as it should be", args[1], res.Exit)
+	}
+	return ""
 }
 
 // systemctl runs systemctl with args and returns its stdout's lines.

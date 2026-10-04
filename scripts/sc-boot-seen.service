@@ -9,6 +9,9 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # writes nothing; without sc it is skipped, not failed.
 DefaultDependencies=no
 After=systemd-remount-fs.service
+# A separate /boot holds grubenv, where the menu flag goes: after it, if
+# there is one (ordering only: a /boot that fails still gets the seen line).
+After=boot.mount
 RequiresMountsFor=/var/lib/smartconfig
 Before=shutdown.target
 Conflicts=shutdown.target

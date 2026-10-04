@@ -69,7 +69,7 @@ func TestBootUnits(t *testing.T) {
 		"sc-boot-seen.service": {"\nDefaultDependencies=no\n", "\nAfter=systemd-remount-fs.service\n",
 			"\nRequiresMountsFor=/var/lib/smartconfig\n", "\nConditionPathIsReadWrite=/var/lib\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
-			"\nIgnoreOnIsolate=yes\n", "\nConditionPathIsExecutable=/usr/local/sbin/sc\n"},
+			"\nIgnoreOnIsolate=yes\n", "\nConditionPathIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n"},
 		"sc-boot-ok.service": {"\nAfter=multi-user.target\n", "\nConditionPathIsReadWrite=/var/lib\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
 			"\nConditionPathIsExecutable=/usr/local/sbin/sc\n"},
