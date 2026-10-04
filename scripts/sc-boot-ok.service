@@ -6,13 +6,14 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # here keeps only its "seen" line, and counts as failed.
 After=multi-user.target
 ConditionPathIsReadWrite=/var/lib
+ConditionPathIsExecutable=/usr/local/sbin/sc
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/sc boot verdict
 SyslogIdentifier=sc-boot
 Environment=GOTRACEBACK=none
-TimeoutStartSec=30s
+TimeoutStartSec=120s
 
 [Install]
 WantedBy=multi-user.target

@@ -25,7 +25,7 @@ func bootEnv(t *testing.T, states string, failed int) (home string) {
 	t.Cleanup(func() { boot.IDPath, bootRunner = oldID, oldRunner })
 	if states != "" {
 		script := "#!/bin/sh\ncase $1 in\nis-active) printf '" + states + "'; exit 3;;\n" +
-			"list-units) i=0; while [ $i -lt " + itoa(failed) + " ]; do echo \"x$i.service loaded failed failed X\"; i=$((i+1)); done;;\nesac\n"
+			"list-units) [ " + itoa(failed) + " -lt 0 ] && exit 1; i=0; while [ $i -lt " + itoa(failed) + " ]; do echo \"x$i.service loaded failed failed X\"; i=$((i+1)); done;;\nesac\n"
 		os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755)
 	}
 	return home
@@ -60,7 +60,7 @@ func TestBootVerdictBad(t *testing.T) {
 	if r := sc(t, "boot", "verdict"); r.code != 0 || !strings.Contains(r.stdout, ": bad (local-fs=inactive ") {
 		t.Fatalf("%+v", r)
 	}
-	if bs, _ := boot.Read(home); len(bs) != 1 || bs[0].Verdict != "bad" || bs[0].RowID != 0 {
+	if bs, _ := boot.Read(home); len(bs) != 1 || bs[0].Verdict != "bad" || bs[0].RowID != -1 { // no store: no row
 		t.Errorf("boots %+v", bs)
 	}
 }
@@ -91,5 +91,20 @@ func TestBootSeen(t *testing.T) {
 	}
 	if strings.Contains(mustSC(t, "--help"), "\n  boot ") {
 		t.Error("sc boot is listed")
+	}
+}
+
+// A list-units that fails is an unknown count, not zero; a store that
+// cannot be read gives row -1, never 0, which would mean "every row".
+func TestBootVerdictUnknowns(t *testing.T) {
+	home := bootEnv(t, `active\ninactive\ninactive\n`, -1)
+	os.MkdirAll(home, 0o700)
+	os.WriteFile(filepath.Join(home, "changes.db"), []byte("not a database"), 0o600)
+	r := sc(t, "boot", "verdict")
+	if r.code != 0 || !strings.Contains(r.stdout, ": ok (") || !strings.Contains(r.stdout, "failed-units=-1)") {
+		t.Fatalf("%+v", r)
+	}
+	if bs, _ := boot.Read(home); len(bs) != 1 || bs[0].RowID != -1 {
+		t.Errorf("boots %+v", bs)
 	}
 }

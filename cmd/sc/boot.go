@@ -17,7 +17,7 @@ import (
 // bootRunner runs systemctl for sc boot verdict, as the M3 runner runs a
 // validator: from fixed directories, no shell, LC_ALL=C, a timeout. Tests
 // point it at a fake.
-var bootRunner = check.Runner{Timeout: 10 * time.Second}
+var bootRunner = check.Runner{Timeout: 30 * time.Second}
 
 // newBootCmd is sc boot, run by two units at every boot (M4 plan 3.2),
 // not by people: hidden.
@@ -73,9 +73,14 @@ func runBootVerdict(cmd *cobra.Command, args []string) error {
 		failed = len(units)
 	}
 	verdict, why := boot.Judge(states[0], states[1], states[2], failed)
-	var row int64
+	// The newest row, the line between what this boot came up with and
+	// what changed after; -1 when the store cannot be read (sc status then
+	// looks further back), never 0, which would mean "every row".
+	row := int64(-1)
 	if s, err := openStore(); err == nil {
-		row, _ = s.NewestRowID()
+		if n, err := s.NewestRowID(); err == nil {
+			row = n
+		}
 		s.Close()
 	}
 	if err := os.MkdirAll(store.Home(), 0o700); err != nil {
@@ -89,7 +94,8 @@ func runBootVerdict(cmd *cobra.Command, args []string) error {
 }
 
 // systemctl runs systemctl with args and returns its stdout's lines.
-// is-active exits 3 for an inactive unit and still prints every state.
+// is-active may exit 3 for an inactive unit and still prints every
+// state; any other command must exit 0.
 func systemctl(ctx context.Context, args ...string) ([]string, error) {
 	res, err := bootRunner.Run(ctx, "/", "systemctl", args...)
 	switch {
@@ -99,6 +105,8 @@ func systemctl(ctx context.Context, args ...string) ([]string, error) {
 		return nil, fmt.Errorf("systemctl not found")
 	case res.TimedOut || res.Exit < 0:
 		return nil, fmt.Errorf("systemctl %s did not finish", args[0])
+	case res.Exit != 0 && args[0] != "is-active":
+		return nil, fmt.Errorf("systemctl %s: exit %d", args[0], res.Exit)
 	}
 	var lines []string
 	for _, l := range strings.Split(string(res.Out), "\n") {

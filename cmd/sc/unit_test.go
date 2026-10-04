@@ -68,9 +68,11 @@ func TestBootUnits(t *testing.T) {
 	for name, want := range map[string][]string{
 		"sc-boot-seen.service": {"\nDefaultDependencies=no\n", "\nAfter=systemd-remount-fs.service\n",
 			"\nRequiresMountsFor=/var/lib/smartconfig\n", "\nConditionPathIsReadWrite=/var/lib\n",
-			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec="},
+			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
+			"\nIgnoreOnIsolate=yes\n", "\nConditionPathIsExecutable=/usr/local/sbin/sc\n"},
 		"sc-boot-ok.service": {"\nAfter=multi-user.target\n", "\nConditionPathIsReadWrite=/var/lib\n",
-			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec="},
+			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
+			"\nConditionPathIsExecutable=/usr/local/sbin/sc\n"},
 	} {
 		unit := unitLines(t, name)
 		for _, w := range want {
@@ -79,9 +81,10 @@ func TestBootUnits(t *testing.T) {
 			}
 		}
 		// Ordered after local-fs.target, seen would miss the boots that fail
-		// on a disk.
-		if name == "sc-boot-seen.service" && strings.Contains(unit, "local-fs.target") {
-			t.Errorf("%s waits for local-fs.target", name)
+		// on a disk; ordered before sysinit.target, a slow seen held up every
+		// boot and was killed by its timeout (the chunk B review, in the lab).
+		if name == "sc-boot-seen.service" && (strings.Contains(unit, "local-fs.target") || strings.Contains(unit, "Before=sysinit.target")) {
+			t.Errorf("%s waits for local-fs.target or holds up sysinit.target", name)
 		}
 		analyze, err := exec.LookPath("systemd-analyze")
 		if err != nil {

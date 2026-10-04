@@ -15,18 +15,17 @@
 package boot
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
-
-	"smartconfig/internal/fsutil"
 )
 
 // FileName is the boots file's name in $SC_HOME.
@@ -43,7 +42,7 @@ type Boot struct {
 	Seen    time.Time // zero when there is no "seen" line
 	Verdict string    // "ok", "bad", or "" when the boot got none
 	At      time.Time // when the verdict was given
-	RowID   int64     // the newest store row at the verdict
+	RowID   int64     // the newest store row at the verdict; -1 when the store could not be read
 	Why     string    // what the verdict rests on
 }
 
@@ -94,29 +93,37 @@ func Judge(localFS, emergency, rescue string, failed int) (verdict, why string) 
 
 func path(home string) string { return filepath.Join(home, FileName) }
 
-// appendLine appends one line, after keeping only the last keepLines
-// lines when the file has grown past maxSize.
+// appendLine appends one line under an exclusive lock on the file, after
+// keeping only the last keepLines lines when the file has grown past
+// maxSize (rewritten in place, so a writer waiting for the lock appends
+// to the same file), and syncs it: a boot reset soon after must not lose
+// its line.
 func appendLine(home, line string) error {
-	p := path(home)
-	if fi, err := os.Stat(p); err == nil && fi.Size() > maxSize {
-		if err := trim(p); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path(home), os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("boots: %w", err)
 	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("boots: lock: %w", err)
+	}
+	if fi, err := f.Stat(); err == nil && fi.Size() > maxSize {
+		if err := trim(f); err != nil {
+			return err
+		}
+	}
 	if _, err := f.WriteString(line + "\n"); err != nil {
-		f.Close()
 		return fmt.Errorf("boots: %w", err)
 	}
-	return f.Close()
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("boots: %w", err)
+	}
+	return nil
 }
 
-// trim rewrites p with its last keepLines lines, atomically.
-func trim(p string) error {
-	data, err := os.ReadFile(p)
+// trim rewrites f, which is locked, with its last keepLines lines.
+func trim(f *os.File) error {
+	data, err := io.ReadAll(io.NewSectionReader(f, 0, 1<<62))
 	if err != nil {
 		return fmt.Errorf("boots: %w", err)
 	}
@@ -124,25 +131,31 @@ func trim(p string) error {
 	if len(lines) > keepLines {
 		lines = lines[len(lines)-keepLines:]
 	}
-	return fsutil.WriteAtomic(p, append(bytes.Join(lines, nil), '\n'), 0o600, os.Geteuid(), os.Getegid())
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("boots: %w", err)
+	}
+	if _, err := f.Write(append(bytes.Join(lines, nil), '\n')); err != nil { // O_APPEND: at 0 now
+		return fmt.Errorf("boots: %w", err)
+	}
+	return nil
 }
 
 // Read returns the boots the file in home records, in the order each was
 // first seen. Lines it cannot read are skipped; no file is no boots.
 func Read(home string) ([]Boot, error) {
-	f, err := os.Open(path(home))
+	// Read whole: trimming keeps the file near 1 MiB, and a line of any
+	// length (zeroed blocks after a power cut) is one line to skip.
+	data, err := os.ReadFile(path(home))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("boots: %w", err)
 	}
-	defer f.Close()
 	var out []Boot
 	at := map[string]int{}
-	lines := bufio.NewScanner(f)
-	for lines.Scan() {
-		fl := strings.SplitN(lines.Text(), " ", 5)
+	for _, line := range strings.Split(string(data), "\n") {
+		fl := strings.SplitN(line, " ", 5)
 		if len(fl) < 3 {
 			continue
 		}
@@ -176,22 +189,20 @@ func Read(home string) ([]Boot, error) {
 			b.Why = fl[4]
 		}
 	}
-	if err := lines.Err(); err != nil {
-		return nil, fmt.Errorf("boots: %w", err)
-	}
 	return out, nil
 }
 
-// LastHealthy returns the last boot with an "ok" verdict, leaving out the
-// boot current (this one: its verdict says nothing about the boot that
-// failed before it).
-func LastHealthy(boots []Boot, current string) (Boot, bool) {
+// LastHealthy returns the last boot with an "ok" verdict, this one
+// included: a machine that came up healthy after a fix is healthy, and
+// the boots that failed before it are past. It also returns the boot's
+// index in boots.
+func LastHealthy(boots []Boot) (Boot, int, bool) {
 	for i := len(boots) - 1; i >= 0; i-- {
-		if boots[i].Verdict == "ok" && boots[i].ID != current {
-			return boots[i], true
+		if boots[i].Verdict == "ok" {
+			return boots[i], i, true
 		}
 	}
-	return Boot{}, false
+	return Boot{}, -1, false
 }
 
 // Failed reports whether b is a boot that failed: a "bad" verdict, or no

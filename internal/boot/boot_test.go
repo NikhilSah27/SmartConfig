@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -26,7 +27,7 @@ func TestReadBack(t *testing.T) {
 	must(Seen(home, "b", t0.Add(time.Hour)))
 	must(Record(home, "c", "bad", t0.Add(2*time.Hour), 12, "local-fs=inactive\n emergency=inactive"))
 	f, _ := os.OpenFile(filepath.Join(home, FileName), os.O_APPEND|os.O_WRONLY, 0)
-	f.WriteString("junk\nd seen notatime\ne ok 1\n\n")
+	f.WriteString("junk\nd seen notatime\ne ok 1\nf seen 5 extra\n\n")
 	f.Close()
 	bs, err := Read(home)
 	if err != nil {
@@ -73,7 +74,7 @@ func TestTrim(t *testing.T) {
 	}
 }
 
-// The last healthy boot is the last "ok" one other than this boot; a boot
+// The last healthy boot is the last "ok" one, this boot included; a boot
 // failed when its verdict is bad, or when it was seen and never got one
 // and is not this boot.
 func TestLastHealthyAndFailed(t *testing.T) {
@@ -84,13 +85,13 @@ func TestLastHealthyAndFailed(t *testing.T) {
 		{ID: "d", Verdict: "bad"},
 		{ID: "e", Seen: t0, Verdict: "ok", RowID: 20}, // this boot
 	}
-	if b, ok := LastHealthy(bs, "e"); !ok || b.ID != "b" {
-		t.Errorf("last healthy %v %v", b, ok)
+	if b, i, ok := LastHealthy(bs); !ok || b.ID != "e" || i != 4 {
+		t.Errorf("last healthy %v %d %v", b, i, ok)
 	}
-	if b, ok := LastHealthy(bs, "x"); !ok || b.ID != "e" {
-		t.Errorf("last healthy, another boot: %v %v", b, ok)
+	if b, i, ok := LastHealthy(bs[:4]); !ok || b.ID != "b" || i != 1 {
+		t.Errorf("last healthy before e %v %d %v", b, i, ok)
 	}
-	if _, ok := LastHealthy(nil, "e"); ok {
+	if _, i, ok := LastHealthy(nil); ok || i != -1 {
 		t.Error("no boots")
 	}
 	for i, want := range []bool{false, false, true, true, false} {
@@ -100,6 +101,9 @@ func TestLastHealthyAndFailed(t *testing.T) {
 	}
 	if (Boot{ID: "e", Seen: t0}).Failed("e") {
 		t.Error("this boot, on its way, failed")
+	}
+	if (Boot{ID: "x"}).Failed("e") {
+		t.Error("a boot with no line at all failed")
 	}
 }
 
@@ -138,5 +142,42 @@ func TestCurrentID(t *testing.T) {
 	os.WriteFile(p, []byte("a b\n"), 0o644)
 	if _, err := CurrentID(); err == nil {
 		t.Error("a boot id with a space")
+	}
+}
+
+// A line of any length (zeroed blocks after a power cut) is one line to
+// skip, not a file that cannot be read.
+func TestReadLongLine(t *testing.T) {
+	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, FileName), append(make([]byte, 70<<10), []byte("\na seen 1\n")...), 0o600)
+	if bs, err := Read(home); err != nil || len(bs) != 1 || bs[0].ID != "a" {
+		t.Errorf("%+v %v", bs, err)
+	}
+}
+
+// Appends are serialized by a lock, also across a trim: none is lost.
+func TestAppendWhileTrimming(t *testing.T) {
+	home := t.TempDir()
+	var b strings.Builder
+	for i := 0; b.Len() <= maxSize; i++ {
+		fmt.Fprintf(&b, "old%d seen %d %s\n", i, i, strings.Repeat("x", 100))
+	}
+	os.WriteFile(filepath.Join(home, FileName), []byte(b.String()), 0o600)
+	var wg sync.WaitGroup
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := Seen(home, fmt.Sprintf("new%d", i), t0); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	data, _ := os.ReadFile(filepath.Join(home, FileName))
+	for i := 0; i < 40; i++ {
+		if !strings.Contains(string(data), fmt.Sprintf("\nnew%d seen ", i)) {
+			t.Errorf("new%d lost", i)
+		}
 	}
 }
