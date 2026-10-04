@@ -57,8 +57,9 @@ steps in five chunks, one at a time. Done: steps 1-3, chunk A built and reviewed
 ([reviews/2026-10-04-m4-chunk-a.md](reviews/2026-10-04-m4-chunk-a.md),
 fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
-fixes `40288d8`, plan change C4). Done: steps 7-9 (log). Next: step 10, `sc
-restore` refuses `+i`/`+a` targets; then the chunk C review. The QEMU lab is in
+fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built (log). Next:
+the chunk C review (steps 7-10); then chunk D, step 11 (the QEMU lab
+in the repo, `make lab-e2e`). The QEMU lab is in
 `~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
@@ -1315,3 +1316,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   goes into `rescue.service.d` and `emergency.service.d` and runs `sc
   status --console` before the shell. `systemd-analyze verify` accepts
   both services with it.
+- **M4 step 10, the `+i`/`+a` precheck.** `sc restore` and `sc edit`
+  refuse an immutable target, or one in an immutable or append-only
+  directory, before writing anything, and name the `chattr` to run.
+  Tested as root with chattr.
+  - Checks: tests pass as a user, as root and under race, and m1-compat
+    passes.
