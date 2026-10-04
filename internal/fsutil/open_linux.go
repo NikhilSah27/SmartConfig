@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -22,36 +23,59 @@ func syncDir(dir string) error {
 	return d.Sync()
 }
 
-// Inode flags of FS_IOC_GETFLAGS (linux/fs.h).
+// Inode flags of FS_IOC_GETFLAGS (linux/fs.h); the request number is per
+// architecture (ioctl_*.go).
 const (
-	fsIocGetflags = 0x80086601
 	fsImmutableFl = 0x00000010
 	fsAppendFl    = 0x00000020
 )
 
 // ReplaceRefused returns why path cannot be replaced or removed, as a
 // restore does: it, or its directory, is immutable (chattr +i) or
-// append-only (chattr +a). The rename would fail anyway; this says why
-// before anything is written. A filesystem without these flags, or a
-// path that is not there, refuses nothing.
+// append-only (chattr +a). The rename would fail anyway; this says why,
+// every flag at once, before anything is written. Only a regular file or
+// a directory is opened, never a FIFO or a device. A filesystem without
+// these flags refuses nothing, nor does a path that is not there (its
+// directory is still looked at).
 func ReplaceRefused(path string) error {
+	var why, fix []string
 	for _, p := range []string{path, filepath.Dir(path)} {
-		f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
-		if err != nil {
+		attrs := inodeFlags(p)
+		if attrs == "" {
 			continue
 		}
-		var flags uint64 // the kernel writes an int; 8 bytes leave room either way
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fsIocGetflags, uintptr(unsafe.Pointer(&flags)))
-		f.Close()
-		if errno != 0 {
-			continue
-		}
-		switch {
-		case flags&fsImmutableFl != 0:
-			return fmt.Errorf("%s is immutable (chattr +i), so it cannot be replaced: run chattr -i %s first", p, p)
-		case flags&fsAppendFl != 0:
-			return fmt.Errorf("%s is append-only (chattr +a), so it cannot be replaced: run chattr -a %s first", p, p)
-		}
+		what := map[string]string{"i": "immutable", "a": "append-only", "ia": "immutable and append-only"}[attrs]
+		why = append(why, fmt.Sprintf("%s is %s (chattr +%s)", p, what, attrs))
+		fix = append(fix, fmt.Sprintf("chattr -%s %s", attrs, p))
 	}
-	return nil
+	if len(why) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s, so %s cannot be replaced: run %s first", strings.Join(why, " and "), path, strings.Join(fix, " and "))
+}
+
+// inodeFlags is "i", "a", "ia" or "" for p's immutable and append-only
+// flags.
+func inodeFlags(p string) string {
+	fi, err := os.Lstat(p)
+	if err != nil || !(fi.Mode().IsRegular() || fi.IsDir()) {
+		return ""
+	}
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var flags uint32 // the kernel writes an int, whatever the request's size says
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fsIocGetflags, uintptr(unsafe.Pointer(&flags))); errno != 0 {
+		return ""
+	}
+	out := ""
+	if flags&fsImmutableFl != 0 {
+		out += "i"
+	}
+	if flags&fsAppendFl != 0 {
+		out += "a"
+	}
+	return out
 }

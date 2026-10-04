@@ -17,6 +17,15 @@ datarootdir="/usr/share"
 . "$pkgdatadir/grub-mkconfig_lib"
 
 boot="${SC_GRUB_BOOT:-/boot}" # tests point it elsewhere
+: ${GRUB_DISABLE_LINUX_PARTUUID=true} # 10_linux's default too
+
+# An admin who turned recovery entries off gets no password-less root
+# shell from SmartConfig either; the menu after a failed boot stays.
+no_entry=
+if [ "x${GRUB_DISABLE_RECOVERY}" = "xtrue" ] ; then
+	gettext_printf "SmartConfig rescue: no entry (GRUB_DISABLE_RECOVERY=true)\n" >&2
+	no_entry=1
+fi
 
 # The newest kernel that has an initrd, in 10_linux's order.
 list=
@@ -35,6 +44,10 @@ for k in $(echo $list | tr ' ' '\n' | version_sort -r) ; do
 		fi
 	done
 done
+
+if [ -z "$linux" ] && [ -z "$no_entry" ] ; then
+	gettext_printf "SmartConfig rescue: no entry (no kernel in %s has an initrd)\n" "$boot" >&2
+fi
 
 # A btrfs or ZFS root needs subvolume or pool arguments that only 10_linux
 # knows how to give: no entry (plan section 1, non-goals).
@@ -57,14 +70,16 @@ else
 	root_device=UUID=${GRUB_DEVICE_UUID}
 fi
 
-if [ -n "$linux" ] && [ -n "$root_device" ] ; then
+if [ -n "$linux" ] && [ -n "$root_device" ] && [ -z "$no_entry" ] ; then
 	# Keep GRUB_CMDLINE_LINUX (it applies to every entry) and the console=
 	# settings; leave out "quiet splash", so the console shows the boot.
+	# ro comes after them: the last of ro and rw wins, and an rw in
+	# GRUB_CMDLINE_LINUX must not make the rescue root writable.
 	consoles=
 	for a in ${GRUB_CMDLINE_LINUX_DEFAULT} ; do
 		case "$a" in console=*) consoles="$consoles $a" ;; esac
 	done
-	args="root=${root_device} ro ${GRUB_CMDLINE_LINUX}${consoles} fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
+	args="root=${root_device} ${GRUB_CMDLINE_LINUX}${consoles} ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
 	rel_dirname=$(make_system_path_relative_to_its_root /boot)
 	gettext_printf "Adding SmartConfig rescue entry: %s\n" "$linux" >&2
 	cat <<EOT

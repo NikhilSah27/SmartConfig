@@ -4,9 +4,9 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # Once multi-user.target is reached: ok when local-fs.target is active and
 # the boot is in neither emergency nor rescue mode. A boot that never gets
 # here keeps only its "seen" line, and counts as failed.
-After=multi-user.target
+After=multi-user.target sc-boot-seen.service
 ConditionPathIsReadWrite=/var/lib
-ConditionPathIsExecutable=/usr/local/sbin/sc
+ConditionFileIsExecutable=/usr/local/sbin/sc
 
 [Service]
 Type=oneshot

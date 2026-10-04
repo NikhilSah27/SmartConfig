@@ -407,9 +407,10 @@ func TestRestoreLinkOwner(t *testing.T) {
 	}
 }
 
-// An immutable (+i) target, or an append-only (+a) directory, is refused
-// before anything is written, with the chattr to run (M2's deferred
-// "+i/+a precheck"). Setting the flags needs root.
+// An immutable (+i) or append-only (+a) target or directory is refused
+// before anything is written, with the chattr to run, every flag at once
+// (M2's deferred "+i/+a precheck"); any other refusal comes first, and an
+// absent file's deletion needs nothing. Setting the flags needs root.
 func TestRestoreRefusesImmutable(t *testing.T) {
 	chattr, err := exec.LookPath("chattr")
 	if os.Geteuid() != 0 || err != nil {
@@ -433,8 +434,11 @@ func TestRestoreRefusesImmutable(t *testing.T) {
 	}
 	os.WriteFile(f, []byte("bad\n"), 0o644)
 	for _, tc := range []struct{ flag, on, want string }{
-		{"+i", f, "is immutable (chattr +i), so it cannot be replaced: run chattr -i " + f + " first"},
-		{"+a", dir, "is append-only (chattr +a), so it cannot be replaced: run chattr -a " + dir + " first"},
+		{"+i", f, f + " is immutable (chattr +i), so " + f + " cannot be replaced: run chattr -i " + f + " first"},
+		{"+a", f, f + " is append-only (chattr +a), so " + f + " cannot be replaced: run chattr -a " + f + " first"},
+		{"+ia", f, f + " is immutable and append-only (chattr +ia), so " + f + " cannot be replaced: run chattr -ia " + f + " first"},
+		{"+i", dir, dir + " is immutable (chattr +i), so " + f + " cannot be replaced: run chattr -i " + dir + " first"},
+		{"+a", dir, dir + " is append-only (chattr +a), so " + f + " cannot be replaced: run chattr -a " + dir + " first"},
 	} {
 		if out, err := exec.Command(chattr, tc.flag, tc.on).CombinedOutput(); err != nil {
 			t.Skipf("chattr %s: %v %s (a filesystem without the flag)", tc.flag, err, out)
@@ -462,5 +466,45 @@ func TestRestoreRefusesImmutable(t *testing.T) {
 	// Without the flags, a restore goes through.
 	if _, _, err := s.Restore(c.ID); err != nil {
 		t.Errorf("restore: %v", err)
+	}
+	// Both at once: one message, both chattr commands.
+	exec.Command(chattr, "+i", f).Run()
+	exec.Command(chattr, "+a", dir).Run()
+	_, _, err = s.Restore(c.ID)
+	exec.Command(chattr, "-i", f).Run()
+	exec.Command(chattr, "-a", dir).Run()
+	if err == nil || !strings.Contains(err.Error(), "run chattr -i "+f+" and chattr -a "+dir+" first") {
+		t.Errorf("both: %v", err)
+	}
+	// A digest row's own refusal comes before the chattr advice.
+	s.SetFingerprintOnly(func(p string) bool { return p == f })
+	os.WriteFile(f, []byte("secret\n"), 0o600)
+	st, err := fsutil.ReadState(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Record([]Obs{{Path: f, State: &st, Origin: OriginAuto}})
+	s.SetFingerprintOnly(func(string) bool { return false })
+	if err != nil || d[0].Change.Kind != KindDigest {
+		t.Fatalf("digest row: %+v %v", d, err)
+	}
+	exec.Command(chattr, "+i", f).Run()
+	_, _, err = s.Restore(d[0].Change.ID)
+	exec.Command(chattr, "-i", f).Run()
+	if err == nil || !strings.Contains(err.Error(), "keeps only a fingerprint") {
+		t.Errorf("digest before chattr: %v", err)
+	}
+	// A deletion row whose file is already gone needs nothing written:
+	// no refusal, even in an immutable directory.
+	os.Remove(f)
+	gone, err := s.Record([]Obs{{Path: f, Origin: OriginAuto}})
+	if err != nil || len(gone) != 1 || gone[0].Change.Kind != KindDeleted {
+		t.Fatalf("deletion row: %+v %v", gone, err)
+	}
+	exec.Command(chattr, "+i", dir).Run()
+	_, _, err = s.Restore(gone[0].Change.ID)
+	exec.Command(chattr, "-i", dir).Run()
+	if err != nil {
+		t.Errorf("an absent file's deletion: %v", err)
 	}
 }

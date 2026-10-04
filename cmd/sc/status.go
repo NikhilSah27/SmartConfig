@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -49,8 +52,89 @@ healthy one or a change added a blocker or an error.`,
 }
 
 // consoleRows is how many changed files the rescue console lists: with
-// the lines around them and systemd's own, an 80x25 screen holds it all.
-const consoleRows = 6
+// the lines around them and systemd's five, an 80x25 screen holds it all.
+const consoleRows = 5
+
+// Where the kernel lists its consoles and where their devices are, and
+// whether a writer is /dev/console itself. Tests replace them.
+var (
+	consoleActive = "/sys/class/tty/console/active"
+	devDir        = "/dev"
+	systemConsole = func(w io.Writer) bool {
+		f, ok := w.(*os.File)
+		if !ok {
+			return false
+		}
+		var st syscall.Stat_t
+		return syscall.Fstat(int(f.Fd()), &st) == nil && st.Mode&syscall.S_IFMT == syscall.S_IFCHR && st.Rdev == 5<<8|1 // 5:1
+	}
+)
+
+// writeConsoles writes the rescue report. To /dev/console (the drop-in:
+// rescue.service's tty) it goes to every console the kernel uses, as
+// sulogin asks on each: /dev/console alone is only the last console= one
+// (a screen with a serial console got no report, the chunk C review).
+func writeConsoles(out io.Writer, report []byte) {
+	names := []string(nil)
+	if systemConsole(out) {
+		if b, err := os.ReadFile(consoleActive); err == nil {
+			names = strings.Fields(string(b))
+		}
+	}
+	wrote := 0
+	for _, n := range names {
+		f, err := os.OpenFile(filepath.Join(devDir, n), os.O_WRONLY|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			continue
+		}
+		// A stopped console (Scroll Lock, XOFF, flow control without a
+		// peer) must not hold up the rescue shell, nor the other consoles.
+		f.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		if _, err := f.Write(report); err == nil {
+			wrote++
+		}
+		f.Close()
+	}
+	if wrote == 0 {
+		out.Write(report)
+	}
+}
+
+// fit shortens path from the left ("...") so that a line of prefix and it
+// stays within 80 columns; a path that cannot fit is left whole.
+func fit(prefix, path string) string {
+	room := 80 - len(prefix)
+	if len(path) <= room || room < 12 {
+		return path
+	}
+	i := len(path) - (room - 3)
+	for i < len(path) && !utf8.RuneStart(path[i]) {
+		i++ // never inside a character
+	}
+	return "..." + path[i:]
+}
+
+// screenRows is how many rows text takes on an 80-column console.
+func screenRows(text string) int {
+	n := 0
+	for _, l := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		n += max(1, (utf8.RuneCountInString(l)+79)/80)
+	}
+	return n
+}
+
+// consoleProblem is e's PROBLEM in the console's column: a symlink's
+// target is left out, anything else cut to 40 columns.
+func consoleProblem(e entry) string {
+	p := e.problem
+	if e.row.Kind == store.KindLink {
+		p = "now a symlink"
+	}
+	if len(p) > 40 {
+		p = p[:37] + "..."
+	}
+	return p
+}
 
 // entry is one changed file of sc status.
 type entry struct {
@@ -60,9 +144,24 @@ type entry struct {
 	sev     check.Severity
 }
 
-func runStatus(cmd *cobra.Command, console bool) error {
+func runStatus(cmd *cobra.Command, console bool) (err error) {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
+	var report bytes.Buffer
+	if console {
+		real := out
+		out = &report
+		defer func() {
+			// An error goes into the report, on every console, not to
+			// stderr, which is the last console= one only.
+			var code exitCode
+			if err != nil && !errors.As(err, &code) {
+				fmt.Fprintf(&report, "sc: %v\n", err)
+				err = exitCode(1)
+			}
+			writeConsoles(real, report.Bytes())
+		}()
+	}
 	home := store.Home()
 	cur, _ := boot.CurrentID()
 	mode, ro := bootMode(ctx), rootReadOnly()
@@ -193,24 +292,36 @@ func runStatus(cmd *cobra.Command, console bool) error {
 		}
 	}
 
+	currentOK := healthy && last.ID == cur
 	if console {
 		// Worst first, so what matters is on screen; then newest first.
 		shown := append([]entry(nil), entries...)
 		sort.SliceStable(shown, func(i, j int) bool { return shown[i].sev > shown[j].sev })
-		fmt.Fprintf(out, "\nChanged since %s, worst first:\n", since)
+		var undoText bytes.Buffer
+		if undo != nil {
+			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, currentOK)
+		}
+		title := fmt.Sprintf("\nChanged since %s, worst first:\n", since)
+		// 20 rows of 25: systemd's prompt takes the other five. The rows
+		// already written, the title, the undo and a "more" line first.
+		rows := min(consoleRows, max(1, 20-screenRows(report.String()+title)-screenRows(undoText.String())-1))
+		fmt.Fprint(out, title)
 		w := 0
 		for i, e := range shown {
-			if i < consoleRows {
-				w = max(w, len(e.problem))
+			if i < rows {
+				w = max(w, len(consoleProblem(e)))
 			}
 		}
 		for i, e := range shown {
-			if i == consoleRows {
+			if i == rows {
 				fmt.Fprintf(out, "%s more (sc status lists them all)\n", count(len(shown)-i, "file"))
 				break
 			}
-			fmt.Fprintf(out, "%s %s  %-*s  %s\n", e.row.ID, time.Unix(e.row.TS, 0).Local().Format("15:04"), w, e.problem, show(e.row.Path))
+			prefix := fmt.Sprintf("%s %s  %-*s  ", e.row.ID, time.Unix(e.row.TS, 0).Local().Format("15:04"), w, consoleProblem(e))
+			fmt.Fprintf(out, "%s%s\n", prefix, fit(prefix, show(e.row.Path)))
 		}
+		out.Write(undoText.Bytes())
+		return exit(worst)
 	} else {
 		if bounded {
 			fmt.Fprintf(out, "\nChanged since %s, newest first:\n", since)
@@ -225,7 +336,7 @@ func runStatus(cmd *cobra.Command, console bool) error {
 		tw.Flush()
 	}
 	if undo != nil {
-		statusUndo(out, c, *undo, bounded, mode, ro)
+		statusUndo(out, c, *undo, bounded, mode, ro, console, currentOK)
 	}
 	return exit(worst)
 }
@@ -291,30 +402,49 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 // version e.before (or move a new file aside), then, in the rescue or
 // emergency boot, reboot. After an fstab failure a plain reboot waits for
 // the missing disk again: daemon-reload first (the M4 lab).
-func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode string, ro bool) {
+func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode string, ro, console, currentOK bool) {
 	path := show(e.row.Path)
-	as := "as it was before this change"
+	as := " as it was before this change"
 	if bounded {
-		as = "as it was during the last healthy boot"
+		as = " as it was during the last healthy boot"
+	}
+	if console {
+		as = "" // 80 columns: the version is the one named below
+	}
+	shown := func(prefix string) string {
+		if console {
+			return fit(prefix, path)
+		}
+		return path
 	}
 	if e.before == nil || e.before.Kind == store.KindDeleted {
-		fmt.Fprintf(out, "\nTo undo %s, which is new, move it aside:\n", path)
+		fmt.Fprintf(out, "\nTo undo %s, which is new, move it aside:\n", shown("To undo , which is new, move it aside:"))
 	} else {
-		fmt.Fprintf(out, "\nTo put %s back %s:\n", path, as)
+		fmt.Fprintf(out, "\nTo put %s back%s:\n", shown("To put  back"+as+":"), as)
 	}
 	if ro {
 		fmt.Fprintln(out, "  mount -o remount,rw /")
 	}
-	if e.before == nil || e.before.Kind == store.KindDeleted {
+	switch {
+	case (e.before == nil || e.before.Kind == store.KindDeleted) && console:
+		// Short lines: a console line that wraps pushes the top off.
+		dir, name := filepath.Split(path)
+		fmt.Fprintf(out, "  cd %s\n  mv %s %s.sc-off\n", dir, name, name)
+	case e.before == nil || e.before.Kind == store.KindDeleted:
 		// Every reader of a directory sc checks skips this name: *.yaml,
 		// *.conf, *.rules, units, and sudoers.d's names with a dot.
 		fmt.Fprintf(out, "  mv %s %s.sc-off\n", path, path)
-	} else {
+	default:
 		fmt.Fprintf(out, "  sc restore %s\n", e.before.ID)
 	}
 	fmt.Fprintln(out, "  sync")
 	if mode != "normal" {
 		fmt.Fprintln(out, "  systemctl daemon-reload\n  systemctl reboot")
+		// A rescue boot cannot clear the menu flag (/boot is not mounted),
+		// one after a healthy boot has none set.
+		if !currentOK {
+			fmt.Fprintln(out, "The menu shows once more: the first entry, Ubuntu, is the one.")
+		}
 	} else if a := c.GraphInUse().Apply(e.row.Path); a != "" {
 		fmt.Fprintf(out, "It takes effect %s.\n", a)
 	}
@@ -341,14 +471,16 @@ func badWhy(why string) string {
 	return strings.Join(out, ", ")
 }
 
-// bootMode is "rescue" or "emergency" when systemd is in that mode (sc
-// status in emergency.service's drop-in) or the kernel command line asked
-// for it, else "normal".
+// bootMode is "rescue" or "emergency" when systemd is in that mode or the
+// kernel command line asked for it, else "normal". In the drop-in, sc
+// status runs while emergency.service or rescue.service is activating; its
+// target is reached only after it (targets are never "activating").
 func bootMode(ctx context.Context) string {
-	if states, err := systemctl(ctx, "is-active", "emergency.target", "rescue.target"); err == nil && len(states) == 2 {
-		for i, m := range []string{"emergency", "rescue"} {
+	units := []string{"emergency.service", "emergency.target", "rescue.service", "rescue.target"}
+	if states, err := systemctl(ctx, append([]string{"is-active"}, units...)...); err == nil && len(states) == len(units) {
+		for i, u := range units {
 			if states[i] == "active" || states[i] == "activating" {
-				return m
+				return strings.TrimSuffix(strings.TrimSuffix(u, ".service"), ".target")
 			}
 		}
 	}

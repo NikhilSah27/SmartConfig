@@ -22,8 +22,10 @@ import (
 // and returns a restored row with an empty ID.
 //
 // Nothing is written before every refusal has passed (plan 5.6): a
-// fingerprint-only path, a digest row, and a target directory that is not
-// a real directory owned by root or the caller.
+// fingerprint-only path, a digest row, a target directory that is not a
+// real directory owned by root or the caller, content that cannot be read
+// back, and, last, an immutable or append-only target or directory (M4
+// plan 3.6), so that its chattr advice never hides another refusal.
 func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	if s.readOnly != "" {
 		// Before anything is prepared next to the target.
@@ -32,9 +34,6 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	src, err := s.Get(id)
 	if err != nil {
 		return Change{}, nil, err
-	}
-	if err := fsutil.ReplaceRefused(src.Path); err != nil {
-		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.ID, err)
 	}
 	if s.FingerprintOnly(src.Path) {
 		return Change{}, nil, fmt.Errorf("%s is fingerprint-only; sc never restores it", src.Path)
@@ -50,12 +49,19 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	if err := safeDir(src); err != nil {
 		return Change{}, nil, err
 	}
-	var pending *fsutil.Pending
+	var data []byte
 	if src.Kind == KindFile {
-		data, err := s.Blob(src.Blob)
-		if err != nil {
+		if data, err = s.Blob(src.Blob); err != nil {
 			return Change{}, nil, err
 		}
+	}
+	// After every other refusal, which says more, and after safeDir, so it
+	// never opens through a directory sc would refuse.
+	if err := fsutil.ReplaceRefused(src.Path); err != nil {
+		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.ID, err)
+	}
+	var pending *fsutil.Pending
+	if src.Kind == KindFile {
 		if stopping() {
 			return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.Path, ErrInterrupted)
 		}

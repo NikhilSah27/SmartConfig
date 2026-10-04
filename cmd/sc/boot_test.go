@@ -148,6 +148,21 @@ func TestBootMenuFlag(t *testing.T) {
 	if out := mustSC(t, "boot", "seen"); !strings.Contains(out, "no GRUB environment block") || editenvCalls(t) != "" {
 		t.Errorf("not a grubenv: %q", out)
 	}
+	// A symlink is not GRUB's block, whatever it points at.
+	real := filepath.Join(t.TempDir(), "grubenv")
+	os.WriteFile(real, make([]byte, 1024), 0o644)
+	os.Remove(grubenvPath)
+	os.Symlink(real, grubenvPath)
+	if out := mustSC(t, "boot", "seen"); !strings.Contains(out, "no GRUB environment block") || editenvCalls(t) != "" {
+		t.Errorf("a symlink: %q", out)
+	}
+	// A grub-editenv that fails is said, and the boot still recorded.
+	os.Remove(grubenvPath)
+	os.WriteFile(grubenvPath, make([]byte, 1024), 0o644)
+	os.WriteFile(filepath.Join(bootRunner.Dirs[0], "grub-editenv"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	if out := mustSC(t, "boot", "seen"); !strings.Contains(out, "grub-editenv set failed (exit 1)") {
+		t.Errorf("a failing grub-editenv: %q", out)
+	}
 }
 
 // The real grub-editenv, where installed, on a grubenv of the test: the

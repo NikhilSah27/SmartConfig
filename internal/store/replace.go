@@ -93,10 +93,12 @@ func (s *Store) CanReplace(path string, base *fsutil.State) error {
 	if base != nil && base.Kind != "file" {
 		return fmt.Errorf("%s is a symlink; sc writes regular files only", path)
 	}
-	if err := fsutil.ReplaceRefused(path); err != nil {
+	if err := safeDirFor(path, "write", ""); err != nil {
 		return err
 	}
-	return safeDirFor(path, "write", "")
+	// Last: the refusals above say more, and safeDirFor keeps it from
+	// opening through a directory sc refuses.
+	return fsutil.ReplaceRefused(path)
 }
 
 // TooBig returns the refusal for content sc would not read back: more than

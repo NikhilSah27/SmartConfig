@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,9 +108,11 @@ func TestStatusAfterFailedBoot(t *testing.T) {
 	}
 }
 
-// The rescue console fits an 80x25 screen: worst first, at most
-// consoleRows files, the rest counted; every change is still judged, and
-// the undo has the remount, daemon-reload and reboot.
+// The rescue console fits an 80x25 screen with systemd's five lines:
+// worst first, at most consoleRows files, the rest counted, long paths
+// shortened from the left (but never in a command); every change is still
+// judged, and the undo has the remount, daemon-reload and reboot, and says
+// the menu shows once more.
 func TestStatusConsole(t *testing.T) {
 	dir, fstab, home := statusEnv(t, "root=UUID=x ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1", true)
 	good := snap(t, fstab, goodLine)
@@ -118,36 +121,64 @@ func TestStatusConsole(t *testing.T) {
 	for i := 0; i < 21; i++ {
 		snap(t, filepath.Join(dir, fmt.Sprintf("f%02d", i)), "x\n")
 	}
+	// A unit enabled meanwhile: a symlink to a long target.
+	unit := filepath.Join(dir, "cups-browsed.service")
+	os.Symlink("/usr/lib/systemd/system/cups-browsed-with-a-long-name.service", unit)
+	mustSC(t, "snapshot", unit)
 	boot.Record(home, "bbbbbbbb-2", "bad", time.Now(), newestRow(t), "local-fs=inactive emergency=active rescue=inactive failed-units=0")
 	r := sc(t, "status", "--console")
 	if r.code != 2 {
 		t.Fatalf("%+v", r)
 	}
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
-	if len(lines) > 20 {
-		t.Errorf("%d lines:\n%s", len(lines), r.stdout)
-	}
-	for _, l := range lines {
-		// Every line but a file's own path fits 80 columns.
-		if len(strings.ReplaceAll(l, dir, "/etc")) > 80 {
-			t.Errorf("wider than 80 columns: %q", l)
-		}
+	// 20 screen rows, whatever wraps: systemd's prompt takes the other 5.
+	if n := screenRows(r.stdout); n > 20 {
+		t.Errorf("%d screen rows:\n%s", n, r.stdout)
 	}
 	for _, want := range []string{
 		"This boot:     cccccccc (rescue), root read-only\n",
 		"Failed since:  1 boot, last ", ": a mount failed, emergency mode\n",
 		"\nChanged since the last healthy boot, worst first:\n",
-		"blocker fstab-source-missing, line 1  " + fstab + "\n",
-		"16 files more (sc status lists them all)\n",
-		"\nTo put " + fstab + " back as it was during the last healthy boot:\n  mount -o remount,rw /\n  sc restore " + good + "\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n",
+		"blocker fstab-source-missing, line 1  ",
+		"18 files more (sc status lists them all)\n",
+		" back:\n  mount -o remount,rw /\n  sc restore " + good + "\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n" +
+			"The menu shows once more: the first entry, Ubuntu, is the one.\n",
 	} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("lacks %q:\n%s", want, r.stdout)
 		}
 	}
-	// Worst first: the blocker is the first file listed.
-	if !strings.Contains(lines[6], fstab) {
+	// Worst first: the blocker is the first file listed, its path cut short.
+	if !strings.Contains(lines[6], "blocker") || !strings.HasSuffix(lines[6], "/fstab") {
 		t.Errorf("not worst first:\n%s", r.stdout)
+	}
+}
+
+// To /dev/console (the drop-in), the report goes to every console the
+// kernel uses, as sulogin asks on each; elsewhere to the command's output.
+func TestStatusAllConsoles(t *testing.T) {
+	_, fstab, home := statusEnv(t, "systemd.unit=rescue.target", true)
+	snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	devs := t.TempDir()
+	active := filepath.Join(t.TempDir(), "active")
+	os.WriteFile(active, []byte("tty1 ttyS0\n"), 0o644)
+	for _, n := range []string{"tty1", "ttyS0"} {
+		os.WriteFile(filepath.Join(devs, n), nil, 0o644)
+	}
+	oldActive, oldDev, oldSys := consoleActive, devDir, systemConsole
+	consoleActive, devDir = active, devs
+	t.Cleanup(func() { consoleActive, devDir, systemConsole = oldActive, oldDev, oldSys })
+	systemConsole = func(io.Writer) bool { return true }
+	r := sc(t, "status", "--console")
+	tty1, _ := os.ReadFile(filepath.Join(devs, "tty1"))
+	ttyS0, _ := os.ReadFile(filepath.Join(devs, "ttyS0"))
+	if r.stdout != "" || !strings.HasPrefix(string(tty1), "This boot:") || string(tty1) != string(ttyS0) {
+		t.Errorf("stdout %q, tty1 %q, ttyS0 %q", r.stdout, tty1, ttyS0)
+	}
+	systemConsole = func(io.Writer) bool { return false }
+	if r := sc(t, "status", "--console"); !strings.HasPrefix(r.stdout, "This boot:") {
+		t.Errorf("a terminal: %+v", r)
 	}
 }
 
@@ -343,5 +374,88 @@ func TestStatusTwoEditsSinceHealthy(t *testing.T) {
 	if !strings.Contains(r.stdout, "\nTo put "+fstab+" back as it was during the last healthy boot:\n  sc restore "+good+"\n") ||
 		strings.Contains(r.stdout, "sc restore "+good2) {
 		t.Errorf("undo:\n%s", r.stdout)
+	}
+}
+
+// Long paths and a symlink to a long target still fit: the problem column
+// is cut, a symlink's target left out, a new file's undo is cd and a short
+// mv; and when this boot came up healthy, the menu is not promised again.
+func TestStatusConsoleFits(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "systemd.unit=rescue.target", true)
+	for i := 0; i < 6; i++ {
+		long := filepath.Join(dir, strings.Repeat("d", 30), fmt.Sprintf("getty@tty%d.service.d", i))
+		os.MkdirAll(long, 0o755)
+		snap(t, filepath.Join(long, "override.conf"), "x\n")
+	}
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	for i := 0; i < 6; i++ {
+		l := filepath.Join(dir, fmt.Sprintf("very-long-unit-name-number-%d.service", i))
+		os.Symlink("/usr/lib/systemd/system/a-very-long-unit-name-indeed-"+fmt.Sprint(i)+".service", l)
+		mustSC(t, "snapshot", l)
+	}
+	snap(t, fstab, badLine) // new since the healthy boot
+	r := sc(t, "status", "--console")
+	if r.code != 2 || screenRows(r.stdout) > 20 {
+		t.Fatalf("%d rows: %+v", screenRows(r.stdout), r)
+	}
+	for _, want := range []string{"now a symlink  ", "  cd " + dir + "/\n  mv fstab fstab.sc-off\n", "The menu shows once more"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("lacks %q:\n%s", want, r.stdout)
+		}
+	}
+	// This boot came up healthy: rescue entered by hand, no menu promised.
+	boot.Record(home, "cccccccc-0000-0000-0000-000000000003", "ok", time.Now(), newestRow(t)-1, "local-fs=active")
+	if r := sc(t, "status", "--console"); r.code != 2 || strings.Contains(r.stdout, "The menu shows once more") {
+		t.Errorf("after a healthy boot: %+v", r)
+	}
+}
+
+// In the console form a failure is in the report, which goes to every
+// console, not on stderr alone; consoles that do not open are skipped,
+// and with none the command's output takes it.
+func TestStatusConsoleErrors(t *testing.T) {
+	statusEnv(t, "systemd.unit=rescue.target", true)
+	devs := t.TempDir()
+	active := filepath.Join(t.TempDir(), "active")
+	os.WriteFile(active, []byte("tty1 ttyS0\n"), 0o644)
+	os.WriteFile(filepath.Join(devs, "tty1"), nil, 0o644) // ttyS0 does not open
+	oldActive, oldDev, oldSys := consoleActive, devDir, systemConsole
+	consoleActive, devDir = active, devs
+	systemConsole = func(io.Writer) bool { return true }
+	t.Cleanup(func() { consoleActive, devDir, systemConsole = oldActive, oldDev, oldSys })
+	os.Remove(filepath.Join(os.Getenv("SC_HOME"), "changes.db")) // the store is gone
+	r := sc(t, "status", "--console")
+	tty1, _ := os.ReadFile(filepath.Join(devs, "tty1"))
+	if r.code != 1 || r.stderr != "" || r.stdout != "" || !strings.Contains(string(tty1), "\nsc: ") {
+		t.Errorf("error: %+v, tty1 %q", r, tty1)
+	}
+	os.Remove(filepath.Join(devs, "tty1")) // no console opens
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "This boot:") || !strings.Contains(r.stdout, "\nsc: ") {
+		t.Errorf("no console: %+v", r)
+	}
+}
+
+// sc status in emergency.service's drop-in: the service is activating and
+// its target not yet reached; the mode is still emergency (the step 11
+// design found it said normal, and left out daemon-reload and reboot).
+func TestStatusModeFromSystemd(t *testing.T) {
+	_, fstab, home := statusEnv(t, "BOOT_IMAGE=/vmlinuz ro quiet splash", false)
+	good := snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	snap(t, fstab, badLine)
+	for _, tc := range []struct{ states, mode string }{
+		{"activating\\ninactive\\ninactive\\ninactive\\n", "emergency"},
+		{"inactive\\ninactive\\nactivating\\ninactive\\n", "rescue"},
+		{"inactive\\ninactive\\ninactive\\nactive\\n", "rescue"},
+		{"inactive\\ninactive\\ninactive\\ninactive\\n", "normal"},
+	} {
+		os.WriteFile(filepath.Join(bootRunner.Dirs[0], "systemctl"), []byte("#!/bin/sh\nprintf '"+tc.states+"'\nexit 3\n"), 0o755)
+		r := sc(t, "status")
+		if !strings.Contains(r.stdout, "("+tc.mode+")") {
+			t.Errorf("%q: %+v", tc.states, r)
+		}
+		if reboot := strings.Contains(r.stdout, "  sc restore "+good+"\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n"); reboot != (tc.mode != "normal") {
+			t.Errorf("%q: reboot steps %v:\n%s", tc.states, reboot, r.stdout)
+		}
 	}
 }

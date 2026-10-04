@@ -4,20 +4,24 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # Early, so a boot that never reaches multi-user (a missing disk, then
 # emergency mode) is still seen: DefaultDependencies=no keeps it out of
 # local-fs.target's failure, and RequiresMountsFor= waits only for the
-# filesystem of the store. Nothing waits for it, and emergency mode does
-# not stop it (IgnoreOnIsolate=). A read-only root (the rescue boot)
-# writes nothing; without sc it is skipped, not failed.
+# filesystems of the store and of sc. Only Ubuntu's two other writers of
+# grubenv and sc-boot-ok wait for it (it takes about a second), not
+# sysinit.target, and emergency mode does not stop it (IgnoreOnIsolate=).
+# A read-only root (the rescue boot) writes nothing; without sc it is
+# skipped, not failed.
 DefaultDependencies=no
 After=systemd-remount-fs.service
 # A separate /boot holds grubenv, where the menu flag goes: after it, if
 # there is one (ordering only: a /boot that fails still gets the seen line).
 After=boot.mount
-RequiresMountsFor=/var/lib/smartconfig
-Before=shutdown.target
+RequiresMountsFor=/var/lib/smartconfig /usr/local/sbin
+# grub-editenv rewrites grubenv in place, unlocked: never at the same time
+# as Ubuntu's own writers of it (the chunk C review lost writes that way).
+Before=grub-common.service grub-initrd-fallback.service shutdown.target
 Conflicts=shutdown.target
 IgnoreOnIsolate=yes
 ConditionPathIsReadWrite=/var/lib
-ConditionPathIsExecutable=/usr/local/sbin/sc
+ConditionFileIsExecutable=/usr/local/sbin/sc
 
 [Service]
 Type=oneshot

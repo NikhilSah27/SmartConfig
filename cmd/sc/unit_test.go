@@ -67,12 +67,13 @@ func unitLines(t *testing.T, name string) string {
 func TestBootUnits(t *testing.T) {
 	for name, want := range map[string][]string{
 		"sc-boot-seen.service": {"\nDefaultDependencies=no\n", "\nAfter=systemd-remount-fs.service\n",
-			"\nRequiresMountsFor=/var/lib/smartconfig\n", "\nConditionPathIsReadWrite=/var/lib\n",
+			"\nRequiresMountsFor=/var/lib/smartconfig /usr/local/sbin\n", "\nConditionPathIsReadWrite=/var/lib\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
-			"\nIgnoreOnIsolate=yes\n", "\nConditionPathIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n"},
-		"sc-boot-ok.service": {"\nAfter=multi-user.target\n", "\nConditionPathIsReadWrite=/var/lib\n",
+			"\nIgnoreOnIsolate=yes\n", "\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n",
+			"\nBefore=grub-common.service grub-initrd-fallback.service shutdown.target\n"},
+		"sc-boot-ok.service": {"\nConditionPathIsReadWrite=/var/lib\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
-			"\nConditionPathIsExecutable=/usr/local/sbin/sc\n"},
+			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service\n"},
 	} {
 		unit := unitLines(t, name)
 		for _, w := range want {
@@ -93,7 +94,9 @@ func TestBootUnits(t *testing.T) {
 		dir := t.TempDir()
 		b, _ := os.ReadFile("../../scripts/" + name)
 		os.WriteFile(dir+"/"+name, []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc boot", "/bin/true")), 0o644)
-		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+name).CombinedOutput(); err != nil {
+		// Exit 0 is not enough: an unknown key is only a warning (a wrong
+		// Condition key slipped through that way, the chunk C review).
+		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+name).CombinedOutput(); err != nil || len(out) != 0 {
 			t.Errorf("%s: systemd-analyze verify: %v\n%s", name, err, out)
 		}
 	}
@@ -113,6 +116,12 @@ func TestScriptsParse(t *testing.T) {
 // grub-mkconfig_lib's device probes replaced, and the environment
 // update-grub gives it; it returns the grub.cfg part it prints.
 func grubScript(t *testing.T, kernels []string, env ...string) string {
+	out, _ := grubScriptErr(t, kernels, env...)
+	return out
+}
+
+// grubScriptErr is grubScript, with what the script printed on stderr.
+func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, string) {
 	t.Helper()
 	lib := "/usr/share/grub/grub-mkconfig_lib"
 	if _, err := os.Stat(lib); err != nil {
@@ -135,9 +144,11 @@ func grubScript(t *testing.T, kernels []string, env ...string) string {
 	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg, "SC_GRUB_BOOT=" + boot,
 		"GRUB_DEVICE=/dev/sda2", "GRUB_DEVICE_UUID=sc-no-such-uuid", "GRUB_DEVICE_PARTUUID=sc-no-such-partuuid", "GRUB_FS=ext2",
 		"GRUB_CMDLINE_LINUX=net.ifnames=0", "GRUB_CMDLINE_LINUX_DEFAULT=quiet splash console=tty1 console=ttyS0"}, env...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("42_smartconfig: %v", err)
+		t.Fatalf("42_smartconfig: %v\n%s", err, stderr.String())
 	}
 	if check, err := exec.LookPath("grub-script-check"); err == nil {
 		f := t.TempDir() + "/grub.cfg"
@@ -146,7 +157,7 @@ func grubScript(t *testing.T, kernels []string, env ...string) string {
 			t.Errorf("grub-script-check: %v\n%s\n%s", err, msg, out)
 		}
 	}
-	return string(out)
+	return string(out), stderr.String()
 }
 
 // The rescue entry boots the newest kernel that has an initrd, with
@@ -158,9 +169,9 @@ func TestGrubScript(t *testing.T) {
 	for _, want := range []string{
 		"menuentry 'SmartConfig rescue' --class ubuntu --class gnu-linux --class os --id smartconfig-rescue {\n",
 		"\tsearch --no-floppy --fs-uuid --set=root BOOTFS\n",
-		"\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=/dev/sda2 ro net.ifnames=0 console=tty1 console=ttyS0 fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1\n",
+		"\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=/dev/sda2 net.ifnames=0 console=tty1 console=ttyS0 ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1\n",
 		"\tinitrd\t/boot/initrd.img-6.8.0-142-generic\n",
-		"if [ \"${smartconfig_pending}\" = \"1\" ] ; then\n\tset timeout_style=menu\n",
+		"if [ \"${smartconfig_pending}\" = \"1\" ] ; then\n\tset timeout_style=menu\n\tif [ \"${timeout}\" = \"0\" ] ; then\n\t\tset timeout=30\n\tfi\nfi\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
@@ -203,8 +214,65 @@ func TestRescueDropIn(t *testing.T) {
 		os.WriteFile(dir+"/"+svc, orig, 0o644)
 		os.MkdirAll(dir+"/"+svc+".d", 0o755)
 		os.WriteFile(dir+"/"+svc+".d/50-smartconfig.conf", []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc status --console", "/bin/true")), 0o644)
-		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+svc).CombinedOutput(); err != nil {
+		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+svc).CombinedOutput(); err != nil || len(out) != 0 {
 			t.Errorf("%s: %v\n%s", svc, err, out)
 		}
+	}
+}
+
+// The details 10_linux decides: version order (6.8.0-10 after 6.8.0-9),
+// root= by UUID or PARTUUID where the link exists, the device when
+// GRUB_DISABLE_LINUX_UUID=true (PARTUUID is off by default, as in
+// 10_linux); ro wins over an rw in GRUB_CMDLINE_LINUX; GRUB_DISABLE_RECOVERY
+// leaves the entry out; a kernel without an initrd is said.
+func TestGrubScriptDetails(t *testing.T) {
+	if out := grubScript(t, []string{"6.8.0-9-generic", "6.8.0-10-generic"}); !strings.Contains(out, "vmlinuz-6.8.0-10-generic ") {
+		t.Errorf("version order:\n%s", out)
+	}
+	if out := grubScript(t, []string{"6.8.0-1-generic"}, "GRUB_CMDLINE_LINUX=rw"); strings.Index(out, " rw ") < 0 || strings.Index(out, " ro fstab=no ") < strings.Index(out, " rw ") {
+		t.Errorf("rw before ro:\n%s", out)
+	}
+	if out, errOut := grubScriptErr(t, []string{"6.8.0-1-generic"}, "GRUB_DISABLE_RECOVERY=true"); strings.Contains(out, "menuentry") ||
+		!strings.Contains(out, "smartconfig_pending") || !strings.Contains(errOut, "GRUB_DISABLE_RECOVERY=true") {
+		t.Errorf("recovery off:\n%s\n%s", out, errOut)
+	}
+	if _, errOut := grubScriptErr(t, []string{"6.8.0-1-generic!"}); !strings.Contains(errOut, "has an initrd") {
+		t.Errorf("no initrd, nothing said: %q", errOut)
+	}
+	// GRUB_DISABLE_LINUX_UUID=true: the device, not "PARTUUID=" (10_linux
+	// turns PARTUUID off unless told otherwise).
+	if out := grubScript(t, []string{"6.8.0-1-generic"}, "GRUB_DISABLE_LINUX_UUID=true", "GRUB_DEVICE_PARTUUID="); !strings.Contains(out, " root=/dev/sda2 ") {
+		t.Errorf("uuid off:\n%s", out)
+	}
+	// A UUID and a PARTUUID that this machine has.
+	link := func(dir string) string {
+		entries, _ := os.ReadDir("/dev/disk/" + dir)
+		for _, e := range entries {
+			if !strings.ContainsAny(e.Name(), " \\") {
+				return e.Name()
+			}
+		}
+		return ""
+	}
+	if u := link("by-uuid"); u != "" {
+		if out := grubScript(t, []string{"6.8.0-1-generic"}, "GRUB_DEVICE_UUID="+u); !strings.Contains(out, " root=UUID="+u+" ") {
+			t.Errorf("uuid:\n%s", out)
+		}
+	}
+	if p := link("by-partuuid"); p != "" {
+		if out := grubScript(t, []string{"6.8.0-1-generic"}, "GRUB_DEVICE_UUID=", "GRUB_DEVICE_PARTUUID="+p, "GRUB_DISABLE_LINUX_PARTUUID=false"); !strings.Contains(out, " root=PARTUUID="+p+" ") {
+			t.Errorf("partuuid:\n%s", out)
+		}
+		// Both links there and GRUB_DISABLE_LINUX_UUID=true: the device,
+		// as 10_linux gives it (PARTUUID is off unless asked for).
+		if u := link("by-uuid"); u != "" {
+			if out := grubScript(t, []string{"6.8.0-1-generic"}, "GRUB_DEVICE_UUID="+u, "GRUB_DEVICE_PARTUUID="+p, "GRUB_DISABLE_LINUX_UUID=true"); !strings.Contains(out, " root=/dev/sda2 ") {
+				t.Errorf("uuid off, both links:\n%s", out)
+			}
+		}
+	}
+	// A no_entry from the environment does not drop the entry.
+	if out := grubScript(t, []string{"6.8.0-1-generic"}, "no_entry=1"); !strings.Contains(out, "menuentry") {
+		t.Errorf("no_entry from the environment:\n%s", out)
 	}
 }
