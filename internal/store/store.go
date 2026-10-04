@@ -617,18 +617,77 @@ func scanChanges(rows *sql.Rows) ([]Change, error) {
 	var out []Change
 	for rows.Next() {
 		var c Change
-		var mode uint32
-		if err := rows.Scan(&c.ID, &c.TS, &c.Path, &c.Blob, &c.Size, &mode,
-			&c.UID, &c.GID, &c.Origin, &c.Intent, &c.Kind, &c.Target); err != nil {
-			return nil, fmt.Errorf("read change: %w", err)
+		if err := scanChange(rows, &c); err != nil {
+			return nil, err
 		}
-		c.Mode = os.FileMode(mode)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read changes: %w", err)
 	}
 	return out, nil
+}
+
+// scanChange reads the columns first (selected before cols), then cols,
+// into c.
+func scanChange(rows *sql.Rows, c *Change, first ...any) error {
+	var mode uint32
+	if err := rows.Scan(append(first, &c.ID, &c.TS, &c.Path, &c.Blob, &c.Size, &mode,
+		&c.UID, &c.GID, &c.Origin, &c.Intent, &c.Kind, &c.Target)...); err != nil {
+		return fmt.Errorf("read change: %w", err)
+	}
+	c.Mode = os.FileMode(mode)
+	return nil
+}
+
+// Row is a change with its place in the store. Rows are never deleted,
+// so rowid order is insert order: the rows after one are exactly what was
+// recorded after it (a boot verdict names the newest row of its boot).
+type Row struct {
+	Change
+	RowID int64
+}
+
+// Rows returns the changes recorded after row after, newest first; n > 0
+// keeps the newest n.
+func (s *Store) Rows(after int64, n int) ([]Row, error) {
+	q := `SELECT rowid, ` + cols + ` FROM changes WHERE rowid > ? ORDER BY rowid DESC`
+	args := []any{after}
+	if n > 0 {
+		q += ` LIMIT ?`
+		args = append(args, n)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list changes: %w", err)
+	}
+	defer rows.Close()
+	var out []Row
+	for rows.Next() {
+		var r Row
+		if err := scanChange(rows, &r.Change, &r.RowID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read changes: %w", err)
+	}
+	return out, nil
+}
+
+// AsOf returns the newest change of path at or before row rowid: what was
+// recorded of the path then. It is nil when nothing was.
+func (s *Store) AsOf(path string, rowid int64) (*Change, error) {
+	rows, err := s.db.Query(`SELECT `+cols+` FROM changes WHERE path = ? AND rowid <= ? ORDER BY rowid DESC LIMIT 1`, path, rowid)
+	if err != nil {
+		return nil, fmt.Errorf("list changes: %w", err)
+	}
+	cs, err := scanChanges(rows)
+	if err != nil || len(cs) == 0 {
+		return nil, err
+	}
+	return &cs[0], nil
 }
 
 // List returns up to n changes, newest (last inserted) first, whatever their
