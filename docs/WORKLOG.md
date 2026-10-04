@@ -51,15 +51,17 @@ fixes `297fbc7`, `bb31f3e`, plan change C9, 8 follow-ups in MILESTONES).
 `accept-m3` passes on the fixed build. **M3 is done: tag `m3`**
 (2026-10-03); the fixed build runs as scd.
 
-**Now: M4 plan research** (your call, 2026-10-03: "QEMU research, then
-plan"). A background agent proves the rescue recipe in a throwaway QEMU
-VM (TCG, a copy-on-write overlay of the Ubuntu 24.04 cloud image, in the
-session scratch area; this VM's own boot is never touched): a root shell
-without a password while root is locked, a read-only root, the static sc
-reading the store (also with a hot journal), a GRUB entry, a console
-service in rescue mode, and a boot-ok marker. Then Claude drafts
-`docs/M4_PLAN.md` for your approval. No M4 code before that. A check-in
-every 30 min resumes the work after a usage limit (your ask).
+**Now: the M4 plan is drafted, for your approval**
+([M4_PLAN.md](M4_PLAN.md), 2026-10-04). It was drafted from boot
+research in a throwaway QEMU VM (its Appendix A; the lab is in
+`~/smartconfig-work/m4lab`, this VM's own boot never touched). The
+research found that Ubuntu 24.04's emergency mode does give a console
+root shell (Ubuntu's sulogin patch), so our "no shell" texts are wrong
+(plan step 1). The recipe that works is `ro fstab=no
+systemd.unit=rescue.target`. Ubuntu's recordfail misses failures that
+reach multi-user. No M4 code before your OK; section 10 has 7 questions
+with recommendations. A check-in every 30 min resumes work after a usage
+limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -80,6 +82,9 @@ drop every M2 row). One thing at a time: no review runs while the next
 step is built (your call, 2026-09-30).
 
 **Still waiting for you:**
+
+- [ ] Approve the M4 plan ([M4_PLAN.md](M4_PLAN.md)), or say what to
+  change; section 10 lists 7 questions with recommendations.
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
@@ -1179,3 +1184,27 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   baseline 0 first seen, 0 changed, 0 deleted, 14 MB. `sudo sc check`:
   no problems in 24 files. The annotated tag `m3` is on `c253cfd` and
   pushed.
+- **M4 boot research done** (QEMU, TCG, Ubuntu 24.04 cloud image,
+  root locked; your call "QEMU research, then plan"). Results:
+  - The rescue recipe `ro fstab=no systemd.unit=rescue.target
+    SYSTEMD_SULOGIN_FORCE=1`, from a generated GRUB entry, gives a root
+    shell with a read-only root in about 40 s. It also works under
+    Secure Boot.
+  - The static sc reads the store there. A hot journal blocks the read
+    (SQLITE_READONLY_ROLLBACK) until the store is copied to /run.
+  - `sc restore` after a remount fixed a bad fstab, and the next boot
+    was healthy (an end-to-end script passed in 408 s).
+  - Ubuntu's sulogin opens a root shell in emergency mode although root
+    is locked. Checked here too: util-linux 2.39.3-9ubuntu6.6 changelog,
+    `sulogin-lockedpwd.patch`.
+  - recordfail brings the menu back only for failures that never reach
+    multi-user. boot-complete.target is unused on Ubuntu.
+  - The agent was cut off twice, by the usage limit and by a dropped
+    connection, and resumed with its context both times. The lab was
+    moved out of /tmp, which Ubuntu empties at boot, to
+    `~/smartconfig-work/m4lab`, its overlays rebased onto relative
+    paths.
+- **M4 plan drafted** ([M4_PLAN.md](M4_PLAN.md)): 13 steps in five
+  chunks, no store schema change (boot verdicts in `$SC_HOME/boots`, so
+  sc-m1, sc-m2 and sc-m3 keep reading the store), and an automated
+  QEMU owner scenario (`make lab-e2e`). Waiting for your approval.
