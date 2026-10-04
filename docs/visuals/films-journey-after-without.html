@@ -924,7 +924,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
     W(3.2);
     END("About half an hour down", "One character, no warning, and an emergency shell that tells you nothing about what changed. Over SSH, someone has to go to the machine.",
       [["90 s", "boot timeout for a missing disk"], ["0", "snapshots or history"], ["~30 min", "downtime (illustrative)"]], true);
-    SAY("About forty minutes down, for one character. That's the gap SmartConfig is built to close.");
+    SAY("About half an hour down, for one character. That's the gap SmartConfig is built to close.");
     W(5);
     return { poster: ["Without SmartConfig", "The same typo, no safety net · about 4 minutes"] };
   }
@@ -932,7 +932,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
   var FILMS = [
     { id: "journey", no: "Film 1", name: "The whole journey", desc: "The problem, the plan, and every milestone from M1 to M7.", tag: ["real", "M1 real · rest concept"], build: filmJourney },
     { id: "after", no: "Film 2", name: "After it's built", desc: "Install it, add a disk, make a typo, get warned, rescued and told why.", tag: ["concept", "concept"], build: filmAfter },
-    { id: "without", no: "Film 3", name: "Without SmartConfig", desc: "The same typo with no safety net: emergency mode and a locked root.", tag: ["without", "realistic"], build: filmWithout }
+    { id: "without", no: "Film 3", name: "Without SmartConfig", desc: "The same typo with no safety net: an emergency shell that says nothing about what changed.", tag: ["without", "realistic"], build: filmWithout }
   ];
 
   var TOTAL = 0, META = null;

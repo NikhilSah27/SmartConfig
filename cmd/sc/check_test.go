@@ -241,8 +241,8 @@ func TestCheckCLIScratchFallback(t *testing.T) {
 		t.Errorf("scratch left: %v", left)
 	}
 	scratchParents = func() []string { return []string{ro(), ro()} }
-	if r := sc(t, "check", fstab); r.code != 1 || !strings.HasPrefix(r.stderr, "sc: no writable scratch directory for the validators' copies: "+home+"/tmp, ") ||
-		strings.Count(r.stderr, "permission denied") != 2 || strings.Count(r.stderr, "\n") != 1 {
+	if r := sc(t, "check", fstab); r.code != 1 || !strings.HasPrefix(r.stderr, "sc: no scratch directory for the validators' copies: "+home+"/tmp (permission denied); no writable place for a private directory: ") ||
+		strings.Count(r.stderr, "permission denied") != 3 || strings.Count(r.stderr, "\n") != 1 {
 		t.Errorf("none writable: %+v", r)
 	}
 }

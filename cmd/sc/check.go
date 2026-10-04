@@ -346,32 +346,24 @@ func count(n int, word string) string {
 // when this user may write there (root), else a private directory of its
 // own that cleanup removes, so a file the user can read can be checked
 // without sudo. On a read-only root (the rescue shell) $SC_HOME and
-// $TMPDIR are read-only too, and a tmpfs takes the copies: /run (root),
-// the user's runtime directory, /dev/shm.
+// $TMPDIR are read-only too, and a tmpfs takes the copies
+// (fsutil.TempParents). A signal or a broken pipe removes it too.
 func scratchHome() (dir string, cleanup func(), err error) {
 	home := store.Home()
 	if os.MkdirAll(filepath.Join(home, "tmp"), 0o700) == nil && syscall.Access(filepath.Join(home, "tmp"), 2 /* W_OK */) == nil {
 		return home, func() {}, nil
 	}
-	var tried []string
-	for _, parent := range scratchParents() {
-		dir, err = os.MkdirTemp(parent, "sc-check-")
-		if err == nil {
-			return dir, func() { os.RemoveAll(dir) }, nil
+	dir, err = fsutil.PrivateDir("sc-check-", scratchParents())
+	if err != nil {
+		reason := "not writable"
+		if e := os.MkdirAll(filepath.Join(home, "tmp"), 0o700); e != nil {
+			reason = fsutil.ErrText(e)
 		}
-		tried = append(tried, fmt.Sprintf("%s (%s)", parent, fsutil.ErrText(err)))
+		return "", nil, fmt.Errorf("no scratch directory for the validators' copies: %s/tmp (%s); %w", home, reason, err)
 	}
-	return "", nil, fmt.Errorf("no writable scratch directory for the validators' copies: %s/tmp, %s", home, strings.Join(tried, ", "))
+	return dir, func() { fsutil.RemoveDir(dir) }, nil
 }
 
 // scratchParents are the places tried, in turn, for a private scratch
 // directory when $SC_HOME may not be written. Tests replace it.
-var scratchParents = func() []string {
-	out := []string{os.TempDir()}
-	if os.Geteuid() == 0 {
-		out = append(out, "/run")
-	} else if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
-		out = append(out, d)
-	}
-	return append(out, "/dev/shm")
-}
+var scratchParents = fsutil.TempParents

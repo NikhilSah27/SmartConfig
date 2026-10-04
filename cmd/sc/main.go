@@ -84,6 +84,12 @@ func main() {
 		}
 	}
 	go handleSignals(sigs)
+	// A reader that goes away (sc log | head): with SIGPIPE caught, the
+	// write fails with EPIPE instead of Go's death by SIGPIPE, so the
+	// command returns and its deferred cleanups remove sc's private
+	// copies (a repaired store, scratch files). sc then exits 1 without
+	// a word, as when its caller ignores SIGPIPE. sc watch ignores it.
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 	code := run(os.Args[1:], os.Stdout, os.Stderr)
 	testHookAfterRun()
 	if n := received.Load(); n != 0 && !watchStopped.Load() {
@@ -216,7 +222,8 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 			claimEnd()
 			return int(ec)
 		}
-		if claimEnd() {
+		// A reader that went away is no error to report (main).
+		if claimEnd() && !errors.Is(err, syscall.EPIPE) {
 			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
 			fmt.Fprintf(stderr, "%ssc: %s\n", errPrefix(stderr), msg)
 		}

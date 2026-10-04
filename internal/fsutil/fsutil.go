@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // MaxSize is the largest file SmartConfig will snapshot or restore.
@@ -121,8 +123,9 @@ type Pending struct {
 var pendingTemps = struct {
 	sync.Mutex
 	names  map[string]bool
+	dirs   map[string]bool // private directories of this process (TrackDir)
 	closed bool
-}{names: map[string]bool{}}
+}{names: map[string]bool{}, dirs: map[string]bool{}}
 
 // trackTemp records a new temp file. After RemovePending has run, the
 // process is exiting: the file is removed at once and false is returned.
@@ -155,6 +158,103 @@ func RemovePending() {
 	for name := range pendingTemps.names {
 		os.Remove(name)
 		delete(pendingTemps.names, name)
+	}
+	for dir := range pendingTemps.dirs {
+		os.RemoveAll(dir)
+		delete(pendingTemps.dirs, dir)
+	}
+}
+
+// TrackDir records a private directory this process removes when it is
+// done with it (UntrackDir), so that RemovePending removes it too when a
+// signal ends the process first. After RemovePending has run, the
+// directory is removed at once and false is returned.
+func TrackDir(dir string) bool {
+	pendingTemps.Lock()
+	defer pendingTemps.Unlock()
+	if pendingTemps.closed {
+		os.RemoveAll(dir)
+		return false
+	}
+	pendingTemps.dirs[dir] = true
+	return true
+}
+
+// UntrackDir forgets a directory TrackDir recorded.
+func UntrackDir(dir string) {
+	pendingTemps.Lock()
+	delete(pendingTemps.dirs, dir)
+	pendingTemps.Unlock()
+}
+
+// staleAfter is the age past which a private directory is a leftover of
+// a process killed before its cleanup (SIGKILL, a power cut): sc's are
+// in use for seconds, a read piped into a pager for minutes.
+const staleAfter = time.Hour
+
+// TempParents are the places for sc's private temporary directories, in
+// the order tried. A read-only root (the rescue shell) leaves only the
+// tmpfs ones: /run and /dev/shm for root; for a user, their own runtime
+// directory ($XDG_RUNTIME_DIR, if it is theirs), $TMPDIR and /dev/shm.
+func TempParents() []string {
+	tmp := os.TempDir()
+	if os.Geteuid() == 0 {
+		return []string{"/run", "/dev/shm", tmp}
+	}
+	var out []string
+	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() && ownedByMe(fi) {
+			out = append(out, d)
+		}
+	}
+	return append(out, tmp, "/dev/shm")
+}
+
+func ownedByMe(fi os.FileInfo) bool {
+	uid, _ := owner(fi)
+	return uid == os.Geteuid()
+}
+
+// PrivateDir creates a new directory prefix* (mode 0700) in the first of
+// parents where it can, after removing this user's prefix* directories
+// there that are older than an hour. It is tracked (TrackDir); the caller
+// removes it with RemoveDir. With none possible, the error names every
+// place tried and why.
+func PrivateDir(prefix string, parents []string) (string, error) {
+	var tried []string
+	for _, parent := range parents {
+		sweep(parent, prefix)
+		dir, err := os.MkdirTemp(parent, prefix)
+		if err == nil {
+			TrackDir(dir)
+			return dir, nil
+		}
+		tried = append(tried, fmt.Sprintf("%s (%s)", parent, ErrText(err)))
+	}
+	return "", fmt.Errorf("no writable place for a private directory: %s", strings.Join(tried, ", "))
+}
+
+// RemoveDir removes a directory PrivateDir made and forgets it.
+func RemoveDir(dir string) {
+	os.RemoveAll(dir)
+	UntrackDir(dir)
+}
+
+// sweep removes this user's prefix* directories in parent that are older
+// than staleAfter. It never follows a link: RemoveAll removes one, not
+// what it names.
+func sweep(parent, prefix string) {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if fi, err := e.Info(); err == nil && ownedByMe(fi) && time.Since(fi.ModTime()) > staleAfter {
+			os.RemoveAll(filepath.Join(parent, e.Name()))
+		}
 	}
 }
 

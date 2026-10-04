@@ -176,7 +176,7 @@ func TestReadOnlyStoreCLI(t *testing.T) {
 		t.Errorf("log: %+v", r)
 	}
 	os.WriteFile(f, []byte("b\n"), 0o644)
-	if r := sc(t, "snapshot", f); r.code != 1 || !strings.Contains(r.stderr, "remount it read-write first") || strings.Count(r.stderr, "\n") != 1 {
+	if r := sc(t, "snapshot", f); r.code != 1 || r.stderr != "sc: store "+home+": the store can only be read here: this user may not write it\n" {
 		t.Errorf("snapshot: %+v", r)
 	}
 }

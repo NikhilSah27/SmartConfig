@@ -312,3 +312,76 @@ func TestWriteAtomicKeepsSetuid(t *testing.T) {
 		t.Fatalf("mode %v, want %v", fi.Mode(), mode)
 	}
 }
+
+// PrivateDir makes a 0700 directory in the first parent it can, names
+// every place tried when none works, removes this user's leftovers older
+// than an hour (never fresh ones, never others' names), and the
+// directory is removed by RemoveDir or, when a signal ends the process,
+// by RemovePending.
+func TestPrivateDir(t *testing.T) {
+	t.Cleanup(func() {
+		pendingTemps.Lock()
+		pendingTemps.closed = false
+		pendingTemps.Unlock()
+	})
+	if os.Geteuid() != 0 {
+		ro := t.TempDir()
+		os.Chmod(ro, 0o500)
+		t.Cleanup(func() { os.Chmod(ro, 0o700) })
+		parent := t.TempDir()
+		dir, err := PrivateDir("sc-x-", []string{ro, filepath.Join(t.TempDir(), "missing"), parent})
+		if err != nil || filepath.Dir(dir) != parent {
+			t.Fatalf("%q %v", dir, err)
+		}
+		if fi, _ := os.Stat(dir); fi.Mode().Perm() != 0o700 {
+			t.Errorf("mode %v", fi.Mode())
+		}
+		RemoveDir(dir)
+		if _, err := PrivateDir("sc-x-", []string{ro}); err == nil || !strings.Contains(err.Error(), ro+" (permission denied)") {
+			t.Errorf("none writable: %v", err)
+		}
+	}
+
+	parent := t.TempDir()
+	stale, fresh, other := filepath.Join(parent, "sc-x-old"), filepath.Join(parent, "sc-x-new"), filepath.Join(parent, "sc-y-old")
+	for _, d := range []string{stale, fresh, other} {
+		os.MkdirAll(filepath.Join(d, "sub"), 0o700)
+	}
+	long := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(stale, long, long)
+	os.Chtimes(other, long, long)
+	dir, err := PrivateDir("sc-x-", []string{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for d, want := range map[string]bool{stale: false, fresh: true, other: true, dir: true} {
+		if _, err := os.Stat(d); (err == nil) != want {
+			t.Errorf("%s: exists %v, want %v", filepath.Base(d), err == nil, want)
+		}
+	}
+	RemovePending() // a signal ends the process
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("not removed by RemovePending: %v", err)
+	}
+}
+
+// Root's private directories go to a tmpfs first, a user's to their own
+// runtime directory first (and never to one that is not theirs).
+func TestTempParents(t *testing.T) {
+	p := TempParents()
+	if os.Geteuid() == 0 {
+		if p[0] != "/run" || p[1] != "/dev/shm" {
+			t.Errorf("root: %q", p)
+		}
+		return
+	}
+	xdg := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+	if p = TempParents(); p[0] != xdg || p[len(p)-1] != "/dev/shm" {
+		t.Errorf("user: %q", p)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", "/") // root's
+	if p = TempParents(); p[0] == "/" {
+		t.Errorf("another user's runtime directory: %q", p)
+	}
+}

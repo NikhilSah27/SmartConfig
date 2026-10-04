@@ -51,24 +51,24 @@ var testHookBeforeMigrateLock func()
 func (s *Store) migrate() error {
 	var mode string
 	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
-		return fmt.Errorf("store %s: read journal mode: %w", s.dir, err)
+		return fmt.Errorf("store %s: read journal mode: %w", s.name, err)
 	}
 	// A WAL database cannot be read from a read-only root, which the
 	// rescue path (M4) needs, so sc keeps SQLite's rollback journal.
 	if !strings.EqualFold(mode, "delete") {
-		return fmt.Errorf("store %s uses journal mode %s, sc needs delete", s.dir, mode)
+		return fmt.Errorf("store %s uses journal mode %s, sc needs delete", s.name, mode)
 	}
 	// An up-to-date store needs no lock, so read-only commands never wait
 	// for a writer and work where the store cannot be written.
 	var v int
 	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
-		return fmt.Errorf("store %s: read schema version: %w", s.dir, err)
+		return fmt.Errorf("store %s: read schema version: %w", s.name, err)
 	}
 	if v == schemaVersion {
 		return nil
 	}
 	if v > schemaVersion {
-		return fmt.Errorf("store %s was written by a newer sc (schema %d)", s.dir, v)
+		return fmt.Errorf("store %s was written by a newer sc (schema %d)", s.name, v)
 	}
 	if testHookBeforeMigrateLock != nil {
 		testHookBeforeMigrateLock()
@@ -79,7 +79,7 @@ func (s *Store) migrate() error {
 		return stepErr
 	})
 	if err != nil && err != stepErr { // BEGIN or COMMIT failed
-		return fmt.Errorf("store %s: migrate to schema %d: %w", s.dir, schemaVersion, err)
+		return fmt.Errorf("store %s: migrate to schema %d: %w", s.name, schemaVersion, err)
 	}
 	return err
 }
@@ -90,13 +90,13 @@ func (s *Store) migrateTx(ctx context.Context, conn *sql.Conn) error {
 	// store meanwhile.
 	var v int
 	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
-		return fmt.Errorf("store %s: read schema version: %w", s.dir, err)
+		return fmt.Errorf("store %s: read schema version: %w", s.name, err)
 	}
 	if v == schemaVersion {
 		return nil
 	}
 	if v > schemaVersion {
-		return fmt.Errorf("store %s was written by a newer sc (schema %d)", s.dir, v)
+		return fmt.Errorf("store %s was written by a newer sc (schema %d)", s.name, v)
 	}
 	if v == 0 {
 		if err := backupM1(ctx, conn, s.dir); err != nil {
@@ -109,7 +109,7 @@ func (s *Store) migrateTx(ctx context.Context, conn *sql.Conn) error {
 	}
 	for i := from; i <= schemaVersion; i++ {
 		if _, err := conn.ExecContext(ctx, migrations[i]); err != nil {
-			return fmt.Errorf("store %s: migrate to schema %d: %w", s.dir, i, err)
+			return fmt.Errorf("store %s: migrate to schema %d: %w", s.name, i, err)
 		}
 		if testHookMigrate != nil {
 			if err := testHookMigrate(i); err != nil {
@@ -118,7 +118,7 @@ func (s *Store) migrateTx(ctx context.Context, conn *sql.Conn) error {
 		}
 	}
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return fmt.Errorf("store %s: set schema version: %w", s.dir, err)
+		return fmt.Errorf("store %s: set schema version: %w", s.name, err)
 	}
 	return nil
 }

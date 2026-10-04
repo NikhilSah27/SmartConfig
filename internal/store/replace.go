@@ -84,6 +84,9 @@ func (s *Store) Replace(path string, data []byte, mode os.FileMode, uid, gid int
 // CanReplace returns Replace's refusal for path and base, or nil: sc edit
 // asks before it opens the editor, so nobody edits a file sc will not save.
 func (s *Store) CanReplace(path string, base *fsutil.State) error {
+	if s.readOnly != "" {
+		return s.readOnlyErr()
+	}
 	if s.FingerprintOnly(path) {
 		return fmt.Errorf("%s is fingerprint-only; sc never writes it", path)
 	}

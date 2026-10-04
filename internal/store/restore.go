@@ -25,6 +25,10 @@ import (
 // fingerprint-only path, a digest row, and a target directory that is not
 // a real directory owned by root or the caller.
 func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
+	if s.readOnly != "" {
+		// Before anything is prepared next to the target.
+		return Change{}, nil, s.readOnlyErr()
+	}
 	src, err := s.Get(id)
 	if err != nil {
 		return Change{}, nil, err

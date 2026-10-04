@@ -275,7 +275,8 @@ ruleset) and question 13 (host details) still need you.
    on this VM; M3 is built in the repo while the M2 soak runs). Was: decide at M2
    sign-off; nothing changes before then. We lean yes, if the feasibility
    check in section 3 holds. The worst failures leave root locked with no
-   shell, and only M4 recovers from them. The cost: "warn before a bad
+   shell, and only M4 recovers from them. (M4's lab, 2026-10-04, found
+   otherwise: Ubuntu's sulogin opens a root shell at the console.) The cost: "warn before a bad
    edit" comes later, and the films need a small edit.
 2. **Tiers in M2 only as log priority?** Yes. Alerts and labels go to M3.
 3. **boot_id column in M2 or M4?** M4. CLAUDE.md says "not even stubs",

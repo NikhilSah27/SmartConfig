@@ -274,7 +274,7 @@ func lockEdit(home string) (unlock func(), err error) {
 	p := filepath.Join(home, "edit.lock")
 	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", p, err)
+		return nil, err // "open PATH: why"
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		b, _ := os.ReadFile(p)

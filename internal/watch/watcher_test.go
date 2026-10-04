@@ -527,7 +527,9 @@ func TestRestoreWhileWatching(t *testing.T) {
 	e.start()
 	waitProcessed := func(p string) {
 		t.Helper()
-		deadline := time.After(5 * time.Second)
+		// Generous: a loaded machine (the root pass runs every package at
+		// once) once took longer than 5 s.
+		deadline := time.After(60 * time.Second)
 		for {
 			select {
 			case q := <-processed:

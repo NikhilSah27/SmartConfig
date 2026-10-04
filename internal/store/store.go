@@ -11,6 +11,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -135,14 +137,16 @@ type Store struct {
 	db          *sql.DB
 	now         func() time.Time
 	fingerprint func(path string) bool
-	readOnly    bool   // sc may not write the store here (a read-only root): reads only
+	name        string // the store's own directory, for messages (dir is a copy's)
+	readOnly    string // why sc may only read the store here; "" when it may write
 	copyDir     string // a repaired private copy being read (a hot journal); removed by Close
 }
 
 // ErrReadOnly is returned by every write to a store sc may only read
-// here: a read-only root (the rescue shell), or a repaired copy of a
-// store a crash left half-written.
-var ErrReadOnly = errors.New("the store can only be read here (a read-only file system): remount it read-write first")
+// here: a read-only root (the rescue shell), a store this user may not
+// write, or a repaired copy of a store a crash left half-written. The
+// error says which.
+var ErrReadOnly = errors.New("the store can only be read here")
 
 // Home returns $SC_HOME, or DefaultHome when it is unset.
 func Home() string {
@@ -193,31 +197,50 @@ func Open(dir string) (*Store, error) {
 
 func open(dir string) (*Store, error) {
 	file := filepath.Join(dir, "changes.db")
-	// access(2) says no for a read-only mount as well as for permissions.
-	ro := syscall.Access(dir, 2 /* W_OK */) != nil || syscall.Access(file, 2) != nil
-	s, err := openDB(dir, file, ro)
-	if err == nil || !ro || !hotJournal(err) {
-		return s, err
+	// access(2) says no for a read-only mount (EROFS) as well as for
+	// permissions (EACCES) and an immutable file (EPERM).
+	err := syscall.Access(dir, 2 /* W_OK */)
+	if err == nil {
+		err = syscall.Access(file, 2)
 	}
-	// A crash left a write unfinished: SQLite must roll it back before
-	// anything can be read, and that needs a write. Read a copy, repaired
-	// in a private directory; the store itself is repaired by the next sc
-	// run that may write it.
-	return openCopy(dir)
+	if err == nil {
+		return openDB(dir, file, dir, "")
+	}
+	why := "this user may not write it"
+	if errors.Is(err, syscall.EROFS) {
+		why = "it is on a read-only file system: remount it read-write first"
+	}
+	for attempt := 0; ; attempt++ {
+		s, err := openDB(dir, file, dir, why)
+		if err == nil || !hotJournal(err) {
+			return s, err
+		}
+		// A crash left a write unfinished: SQLite must roll it back before
+		// anything can be read, and that needs a write. Read a copy,
+		// repaired in a private directory; the store itself is repaired by
+		// the next sc run that may write it. A journal gone by the time of
+		// the copy was rolled back by such a run: read the store again.
+		s, err = openCopy(dir, why)
+		if !errors.Is(err, errJournalGone) || attempt > 0 {
+			return s, err
+		}
+	}
 }
 
-// openDB opens the database file of the store in dir; ro opens it
-// read-only (mode=ro), so nothing, not even a migration, writes it.
-func openDB(dir, file string, ro bool) (*Store, error) {
+// openDB opens the database file of the store in dir; name is the store's
+// own directory, for messages. why, when not "", says why sc may only
+// read the store: the file is opened with mode=ro, and every write,
+// a migration included, fails with ErrReadOnly and why.
+func openDB(dir, file, name, why string) (*Store, error) {
 	dsn := "file:" + file + "?_pragma=busy_timeout(" + strconv.Itoa(busyTimeoutMS) + ")&_txlock=immediate"
-	if ro {
+	if why != "" && name == dir {
 		dsn += "&mode=ro"
 	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	s := &Store{dir: dir, db: db, now: time.Now, fingerprint: scope.Default().FingerprintOnly, readOnly: ro}
+	s := &Store{dir: dir, name: name, db: db, now: time.Now, fingerprint: scope.Default().FingerprintOnly, readOnly: why}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -232,35 +255,36 @@ func hotJournal(err error) bool {
 	return errors.As(err, &se) && se.Code() == sqlite3.SQLITE_READONLY_ROLLBACK
 }
 
-// copyParent is where a repaired copy of a store goes: /run (a tmpfs)
-// for root, else the user's runtime directory or the temp directory.
+// copyParents are the places tried for a repaired copy: tmpfs first,
+// since a store sc may not write is most likely on a read-only root.
 // Tests point it elsewhere.
-var copyParent = func() string {
-	if os.Geteuid() == 0 {
-		if syscall.Access("/run", 2) == nil {
-			return "/run"
-		}
-	} else if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
-		return d
-	}
-	return os.TempDir()
-}
+var copyParents = fsutil.TempParents
+
+// errJournalGone: the journal a copy needed was rolled back meanwhile.
+var errJournalGone = errors.New("the journal is gone")
 
 // openCopy copies the database file of the store in dir and its journal
 // into a new private directory, links objects/ back to the store, and
 // opens the copy: SQLite rolls the unfinished write back there. The store
-// in dir is not changed, and the copy can only be read.
-func openCopy(dir string) (*Store, error) {
-	tmp, err := os.MkdirTemp(copyParent(), "sc-store-")
+// in dir is not changed, and the copy can only be read (why). The copy is
+// removed by Close, or by fsutil.RemovePending when a signal ends sc.
+func openCopy(dir, why string) (*Store, error) {
+	tmp, err := fsutil.PrivateDir("sc-store-", copyParents())
 	if err != nil {
-		return nil, fmt.Errorf("store %s has an unfinished write, and a copy to read could not be made: %w", dir, err)
+		return nil, fmt.Errorf("store %s has an unfinished write, and no copy of it could be made to read: %w", dir, err)
 	}
 	fail := func(err error) (*Store, error) {
-		os.RemoveAll(tmp)
-		return nil, fmt.Errorf("store %s has an unfinished write, and a copy to read could not be made: %w", dir, err)
+		fsutil.RemoveDir(tmp)
+		if errors.Is(err, errJournalGone) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("store %s has an unfinished write, and no copy of it could be made to read: %w", dir, err)
 	}
 	for _, name := range []string{"changes.db", "changes.db-journal"} {
 		if err := copyFile(filepath.Join(dir, name), filepath.Join(tmp, name)); err != nil {
+			if name == "changes.db-journal" && errors.Is(err, fs.ErrNotExist) {
+				err = errJournalGone
+			}
 			return fail(err)
 		}
 	}
@@ -271,21 +295,33 @@ func openCopy(dir string) (*Store, error) {
 	if err := os.Symlink(abs, filepath.Join(tmp, "objects")); err != nil {
 		return fail(err)
 	}
-	s, err := openDB(tmp, filepath.Join(tmp, "changes.db"), false)
+	s, err := openDB(tmp, filepath.Join(tmp, "changes.db"), dir,
+		"it has a write a crash left unfinished, and sc reads a repaired copy: "+why)
 	if err != nil {
-		return fail(err)
+		fsutil.RemoveDir(tmp)
+		return nil, err
 	}
-	s.readOnly, s.copyDir = true, tmp
+	s.copyDir = tmp
 	return s, nil
 }
 
-// copyFile copies src to a new file dst, mode 0600.
+// copyFile copies src to a new file dst, mode 0600, without holding it
+// in memory.
 func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o600)
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // Copied reports whether this is a repaired copy of a store a crash left
@@ -293,11 +329,16 @@ func copyFile(src, dst string) error {
 // write.
 func (s *Store) Copied() bool { return s.copyDir != "" }
 
+// readOnlyErr is the error of a write to a store sc may only read here.
+func (s *Store) readOnlyErr() error {
+	return fmt.Errorf("store %s: %w: %s", s.name, ErrReadOnly, s.readOnly)
+}
+
 // Close closes the database and removes a repaired copy.
 func (s *Store) Close() error {
 	err := s.db.Close()
 	if s.copyDir != "" {
-		os.RemoveAll(s.copyDir)
+		fsutil.RemoveDir(s.copyDir)
 	}
 	return err
 }
@@ -410,8 +451,8 @@ func idKey(c *Change) string {
 // still holding the lock (database/sql's Tx does not guarantee that after a
 // failed COMMIT).
 func (s *Store) writeTx(retryCommit bool, fn func(ctx context.Context, conn *sql.Conn) error) (err error) {
-	if s.readOnly {
-		return ErrReadOnly
+	if s.readOnly != "" {
+		return s.readOnlyErr()
 	}
 	ctx := context.Background()
 	conn, err := s.db.Conn(ctx)
@@ -505,8 +546,8 @@ func (s *Store) blobPath(sha string) string {
 }
 
 func (s *Store) putBlob(sha string, data []byte) error {
-	if s.readOnly {
-		return ErrReadOnly
+	if s.readOnly != "" {
+		return s.readOnlyErr()
 	}
 	p := s.blobPath(sha)
 	if _, err := os.Stat(p); err == nil {

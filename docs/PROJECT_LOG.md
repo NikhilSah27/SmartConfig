@@ -215,6 +215,7 @@ original file of this VM.
      and refuses link, deleted and fingerprint rows with one line (`make
      m1-compat` proves this).
 5. Leave the shell:
+   - from the rescue boot (step 2), run `sync`, then `systemctl reboot`;
    - from emergency mode, run `systemctl daemon-reload`, then
      `systemctl reboot` (without the reload, the reboot waits for the
      missing disk again);
