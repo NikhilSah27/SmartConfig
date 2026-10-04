@@ -324,6 +324,15 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
+// NewestRowID returns the rowid of the newest row, 0 for an empty store.
+// Rows are never deleted, so rowid order is insert order: the rows after
+// one are exactly what was recorded after it.
+func (s *Store) NewestRowID() (int64, error) {
+	var n int64
+	err := s.db.QueryRow("SELECT coalesce(max(rowid), 0) FROM changes").Scan(&n)
+	return n, err
+}
+
 // Copied reports whether this is a repaired copy of a store a crash left
 // half-written (see open): its rows are the store's, as of before that
 // write.

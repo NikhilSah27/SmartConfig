@@ -259,6 +259,7 @@ func newRoot() *cobra.Command {
 		newCheckCmd(),
 		newEditCmd(),
 		newScopeCmd(),
+		newBootCmd(),
 	)
 	return root
 }
