@@ -107,3 +107,74 @@ func TestScriptsParse(t *testing.T) {
 		}
 	}
 }
+
+// grubScript runs scripts/42_smartconfig on a /boot of the test (the
+// kernels named, each with an initrd unless its name ends in "!"), with
+// grub-mkconfig_lib's device probes replaced, and the environment
+// update-grub gives it; it returns the grub.cfg part it prints.
+func grubScript(t *testing.T, kernels []string, env ...string) string {
+	t.Helper()
+	lib := "/usr/share/grub/grub-mkconfig_lib"
+	if _, err := os.Stat(lib); err != nil {
+		t.Skip("no grub-mkconfig_lib")
+	}
+	boot := t.TempDir()
+	for _, k := range kernels {
+		noInitrd := strings.HasSuffix(k, "!")
+		k = strings.TrimSuffix(k, "!")
+		os.WriteFile(boot+"/vmlinuz-"+k, []byte("k"), 0o644)
+		if !noInitrd {
+			os.WriteFile(boot+"/initrd.img-"+k, []byte("i"), 0o644)
+		}
+	}
+	pkg := t.TempDir()
+	os.WriteFile(pkg+"/grub-mkconfig_lib", []byte(". "+lib+"\n"+
+		"prepare_grub_to_access_device () { echo \"search --no-floppy --fs-uuid --set=root BOOTFS\"; }\n"+
+		"make_system_path_relative_to_its_root () { echo /boot; }\n"), 0o644)
+	cmd := exec.Command("sh", "../../scripts/42_smartconfig")
+	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg, "SC_GRUB_BOOT=" + boot,
+		"GRUB_DEVICE=/dev/sda2", "GRUB_DEVICE_UUID=sc-no-such-uuid", "GRUB_DEVICE_PARTUUID=sc-no-such-partuuid", "GRUB_FS=ext2",
+		"GRUB_CMDLINE_LINUX=net.ifnames=0", "GRUB_CMDLINE_LINUX_DEFAULT=quiet splash console=tty1 console=ttyS0"}, env...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("42_smartconfig: %v", err)
+	}
+	if check, err := exec.LookPath("grub-script-check"); err == nil {
+		f := t.TempDir() + "/grub.cfg"
+		os.WriteFile(f, out, 0o644)
+		if msg, err := exec.Command(check, f).CombinedOutput(); err != nil {
+			t.Errorf("grub-script-check: %v\n%s\n%s", err, msg, out)
+		}
+	}
+	return string(out)
+}
+
+// The rescue entry boots the newest kernel that has an initrd, with
+// root= as 10_linux gives it, GRUB_CMDLINE_LINUX and the console= settings
+// kept, "quiet splash" left out, and the lab's recipe; the menu flag
+// follows. A btrfs or ZFS root, or no kernel, gets the flag alone.
+func TestGrubScript(t *testing.T) {
+	out := grubScript(t, []string{"6.8.0-100-generic", "6.8.0-142-generic", "6.9.0-1-generic!"})
+	for _, want := range []string{
+		"menuentry 'SmartConfig rescue' --class ubuntu --class gnu-linux --class os --id smartconfig-rescue {\n",
+		"\tsearch --no-floppy --fs-uuid --set=root BOOTFS\n",
+		"\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=/dev/sda2 ro net.ifnames=0 console=tty1 console=ttyS0 fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1\n",
+		"\tinitrd\t/boot/initrd.img-6.8.0-142-generic\n",
+		"if [ \"${smartconfig_pending}\" = \"1\" ] ; then\n\tset timeout_style=menu\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "quiet") || strings.Contains(out, "splash") {
+		t.Errorf("quiet splash kept:\n%s", out)
+	}
+	for _, env := range []string{"GRUB_FS=btrfs", "GRUB_FS=zfs"} {
+		if out := grubScript(t, []string{"6.8.0-142-generic"}, env); strings.Contains(out, "menuentry") || !strings.Contains(out, "smartconfig_pending") {
+			t.Errorf("%s:\n%s", env, out)
+		}
+	}
+	if out := grubScript(t, nil); strings.Contains(out, "menuentry") || !strings.Contains(out, "smartconfig_pending") {
+		t.Errorf("no kernel:\n%s", out)
+	}
+}

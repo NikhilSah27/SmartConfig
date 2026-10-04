@@ -1,0 +1,92 @@
+#!/bin/sh
+# 42_smartconfig: SmartConfig's part of grub.cfg (M4 plan 3.3, 3.4).
+# Install it by hand (README): install -m 0755 scripts/42_smartconfig
+# /etc/grub.d/, then update-grub, which runs it.
+#
+# 1. The menu entry "SmartConfig rescue": the newest kernel with its
+#    initrd, root read-only, /etc/fstab ignored (fstab=no), straight into
+#    systemd's rescue.target. A broken fstab line cannot block it, and
+#    Ubuntu's sulogin opens a root shell there (proven in the M4 lab).
+# 2. The menu after a failed boot: sc boot seen sets smartconfig_pending in
+#    grubenv early in every boot, and a healthy sc boot verdict unsets it.
+#    Still set at the next boot, it shows the menu for 30 s.
+set -e
+prefix="/usr"
+exec_prefix="/usr"
+datarootdir="/usr/share"
+. "$pkgdatadir/grub-mkconfig_lib"
+
+boot="${SC_GRUB_BOOT:-/boot}" # tests point it elsewhere
+
+# The newest kernel that has an initrd, in 10_linux's order.
+list=
+for i in "$boot"/vmlinuz-* ; do
+	if grub_file_is_not_garbage "$i" ; then list="$list $i" ; fi
+done
+linux=
+initrd=
+for k in $(echo $list | tr ' ' '\n' | version_sort -r) ; do
+	version=$(basename "$k" | sed -e "s,^[^0-9]*-,,g")
+	for i in "initrd.img-${version}" "initrd-${version}.img" ; do
+		if test -e "$boot/$i" ; then
+			linux=$k
+			initrd=$i
+			break 2
+		fi
+	done
+done
+
+# A btrfs or ZFS root needs subvolume or pool arguments that only 10_linux
+# knows how to give: no entry (plan section 1, non-goals).
+case "x${GRUB_FS}" in
+xbtrfs | xzfs)
+	gettext_printf "SmartConfig rescue: no entry for a %s root\n" "${GRUB_FS}" >&2
+	linux=
+	;;
+esac
+
+# root= as 10_linux chooses it for the default entry.
+if ( [ "x${GRUB_DEVICE_UUID}" = "x" ] && [ "x${GRUB_DEVICE_PARTUUID}" = "x" ] ) \
+	|| ( [ "x${GRUB_DISABLE_LINUX_UUID}" = "xtrue" ] && [ "x${GRUB_DISABLE_LINUX_PARTUUID}" = "xtrue" ] ) \
+	|| ( ! test -e "/dev/disk/by-uuid/${GRUB_DEVICE_UUID}" && ! test -e "/dev/disk/by-partuuid/${GRUB_DEVICE_PARTUUID}" ) \
+	|| ( test -e "${GRUB_DEVICE}" && uses_abstraction "${GRUB_DEVICE}" lvm ) ; then
+	root_device=${GRUB_DEVICE}
+elif [ "x${GRUB_DEVICE_UUID}" = "x" ] || [ "x${GRUB_DISABLE_LINUX_UUID}" = "xtrue" ] ; then
+	root_device=PARTUUID=${GRUB_DEVICE_PARTUUID}
+else
+	root_device=UUID=${GRUB_DEVICE_UUID}
+fi
+
+if [ -n "$linux" ] && [ -n "$root_device" ] ; then
+	# Keep GRUB_CMDLINE_LINUX (it applies to every entry) and the console=
+	# settings; leave out "quiet splash", so the console shows the boot.
+	consoles=
+	for a in ${GRUB_CMDLINE_LINUX_DEFAULT} ; do
+		case "$a" in console=*) consoles="$consoles $a" ;; esac
+	done
+	args="root=${root_device} ro ${GRUB_CMDLINE_LINUX}${consoles} fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
+	rel_dirname=$(make_system_path_relative_to_its_root /boot)
+	gettext_printf "Adding SmartConfig rescue entry: %s\n" "$linux" >&2
+	cat <<EOT
+menuentry 'SmartConfig rescue' --class ubuntu --class gnu-linux --class os --id smartconfig-rescue {
+	load_video
+	insmod gzio
+EOT
+	prepare_grub_to_access_device "${GRUB_DEVICE_BOOT}" | grub_add_tab
+	cat <<EOT
+	echo	'SmartConfig rescue: root read-only, /etc/fstab ignored'
+	linux	${rel_dirname}/$(basename "$linux") ${args}
+	initrd	${rel_dirname}/${initrd}
+}
+EOT
+fi
+
+cat <<'EOT'
+# SmartConfig: the last boot did not come up healthy, so show the menu.
+if [ "${smartconfig_pending}" = "1" ] ; then
+	set timeout_style=menu
+	if [ "${timeout}" = "0" ] ; then
+		set timeout=30
+	fi
+fi
+EOT
