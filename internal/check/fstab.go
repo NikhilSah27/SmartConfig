@@ -20,7 +20,7 @@ func init() {
 	rules = append(rules,
 		Rule{"fstab-source-missing", Blocker, `The line names a disk, partition, image file or bind-mount source that
 does not exist. At boot the mount fails: systemd fails local-fs.target
-and stops in emergency mode; on Ubuntu root is locked, so no shell.
+and stops in emergency mode: a shell at the console only, no SSH.
 Fix the UUID (lsblk -f) or the path, or add nofail if it may be absent.
 With nofail, noauto or x-systemd.automount, or for swap, the boot goes on.`},
 		Rule{"fstab-root-source", Error, `The line for / names a device that does not exist on this machine.

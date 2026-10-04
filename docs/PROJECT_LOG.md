@@ -99,8 +99,10 @@ refuses a symlink target; `sc log` with no rows prints `no snapshots`.
 - A typo in a **data disk** line (e.g. `/data`): `data.mount` gets
   `Requires=systemd-fsck@<device>.service`, so boot waits 90 s
   (`DefaultTimeoutStartSec`), fails `local-fs.target`, and stops in emergency
-  mode. The root account is locked (`passwd -S root` → `L`), so emergency mode
-  cannot open a shell.
+  mode. The root account is locked (`passwd -S root` → `L`), but Ubuntu
+  24.04's sulogin opens a root shell there anyway, at the console only
+  (`sulogin-lockedpwd.patch`; shown in the M4 lab). Over SSH the machine is
+  gone.
 This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 
 ---
@@ -188,22 +190,35 @@ link, deleted and fingerprint rows with one line.
 For `/etc/fstab` specifically, `2c6901` in `/var/lib/smartconfig` is the
 original file of this VM.
 
-### The machine no longer boots (before M4 exists)
+### The machine no longer boots (before M4's rescue entry is installed)
 
-1. Reboot, hold **Shift** (BIOS) or press **Esc** (UEFI) to show GRUB.
-2. Press `e` on "Ubuntu", add ` init=/bin/bash` to the end of the `linux` line,
-   press Ctrl-X.
-3. `mount -o remount,rw /`
-4. Restore with a static `sc`, or fix the file with nano:
-   - `/usr/local/sbin/sc restore <id>`, the M2 binary, which also restores
-     links and undoes creations;
-   - if it is gone: `/var/backups/smartconfig/sc-m2 restore <id>` (the `m2`
-     build, the same restores);
-   - if that is gone too: `/var/backups/smartconfig/sc-m1 restore <id>` (the `m1`
-     build). It still restores file rows on the migrated store and refuses
-     link, deleted and fingerprint rows with one line (`make m1-compat`
-     proves this).
-5. `sync`, then `exec /sbin/init` or `reboot -f`.
+1. If the console says **"Press Enter for maintenance"**, press Enter.
+   Ubuntu 24.04 opens a root shell there although root is locked (its
+   sulogin patch; shown in the M4 lab). Go to step 3.
+2. Otherwise, reboot and show GRUB. Hold **Shift** (BIOS) or press **Esc**
+   once (UEFI); a second Esc drops to `grub>`. Press `e` on "Ubuntu" and add
+   ` fstab=no systemd.unit=rescue.target` to the end of the `linux` line,
+   then press Ctrl-X and Enter at the prompt. This rescue boot ignores
+   `/etc/fstab` and keeps root read-only. If it fails too, add
+   ` init=/bin/bash` instead.
+3. `mount -o remount,rw /`. Until then sc can read the store, except one a
+   crash left half-written.
+4. Restore with a static `sc`, or fix the file with nano. Try each of these
+   in turn:
+   - `/usr/local/sbin/sc restore <id>`, the installed build (M3);
+   - `/var/backups/smartconfig/sc-m3pre`, the M3 build before the final
+     review's fixes;
+   - `sc-b6ab3cc`, the M2 build with its follow-ups;
+   - `sc-m2`, the `m2` build: the same restores, links and creations
+     included;
+   - `sc-m1`, the `m1` build. It restores file rows on the migrated store
+     and refuses link, deleted and fingerprint rows with one line (`make
+     m1-compat` proves this).
+5. Leave the shell:
+   - from emergency mode, run `systemctl daemon-reload`, then
+     `systemctl reboot` (without the reload, the reboot waits for the
+     missing disk again);
+   - from `init=/bin/bash`, run `sync`, then `reboot -f`.
 
 If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
 

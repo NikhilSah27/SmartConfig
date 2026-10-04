@@ -19,7 +19,7 @@ func init() {
 	rules = append(rules,
 		Rule{"sudoers-syntax", Blocker, `visudo rejects a line. sudo 1.9.3 and later drops the rest of that line
 and runs with what is left, so a rule that gave someone sudo may be gone;
-older sudo refuses to run at all. Ubuntu locks root, so no sudo, no root.
+older sudo refuses to run at all. Ubuntu locks root: no sudo, no root.
 A bad Defaults option or a missing include is only an error; an unused
 or undefined alias is a warning. Fix the line; sc check -v shows where.`},
 		Rule{"sudoers-ignored", Warning, `sudo never reads this file: in /etc/sudoers.d it skips every name that
@@ -28,8 +28,8 @@ alone), and the rules in it have no effect.
 Rename it without a dot, for example 90-local, if it is meant to be read.`},
 		Rule{"sudoers-no-rules", Blocker, `/etc/sudoers gives no one any rights and includes no other file (an
 empty file, or every rule deleted). sudo then lets nobody run anything,
-and Ubuntu's root has no password, so nobody can fix it. Ubuntu's file
-has "%sudo ALL=(ALL:ALL) ALL" and "@includedir /etc/sudoers.d".`},
+and Ubuntu's root has no password: only a console boot can fix it. The
+stock file has "%sudo ALL=(ALL:ALL) ALL", "@includedir /etc/sudoers.d".`},
 		Rule{"sudoers-mode", Error, `The file is not mode 0440 owned by root. sudo ignores a sudoers file
 that root does not own or that others may write, so its rules do not
 apply; for /etc/sudoers itself sudo does not run at all (a blocker).

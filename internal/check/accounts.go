@@ -38,7 +38,7 @@ admin of several missing is an error: that user can no longer log in.
 Put their lines back; sc log /etc/passwd lists the versions to restore.`},
 		Rule{"group-no-admin", Blocker, `No user of this machine is left in group sudo or admin, the groups
 Ubuntu's sudoers lets run commands as root. Ubuntu's root has no
-password, so nobody can use sudo, and so nobody can fix the file.
+password: nobody can use sudo, and only a console boot can fix it.
 On a machine where root logs in with a password this is no problem.
 Put the sudo line back: sudo:x:27:NAME.`},
 		Rule{"group-invalid", Error, `grpck rejects a line of /etc/group. glibc skips a line it cannot read,

@@ -41,3 +41,16 @@ func TestRulesTable(t *testing.T) {
 		}
 	}
 }
+
+// No explanation says a broken boot leaves no shell or that nothing can
+// fix a file: on Ubuntu 24.04 emergency mode opens a root shell at the
+// console although root is locked (util-linux's sulogin-lockedpwd.patch,
+// shown in the M4 lab, docs/M4_PLAN.md A2).
+func TestRulesNoShellClaim(t *testing.T) {
+	wrong := regexp.MustCompile(`(?i)no shell|nobody can fix|cannot open a shell|root is locked, so`)
+	for _, r := range rules {
+		if wrong.MatchString(r.Explain) {
+			t.Errorf("%s: %q", r.ID, wrong.FindString(r.Explain))
+		}
+	}
+}

@@ -41,8 +41,9 @@ M6 incident set, M7 local model.
 - **Proved on the real VM:** a one-character UUID typo in `/etc/fstab`, found
   with `sc diff` and undone with `sc restore`, byte for byte. Research with
   systemd's own fstab generator showed which typos really stop a boot: a data
-  disk line does (90 s wait, emergency mode, and root is locked so there is no
-  shell); the root line most likely does not.
+  disk line does (90 s wait, then emergency mode); the root line most likely
+  does not. We first thought emergency mode gave no shell, as root is locked;
+  the M4 lab showed that Ubuntu's sulogin opens one at the console anyway.
 - **Published:** GitHub repo, a docs site, a system map and narrated films.
 
 **Hardening: four review rounds, five rounds of fixes.** Instead of calling M1

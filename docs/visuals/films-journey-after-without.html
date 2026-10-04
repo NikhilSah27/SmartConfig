@@ -348,7 +348,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
   <div class="notes">
     <div class="note"><b>What is real</b>Milestone 1 scenes use the real output of <code>sc</code> recorded on this VM. The boot failure is based on running systemd's own fstab generator against the broken file on this VM: the <code>/data</code> mount requires the missing disk, so boot waits 90 s and stops. The root account on this VM is locked, as on every default Ubuntu install.</div>
     <div class="note"><b>What is a mock-up</b>Everything tagged <span class="tag concept">concept</span> shows milestones 2 to 7, which are not built yet: the watcher, checkers, rescue boot entry, package and <code>sc why</code>. Their commands and messages are the current design and may change.</div>
-    <div class="note"><b>About the clock</b>The downtime counter in "Without SmartConfig" is illustrative: how long it typically takes someone who knows the <code>init=/bin/bash</code> trick. Without it, the next step is a live USB stick.</div>
+    <div class="note"><b>About the clock</b>The downtime counter in "Without SmartConfig" is illustrative: how long it typically takes someone at the machine to find the cause from Ubuntu's emergency shell, which opens without a root password but says nothing about what changed. Over SSH, someone has to go to the machine.</div>
   </div>
 </div>
 
@@ -572,7 +572,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
     BOARD('<div class="board"><div class="bk rise">For example</div><h2 class="rise">A new disk, one mistyped character</h2>' +
       '<div class="probline rise">/dev/disk/by-uuid/5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a<mark>3</mark> /data ext4 defaults 0 2</div>' +
       '<div class="flowrow rise"><div class="bt">The disk is really …f0a8. At boot, systemd waits 90 seconds for a disk that doesn\'t exist, then gives up.</div><div class="arrow">→</div>' +
-      '<div class="emerg">You are in emergency mode. …\nCannot open access to console,\nthe root account is locked.\n\nPress Enter to continue.</div></div></div>');
+      '<div class="emerg">You are in emergency mode. …\nPress Enter for maintenance\n(or press Control-D to continue):</div></div></div>');
     C("Here, a new disk was added to <code>/etc/fstab</code> with one wrong character in its UUID. At the next boot, the machine stops in emergency mode.");
     W(3.5);
     C("SmartConfig is being built to catch that mistake, undo it, and explain it. This film shows how it comes together, one milestone at a time.");
@@ -770,8 +770,8 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
       "system logs, \"systemctl reboot\" to reboot, or \"exit\" to continue bootup.",
       '<span class="k-sc">SmartConfig: this boot failed right after a change to /etc/fstab (sc edit, 09:14).</span>',
       '<span class="k-sc">SmartConfig: reboot and choose "SmartConfig rescue" in the boot menu to undo it.</span>',
-      "Cannot open access to console, the root account is locked.",
-      "Press Enter to continue."], 2.4);
+      "Press Enter for maintenance",
+      "(or press Control-D to continue):"], 2.4);
     C("The boot still stops, but this time the screen says why, and what to do next.");
     W(3.2);
     CLOCKRUN(110, 1);
@@ -868,64 +868,45 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
       '[<span class="k-fail">DEPEND</span>] Dependency failed for local-fs.target - Local File Systems.',
       "",
       "You are in emergency mode. After logging in, type \"journalctl -xb\" to view",
-      "system logs, \"systemctl reboot\" to reboot, or \"exit\" to continue bootup.",
-      "Cannot open access to console, the root account is locked.",
-      "See sulogin(8) man page for more details.",
-      "",
-      "Press Enter to continue."], 2.4);
-    C("After 90 seconds it gives up and drops into emergency mode. And emergency mode needs the root password.");
-    W(2.6);
-    C("On Ubuntu the root account is locked, so there is no password to give. Pressing Enter just starts over.");
-    add(0.8, function (S, p) { if (p >= 0.5) S.con.push("", "Reloading system manager configuration", "Starting default.target", "You are in emergency mode. …", "Cannot open access to console, the root account is locked.", "Press Enter to continue."); });
-    CLOCKRUN(160, 2.2);
-    add(0.8, function (S, p) { if (p >= 0.5) S.con.push("", "You are in emergency mode. …", "Cannot open access to console, the root account is locked.", "Press Enter to continue."); });
-    CLOCKRUN(300, 2.4);
+      "system logs, \"systemctl reboot\" to reboot, or \"exit\"",
+      "to continue bootup.",
+      "Press Enter for maintenance",
+      "(or press Control-D to continue):"], 2.4);
+    C("After 90 seconds it gives up and drops into emergency mode.");
+    W(2.2);
+    C("Ubuntu lets you in here: press Enter and you get a root shell, although root has no password. Only at this screen, though: over SSH the machine is simply gone.");
+    CT("", "root@Ubuntu:~# ");
+    W(1.6);
+    C("But which file broke, and what was in it before? The screen doesn't say.");
+    W(1.8);
 
     CH("Searching", "without");
-    PHONE("ubuntu emergency mode root account is locked", [
-      ["Stuck in emergency mode after editing fstab", "The root account is locked, so you can't log in. Edit the boot entry in GRUB…"],
-      ["How to get a root shell when root is locked", "Press e in GRUB and add init=/bin/bash to the linux line…"],
-      ["Boot from a live USB and fix /etc/fstab", "Mount your root partition from the live session and edit…"]], 2.4);
-    C("So you pick up your phone and search for the error message.");
+    PHONE("ubuntu emergency mode after reboot", [
+      ["Stuck in emergency mode after a reboot", "Run journalctl -xb and look for the first unit that failed…"],
+      ["Dependency failed for local-fs.target", "Usually a wrong line in /etc/fstab. Comment it out and reboot…"],
+      ["Fixing fstab from emergency mode", "Edit /etc/fstab, run systemctl daemon-reload, then reboot…"]], 2.4);
+    C("So you pick up your phone and search for the messages on the screen.");
     CLOCKRUN(1100, 4);
-    C("Twenty minutes later, you have a plan: break in through the boot menu.");
+    C("Twenty minutes later, you know where to look: <code>/etc/fstab</code>.");
     W(1.2);
     PHONEOFF();
 
-    CH("Breaking in", "without");
-    C("Reboot, hold Shift to show the GRUB menu, and press e to edit the boot entry.");
-    SCENE("grub", 0.6);
-    GRUB(["Ubuntu", "Advanced options for Ubuntu", "Memory test (memtest86+x64.efi)", "UEFI Firmware Settings"], 0, "   Use the ↑ and ↓ keys to select which entry is highlighted.\n   Press enter to boot the selected OS, `e' to edit the commands\n   before booting or `c' for a command-line.");
-    W(1.2);
-    GEDIT(["setparams 'Ubuntu'", "", "        recordfail", "        load_video", "        gfxmode $linux_gfx_mode", "        insmod gzio",
-      "        insmod part_gpt", "        insmod ext2", "        search --no-floppy --fs-uuid --set=root " + ROOTUUID,
-      "        linux   /boot/vmlinuz-" + KERNEL + " root=UUID=" + ROOTUUID + " ro quiet splash $vt_handoff",
-      "        initrd  /boot/initrd.img-" + KERNEL],
-      "   Minimum Emacs-like screen editing is supported. TAB lists possible\n   completions. Press Ctrl-x or F10 to boot, Ctrl-c or F2 for a\n   command-line or ESC to discard edits and return to the GRUB menu.");
-    C("At the end of the line that starts with linux, you add <code>init=/bin/bash</code>: start a bare root shell instead of the normal system.");
-    GTYPE(9, " init=/bin/bash", 1.6);
-    W(1.4);
-    CLOCKRUN(1500, 1.5);
-    SCENE("console", 0.6);
-    CONCLR();
-    CON(['<span class="k-dim">[    2.914312] EXT4-fs (sda2): mounted filesystem ' + ROOTUUID + ' ro with ordered data mode.</span>',
-      "bash: cannot set terminal process group (-1): Inappropriate ioctl for device",
-      "bash: no job control in this shell"], 1.2);
-    C("You're in. But the disk is mounted read-only, so first you remount it for writing.");
-    CT("mount -o remount,rw /", "root@(none):/# ");
-    CT("nano /etc/fstab", "root@(none):/# ");
+    CH("Fixing it blind", "without");
+    CT("nano /etc/fstab", "root@Ubuntu:~# ");
     NANO("/etc/fstab", FSTAB9.concat([DATALINE]), true);
     C("Which line is wrong? You don't know yet, so you comment out the new one.");
     NMOVE(9, 0, 1.4);
     NINS(9, 0, "#", 0.8);
     NSTAT("[ Wrote 10 lines ]");
     NCLOSE();
-    CT("exec /sbin/init", "root@(none):/# ");
-    CLOCKRUN(2300, 2);
+    C("systemd still remembers the old line, so it has to reread the file before the reboot, or the reboot waits for the missing disk again.");
+    CT("systemctl daemon-reload", "root@Ubuntu:~# ");
+    CT("systemctl reboot", "root@Ubuntu:~# ");
+    CLOCKRUN(1800, 2);
     CONCLR();
     CON(['[  <span class="k-ok">OK</span>  ] Reached target local-fs.target - Local File Systems.', '[  <span class="k-ok">OK</span>  ] Reached target graphical.target - Graphical Interface.'], 1);
     add(0, function (S) { S.clock.label = "Back up after"; });
-    C("The machine boots again, about forty minutes later.");
+    C("The machine boots again, about half an hour later.");
     W(2);
 
     CH("Back, sort of", "without");
@@ -941,8 +922,8 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
       '<span>/dev/sdb1: UUID="5f3a91c2-8b7e-4d21-a0c4-7e19b2d6f0a<mark>8</mark>" BLOCK_SIZE="4096" TYPE="ext4"</span>'], 1);
     C("No history of what changed, no copy of the old file. You find the typo by comparing thirty-six characters by eye.");
     W(3.2);
-    END("About forty minutes down", "One character, no warning, a locked emergency shell, and a boot-menu trick you had to look up. Without that trick, the next step is a live USB stick.",
-      [["90 s", "boot timeout for a missing disk"], ["0", "snapshots or history"], ["~40 min", "downtime (illustrative)"]], true);
+    END("About half an hour down", "One character, no warning, and an emergency shell that tells you nothing about what changed. Over SSH, someone has to go to the machine.",
+      [["90 s", "boot timeout for a missing disk"], ["0", "snapshots or history"], ["~30 min", "downtime (illustrative)"]], true);
     SAY("About forty minutes down, for one character. That's the gap SmartConfig is built to close.");
     W(5);
     return { poster: ["Without SmartConfig", "The same typo, no safety net · about 4 minutes"] };

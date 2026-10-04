@@ -35,7 +35,9 @@ differ, the published one is newer.
   `systemd-fstab-generator` against that file on the VM shows `data.mount`
   requiring the missing device, so boot waits 90 s and stops in emergency mode.
   The root account is locked (`passwd -S root` shows `L`), as on every default
-  Ubuntu install, so emergency mode cannot open a shell.
+  Ubuntu install. Ubuntu 24.04's sulogin still opens a root shell in
+  emergency mode at the console (its `sulogin-lockedpwd.patch`, shown in the
+  M4 lab), but over SSH the machine is gone, and nothing says what changed.
 - A typo in the *root* line (`/`) is different: the root filesystem is already
   mounted by the initramfs, and the generated `-.mount` does not require the
   device, so Ubuntu most likely still boots.
