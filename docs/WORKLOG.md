@@ -68,8 +68,15 @@ no verdict either: UEFI stalled before GRUB, and this VM went down
 during BIOS (log, 2026-10-05). The lab now retries such a stall
 (`152ecbe`). **The step 11 check passed** on `56f5359`: `make lab-e2e`
 PASS, UEFI and BIOS, clean tree, with boot 5, no retries (log,
-2026-10-05). **Now: the chunk D review** (step 11, the lab). A
-check-in every 30 min resumes work after a usage limit (your ask).
+2026-10-05). **Now: the chunk D review** (step 11, the lab). Two
+reviewers reported (raw: `~/smartconfig-work/review-m4d/findings-a.md`
+and `findings-b.md`): 1 high (narrow), 10 medium, 13 low, 5 cleanups,
+none of which changes the PASS. The fixes are in (`3115b71` for sc,
+`9d3df9e` for the lab). Still to do, in this order: tests for the
+mutations that survived, `make lab-e2e` again on the fixed tree, the
+write-up in `docs/reviews/`, plan change C6 (the 60 s limit of
+`sc status --console`). A check-in every 30 min resumes work after a
+usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
