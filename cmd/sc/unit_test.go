@@ -213,7 +213,10 @@ func labBlocks(t *testing.T, out string) (names []string, rc, text map[string]st
 // with commands that would touch the machine replaced: the names in
 // order, each with its exit status; in the rescue shell sc restore only
 // on a read-only root, and the hashes before and after, the scratch
-// directories left, the menu settings sourced as grub-mkconfig does.
+// directories left, the menu settings sourced as grub-mkconfig does. Each
+// part runs under timeout with the mode's limit and with no input; one
+// that hangs is ended and reported as 124, and a failing sc cat is not
+// hashed.
 func TestLabGuestFacts(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "root")
@@ -235,7 +238,12 @@ func TestLabGuestFacts(t *testing.T) {
 	}
 	labStubs(t, dir, map[string]string{
 		"systemctl":  `case "$1" in is-active) echo active ;; is-enabled) echo enabled ;; esac`,
-		"journalctl": "", "systemd-analyze": "", "grub-editenv": "", "passwd": "", "dmesg": "",
+		"journalctl": "", "systemd-analyze": "", "grub-editenv": "", "passwd": "",
+		// It reads its input: a part has none, whatever facts.sh was given.
+		"dmesg": "cat",
+		// The real one (the log has its arguments), with 2 s for a part when SCLAB_HANG is set.
+		"timeout": `[ -z "$SCLAB_HANG" ] || { shift 3; set -- -k 5 2 "$@"; }
+exec "$(PATH=/usr/bin:/bin command -v timeout)" "$@"`,
 		// Not this machine's processes: a command line with "p_" in it
 		// (an sshd session of backup_user) failed the test below.
 		"ps": `echo "    1 Ss   /usr/lib/systemd/systemd-journald"`,
@@ -243,7 +251,9 @@ func TestLabGuestFacts(t *testing.T) {
 status) echo "This boot:     3b3b3b3b (rescue), root read-only"; exit 2 ;;
 check) echo blocker; exit 2 ;;
 restore) echo "sc: it is on a read-only file system: remount it read-write first" >&2; exit 1 ;;
-cat) echo "the good fstab" ;;
+cat) if [ "$2" = bad0 ]; then echo "half a file"; echo "sc: no snapshot bad0" >&2; exit 1; fi
+	echo "the good fstab" ;;
+log) [ -z "$SCLAB_HANG" ] || sleep 20 ;;
 esac`,
 		// / read-only unless SCLAB_RW is set; nothing else mounted.
 		"findmnt": `for a; do m=$a; done
@@ -255,6 +265,7 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 	facts := func(env []string, args ...string) (out string, code int) {
 		cmd := exec.Command("sh", append([]string{"../../lab/guest/facts.sh"}, args...)...)
 		cmd.Env = append(os.Environ(), append(env, "SCLAB_TEST="+dir)...)
+		cmd.Stdin = strings.NewReader("typed ahead\n")
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		b, err := cmd.Output()
@@ -293,6 +304,12 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 		if rc["end"] != "0" || text["end"] != "" {
 			t.Errorf("%v: end %s %q", tc.args, rc["end"], text["end"])
 		}
+		// Every block but "end" is a part under timeout, with the mode's limit.
+		limit := map[string]string{"normal": "60", "rescue": "90", "dump": "30"}[tc.args[0]]
+		self, _ := filepath.Abs("../../lab/guest/facts.sh")
+		if log, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Count(string(log), "timeout -k 5 "+limit+" sh "+self+" --part ") != len(names)-1 {
+			t.Errorf("%v: not %d parts under timeout -k 5 %s:\n%s", tc.args, len(names)-1, limit, log)
+		}
 		switch tc.args[0] {
 		case "normal":
 			for name, want := range map[string]string{
@@ -311,12 +328,22 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 				t.Errorf("normal:\n%s", out)
 			}
 		case "rescue":
+			sum := func(data string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(data))) }
+			if want := "/var/lib/smartconfig/changes.db " + sum("db") + "\n/var/lib/smartconfig/changes.db-journal -\n" +
+				"/var/lib/smartconfig/changes.db-wal -\n/var/lib/smartconfig/boots " + sum("b1 seen 1\n") + "\n" +
+				"/etc/fstab " + sum("LABEL=cloudimg-rootfs / ext4 defaults 0 1\n") + "\n"; text["hashes-before"] != want {
+				t.Errorf("rescue: hashes-before:\n%s\nnot\n%s", text["hashes-before"], want)
+			}
 			if rc["sc-restore"] != "1" || !strings.Contains(text["sc-restore"], "remount it read-write first") ||
 				rc["sc-status-console"] != "2" || rc["sc-check"] != "2" || text["leftovers"] != "/run/sc-check-1\n" ||
 				text["hashes-before"] != text["hashes-after"] || !strings.Contains(text["hashes-before"], "/var/lib/smartconfig/changes.db-journal -\n") ||
 				text["sc-cat-good"] != fmt.Sprintf("%x\n", sha256.Sum256([]byte("the good fstab\n"))) ||
 				!strings.HasPrefix(text["facts"], "mode=rescue\ngood=abc123\nbad=\n") {
 				t.Errorf("rescue:\n%s", out)
+			}
+		case "dump":
+			if rc["dmesg"] != "0" || text["dmesg"] != "" {
+				t.Errorf("dump: dmesg read facts.sh's input: rc %s %q", rc["dmesg"], text["dmesg"])
 			}
 		}
 	}
@@ -328,6 +355,20 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 	}
 	if log, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Count(string(log), "sc restore") != 1 || !strings.Contains(string(log), "sc diff abc123 def456\n") {
 		t.Errorf("log:\n%s", log)
+	}
+	// sc cat fails: its exit status and what it said, and no sha256 of
+	// the half it printed.
+	out, _ = facts(nil, "rescue", "bad0")
+	_, rc, text = labBlocks(t, out)
+	if rc["sc-cat-good"] != "1" || text["sc-cat-good"] != "sc: no snapshot bad0\n" {
+		t.Errorf("sc cat fails: rc %s:\n%s", rc["sc-cat-good"], text["sc-cat-good"])
+	}
+	// A part that hangs (sc log) is ended at its limit and is 124; the
+	// parts after it run.
+	out, _ = facts([]string{"SCLAB_HANG=1"}, "dump")
+	names, rc, _ := labBlocks(t, out)
+	if rc["sc-log-fstab"] != "124" || rc["sc-status"] != "2" || names[len(names)-1] != "end" {
+		t.Errorf("a part that hangs: sc-log-fstab rc %s, sc-status rc %s:\n%s", rc["sc-log-fstab"], rc["sc-status"], out)
 	}
 	// Usage: a mode, and ids that are ids.
 	for _, args := range [][]string{nil, {"rescue"}, {"rescue", "ab;c"}, {"normal", "x"}} {
@@ -506,9 +547,12 @@ func TestGrubScriptDetails(t *testing.T) {
 // install.sh (lab/guest) installs what MANIFEST vouches for, each file
 // where the README puts it with its mode, then enables the units (the
 // boot ones not --now), runs update-grub and passes its stderr on, and
-// prints it all as key=value facts; a file that does not match MANIFEST,
-// or is not in it, stops it before anything is installed. Never as root:
-// should its test hook fail, it would install on this machine.
+// prints it all as key=value facts; a step that fails is reported with
+// its own exit status (install with its worst) and the rest still run;
+// a file that does not match MANIFEST, or is not in it, stops it before
+// anything is installed; without its test hook, anyone but root is
+// refused. Never as root: should its test hook fail, it would install on
+// this machine.
 func TestLabGuestInstall(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("never as root")
@@ -581,6 +625,27 @@ mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
 		t.Errorf("commands:\n%s", got)
 	}
 
+	// Steps that fail: e2e reads each _rc as that command's, so a broken
+	// update-grub must not look fine. install fails for two of the files.
+	passing := stubs
+	stubs = map[string]string{
+		"systemd-analyze": "", "grub-script-check": "exit 1",
+		"systemctl": `case "$*" in "enable --now scd.service") echo "Failed to enable unit: Unit scd.service does not exist"; exit 5 ;; esac`,
+		"update-grub": `echo "/etc/grub.d/42_smartconfig: 12: Syntax error" >&2
+exit 3`,
+		"install": `for a; do d=$a; done
+case "$d" in */sc-boot-seen.service) exit 7 ;; */sc-boot-ok.service) exit 4 ;; esac
+` + passing["install"],
+	}
+	_, out, code = run()
+	if code != 0 || !strings.Contains(out, "\nfile=/etc/systemd/system/sc-boot-seen.service -\nfile=/etc/systemd/system/sc-boot-ok.service -\n") ||
+		!strings.HasSuffix(out, "\ninstall_rc=7\ndaemon_reload_rc=0\nenable_rc=0\nenable_scd_rc=5\n"+
+			"enable_scd_out=Failed to enable unit: Unit scd.service does not exist\nupdate_grub_rc=3\n"+
+			"update_grub_err=/etc/grub.d/42_smartconfig: 12: Syntax error\ngrub_script_check_rc=1\nverify_rc=0\ndone=1\n") {
+		t.Errorf("failing steps: exit %d:\n%s", code, out)
+	}
+	stubs = passing
+
 	// A file that MANIFEST does not vouch for: nothing happens.
 	sc := filepath.Join(stage, "sc")
 	original, _ := os.ReadFile(sc)
@@ -598,5 +663,20 @@ mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
 		if code != 2 || !strings.HasSuffix(out, "\nmanifest=fail\n") || !strings.Contains(out, tc.say) || err == nil {
 			t.Errorf("exit %d, log %v:\n%s", code, err, out)
 		}
+	}
+
+	// Without the test hook and not root: refused before anything is
+	// looked at. The MANIFEST here vouches for nothing, so even an
+	// install.sh that did not refuse would stop before it installs.
+	os.WriteFile(filepath.Join(stage, "MANIFEST"), nil, 0o644)
+	cmd := exec.Command("sh", filepath.Join(stage, "install.sh"))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "SCLAB_TEST=") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	b, err := cmd.CombinedOutput()
+	if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 2 || string(b) != fmt.Sprintf("uid=%d\nerror=not root\n", os.Geteuid()) {
+		t.Errorf("not root: %v:\n%s", err, b)
 	}
 }

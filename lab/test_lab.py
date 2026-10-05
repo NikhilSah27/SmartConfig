@@ -22,8 +22,11 @@ from the M4 research lab and the step 11 spike:
                            hidden-menu boot showing the observer echoes)
 The research captures were made with hostname m4lab; the lab's is sclab.
 """
+import contextlib
 import hashlib
+import http.client
 import io
+import json
 import os
 import re
 import signal
@@ -34,6 +37,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from unittest import mock
 import zlib
@@ -133,6 +137,10 @@ class TestCleaner(unittest.TestCase):
         self.assertEqual(c.feed(b"x\x1b[0"), b"x")
         self.assertEqual(c.feed(b"5;03H*Ubuntu\x1b"), b"\n*Ubuntu")
         self.assertEqual(c.feed(b"[Kz"), b"z")
+
+    def test_an_escape_inside_a_sequence_starts_a_new_one(self):
+        # A sequence cut off by a reset, then GRUB's first cursor move.
+        self.assertEqual(serialmux.clean(b"a\x1b[1;\x1b[05;03H*Ubuntu"), b"a\n*Ubuntu")
 
     def test_utf8_passes(self):
         self.assertEqual(serialmux.clean("┌─┐ ▲".encode()), "┌─┐ ▲".encode())
@@ -268,9 +276,40 @@ class TestMux(unittest.TestCase):
 
     def test_a_wall_clock_jump_alone_is_logged_not_kept(self):
         mux = self.start()
+        # A wake as late as allowed on both clocks: the wall clock is not ahead.
+        mux._gap(serialmux.GAP, serialmux.GAP + 1)
+        self.assertNotIn(b"pause", self.read("mux.log"))
         mux._gap(0.2, 3120.0)  # a 52 minute hole the monotonic clock did not count
         self.assertEqual(mux.gaps, [])
         self.assertIn(b"pause: the wall clock jumped 3119.8 s", self.read("mux.log"))
+
+    def test_the_loop_measures_the_wall_clock_too(self):
+        # A wall clock that is an hour on at every look, under a monotonic
+        # clock that is not: what a suspended machine shows the loop.
+        jump = [0.0]
+
+        def wall():
+            jump[0] += 3600.0
+            return jump[0]
+
+        clocks = types.SimpleNamespace(monotonic=time.monotonic, sleep=time.sleep, time=wall)
+        with mock.patch.object(serialmux, "time", clocks):
+            mux = self.start()
+            # An hour, less the 0.2 s or so the wake took on both clocks.
+            said = re.compile(rb"pause: the wall clock jumped 3599\.\d s")
+            self.assertTrue(wait_until(lambda: said.search(self.read("mux.log"))))
+            mux.stop()
+        self.assertEqual(mux.gaps, [])
+
+    def test_a_send_cannot_block_for_ever(self):
+        # A guest that stops reading fills the socket: without a timeout
+        # the write, and with it the lab, would wait on it with no end.
+        mux = self.start()
+        self.assertEqual(mux._ser.gettimeout(), 10)
+        self.qemu.reset()
+        self.qemu.accept()
+        self.assertTrue(wait_until(lambda: b"reconnected" in self.read("mux.log")))
+        self.assertEqual(mux._ser.gettimeout(), 10)  # the new connection as well
 
     def test_a_mark_waits_for_what_is_unread(self):
         # The old boot's last line, and the mark taken right behind it
@@ -283,6 +322,27 @@ class TestMux(unittest.TestCase):
             sent += len(line)
             self.assertEqual(mux.mark("RESET#%d" % i, drain=30.0).txt, sent, i)  # as long as a loaded host needs
         self.assertEqual(mux.mark("x", drain=0).txt, sent)
+
+    def test_a_mark_with_nothing_unread_does_not_wait(self):
+        mux = self.start()
+        t = time.monotonic()
+        mux.mark("RESET", drain=120.0)  # the loop's next idle wake, a fifth of a second away, ends the wait
+        self.assertLess(time.monotonic() - t, 60)
+
+    def test_wait_waits(self):
+        # Console.expect polls with it: one that came back at once would
+        # spin. No loop runs here, so nothing but the text can end it.
+        mux = serialmux.Mux(self.run, t0=time.time())
+        t = time.monotonic()
+        self.assertEqual(mux.wait(0, 0.25), 0)
+        self.assertGreaterEqual(time.monotonic() - t, 0.2)
+        timer = threading.Timer(0.05, mux._ingest, [b"hi\n"])
+        timer.start()
+        self.addCleanup(timer.join)
+        self.assertEqual(mux.wait(0, 30), 3)
+        self.assertEqual(mux.wait(0, 30), 3)  # longer already: no wait
+        mux._close("gone")
+        self.assertEqual(mux.wait(3, 30), 3)  # closed: nothing more will come
 
     def test_logs_and_forwards(self):
         mux = self.start(listen=True)
@@ -498,6 +558,25 @@ class TestConsole(unittest.TestCase):
         self.assertIsNone(con.expect([r"login: "], 30, abort=lambda: True))
         self.assertEqual(con.why, "abort")
 
+    def test_expect_reads_what_came_before_the_close(self):
+        # The guest's last line and the close arrive between two looks:
+        # the text read after "closed" was seen false is searched once
+        # more before expect gives up.
+        class Closing(FakeMux):
+            def txt(self, start=0, end=None):
+                out = super().txt(start, end)
+                if not self.closed:
+                    self.buf += b"sclab login: "
+                    self.closed = True
+                return out
+
+        con = console.Console(mux=Closing(self.run, b"[  OK  ] Reached target\n"))
+        hit = con.expect([r"\bsclab login: "], 5)
+        self.assertIsNotNone(hit, con.why)
+        self.assertEqual(con.pos, con.size())
+        self.assertIsNone(con.expect([r"\bsclab login: "], 5))  # nothing more will come
+        self.assertEqual(con.why, "closed")
+
     def test_expect_patterns_are_per_line(self):
         # re.M without re.S: ^ is a line start, . does not cross lines.
         self.write_txt(b"Timed out waiting for device x\nsomething 8f2a-5d6e7f8a9b0c\n^B1 seen\n")
@@ -576,6 +655,16 @@ class TestConsole(unittest.TestCase):
         r = console.Console(mux=mux).cmd("x" * 250, timeout=2)
         self.assertEqual((r.rc, r.out), (0, "file1\nfile2\n"))
 
+    def test_cmd_reads_from_the_end_of_the_log(self):
+        # With the echo garbled the output starts at the first newline
+        # after the typed line: of what came since, not of the old text.
+        old = b"old line 1\nold line 2\n"
+        mux = FakeMux(self.run, old, self.shell(garble=True))
+        con = console.Console(mux=mux)
+        self.assertEqual(con.pos, 0)
+        r = con.cmd("x" * 250, timeout=2)
+        self.assertEqual((r.rc, r.out, r.start), (0, "file1\nfile2\n", len(old)))
+
     def test_cmd_timeout(self):
         mux = FakeMux(self.run, b"# ", lambda d: b"typed but never run\n")
         r = console.Console(mux=mux).cmd("sleep 999", timeout=0.3)
@@ -646,6 +735,16 @@ class TestMenu(unittest.TestCase):
         self.assertTrue(menu.grub_prompt)
         with self.assertRaisesRegex(console.MenuError, "grub>"):
             console.pick("SmartConfig rescue", lambda: menu, lambda k: None)
+
+    def test_the_last_header_is_the_menu(self):
+        # Two boots in one text (a reset), or a submenu drawn after the
+        # menu: the menu on the screen is the one under the last header.
+        lines = ["GNU GRUB  version 2.06", "*Ubuntu", " Memory test", "",
+                 "   The highlighted entry will be executed automatically in 5s.",
+                 "GNU GRUB  version 2.12", " Ubuntu", "*SmartConfig rescue"]
+        menu = console.parse_menu(lines)
+        self.assertEqual((menu.version, menu.entries, menu.selected, menu.countdown),
+                         ("2.12", ["Ubuntu", "SmartConfig rescue"], 1, None))
 
     def test_not_a_menu(self):
         self.assertIsNone(console.parse_menu(cleaned("q2-bad-fstab.raw")))
@@ -723,6 +822,22 @@ class TestPick(unittest.TestCase):
         with self.assertRaisesRegex(console.MenuError, "did not move after 2 presses") as cm:
             console.pick("SmartConfig rescue", read, press, sleep=fc.sleep, clock=fc.clock)
         self.assertEqual(cm.exception.keys, ["down", "down"])
+
+    def test_a_highlight_that_never_arrives_ends_at_max_moves(self):
+        # Every key moves the highlight, but between the first two entries
+        # only: pick stops after max_moves keys instead of pressing on.
+        entries = ["Ubuntu", "Advanced options for Ubuntu", "SmartConfig rescue"]
+        keys = []
+
+        def press(k):
+            self.assertLess(len(keys), 4, "a key after max_moves")
+            keys.append(k)
+
+        fc = FakeClock()
+        with self.assertRaisesRegex(console.MenuError, "'SmartConfig rescue' is not highlighted after 4 keys") as cm:
+            console.pick("SmartConfig rescue", lambda: console.Menu("2.12", entries, len(keys) % 2, None, False, False),
+                         press, max_moves=4, sleep=fc.sleep, clock=fc.clock)
+        self.assertEqual((keys, cm.exception.keys), (["down"] * 4, ["down"] * 4))
 
     def test_overshoot_comes_back_up(self):
         screens = [fixture(n) for n in self.SCREENS]
@@ -892,6 +1007,37 @@ class TestClassify(unittest.TestCase):
         text = cleaned("slow-udev-emergency.raw").replace("Timed out waiting for device dev-ttyS0", bad)
         self.assertIsNone(console.classify_boot(text, host="m4lab").retry)
 
+    EMERGENCY = ("You are in emergency mode. After logging in, type \"journalctl -xb\" to view\n"
+                 "system logs, \"systemctl reboot\" to reboot, or \"exit\"\nto continue bootup.\n\n"
+                 "Press Enter for maintenance\n(or press Control-D to continue): ")
+
+    @staticmethod
+    def timed_out(device):
+        return "[ TIME ] Timed out waiting for device %s.\n[DEPEND] Dependency failed for x.mount - /x.\n" % device
+
+    def test_slow_udev_is_the_labs_devices_only(self):
+        # slow-udev is retried as the lab's flake, so only what TCG is
+        # known to starve may be called that.
+        ttys0 = self.timed_out("dev-ttyS0.device - /dev/ttyS0")
+        data = self.timed_out("dev-d…A.device - /dev/disk/by-label/DATA")
+        for text, retry, devices in (
+                (ttys0 + self.EMERGENCY, "slow-udev", 1),  # the serial console alone
+                (data + self.EMERGENCY, None, 1),  # a device that is not the lab's: the boot's own failure
+                (self.EMERGENCY, None, 0),  # no device timed out at all: something else broke
+                (self.EMERGENCY + "\n" + ttys0, None, 0),  # timed out after the prompt: not why it came
+        ):
+            end = console.classify_boot(text)
+            self.assertEqual((end.kind, end.retry, len(end.devices)), ("emergency", retry, devices), text)
+
+    def test_the_mode_line_before_the_prompt_names_it(self):
+        # rescue.target was on its way when local-fs.target failed: the
+        # prompt that came is the emergency shell's.
+        text = ("You are in rescue mode. After logging in, type \"journalctl -xb\" to view\n"
+                + self.timed_out("dev-ttyS0.device - /dev/ttyS0") + self.EMERGENCY)
+        end = console.classify_boot(text)
+        self.assertEqual((end.kind, end.retry), ("emergency", "slow-udev"))
+        self.assertEqual(console.classify_boot(self.EMERGENCY.replace("emergency", "rescue")).kind, "rescue")
+
     def test_panic(self):
         end = console.classify_boot(cleaned("q3c-panic-tcg.raw"), host="m4lab")
         self.assertEqual((end.kind, end.retry), ("panic", "panic"))
@@ -1056,6 +1202,17 @@ class TestGolden(unittest.TestCase):
         self.assertIsNone(console.report_block("This boot: x\n"))
         self.assertIsNone(console.report_block("You are in emergency mode"))
 
+    def test_block_is_the_last_report_before_the_mode_line(self):
+        # An earlier "This boot:" (sc status in the boot before, on the
+        # same console) is not the rescue report; nor is one after it.
+        earlier = REPORT.replace("5e6f7a8b (rescue), root read-only", "4d5e6f70")
+        text = earlier + "sclab login: \n" + REPORT + "You are in rescue mode. After logging in\n" + \
+            REPORT.replace("5e6f7a8b", "99999999")
+        block = console.report_block(text)
+        self.assertEqual(block.lines[0], REPORT.split("\n")[0])
+        self.assertEqual(text[block.start:block.end], REPORT)
+        self.assertTrue(console.match_golden(block.lines, GOLDEN, BIND).ok)
+
     # A value of each placeholder's form, at its widest.
     SAMPLE = {"GOOD": "1d5b0a", "BAD": "c7146c", "PRE": "a1b2c3", "ID": "b2c3d4", "B1": "1a2b3c4d",
               "B2": "2b3c4d5e", "B3": "3c4d5e6f", "CUR": "4d5e6f70", "BOOT": "5e6f7081", "N": "999",
@@ -1105,6 +1262,124 @@ class TestVm(unittest.TestCase):
         self.assertRegex(user_data, r"(?m)^\s*hostname:\s*sclab\s*$")
         self.assertIn("SCLAB-PROVISIONED", user_data)
         self.assertRegex(meta_data, r"instance-id:\s*sclab-0123456789ab")
+        self.assertNotRegex(user_data + meta_data, r"@[A-Z][A-Z0-9_]*@")
+
+    def test_seed_takes_one_public_key_line(self):
+        # user-data is YAML that cloud-init acts on as root: whatever the
+        # key file holds beyond one ed25519 line would be a second key, or
+        # more YAML.
+        for bad in (KEY + "\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIother another", KEY + "\nruncmd: [[touch, /x]]",
+                    KEY + " two words", KEY.replace("ssh-ed25519", "ssh-rsa"), KEY.replace("ssh-ed25519 ", ""),
+                    "ssh-ed25519 AAAA'$(touch /x)' sclab", "", b"\n"):
+            with self.assertRaisesRegex(vm.LabError, "not one ed25519 public key line", msg=bad):
+                vm.render_seed("0123456789ab", bad)
+        user_data, _ = vm.render_seed("0123456789ab", (KEY + "\n").encode())  # as key.pub is read
+        self.assertIn(KEY, user_data)
+        for bad in ("0123456789a", "0123456789AB", "0123456789abc", "../0123456789"):
+            with self.assertRaisesRegex(vm.LabError, "bad reference hash", msg=bad):
+                vm.render_seed(bad, KEY)
+
+    def test_fill_template(self):
+        text = "a: @A@\nlist:\n    @BLOCK@\nb: @A@ @B@\n"
+        values = {"A": "1", "B": "2", "BLOCK": "x\n\n y\n", "UNUSED": "3"}
+        self.assertEqual(vm.fill_template(text, values, blocks=("BLOCK",)), "a: 1\nlist:\n    x\n\n     y\nb: 1 2\n")
+        # A token nobody filled would reach cloud-init as it is.
+        del values["B"]
+        with self.assertRaisesRegex(vm.LabError, "left unfilled: @B@$"):
+            vm.fill_template(text, values, blocks=("BLOCK",))
+        with self.assertRaisesRegex(vm.LabError, "left unfilled: @BLOCK@$"):  # a block not alone on its line
+            vm.fill_template("k: @BLOCK@\n", values, blocks=("BLOCK",))
+        with self.assertRaisesRegex(vm.LabError, "value for A has a newline"):
+            vm.fill_template("a: @A@\n", {"A": "1\nb: 2"})
+
+    def test_lab_conf_is_checked(self):
+        text = read_file(vm.CONF_PATH).decode()
+        conf = vm.parse_conf(text)
+        self.assertRegex(conf["IMAGE_SHA256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(conf.int("SMP"), 2)
+        pin = "IMAGE_SHA256=" + conf["IMAGE_SHA256"]
+        for bad, why in ((text.replace(pin, pin[:-1]), "IMAGE_SHA256 is not a sha256"),  # a pin cut short pins nothing
+                         (text.replace(pin, "IMAGE_SHA256=" + "g" * 64), "IMAGE_SHA256 is not a sha256"),
+                         (text.replace(pin, "IMAGE_SHA256="), "missing IMAGE_SHA256"),
+                         (text + pin + "\n", "IMAGE_SHA256 is set twice"),
+                         (text.replace("SMP=2", "SMP=two"), "SMP=two is not a number")):
+            with self.assertRaisesRegex(vm.LabError, why):
+                vm.parse_conf(bad)
+
+    def test_ssh_keeps_the_users_ssh_out(self):
+        # The lab's key and nothing else of ssh's on this machine: no
+        # config file, no agent, no other identity, no known_hosts line.
+        seen = []
+        with mock.patch.object(vm, "run_timed", lambda argv, timeout, input=None: seen.append(argv)):
+            vm.ssh(2299, "/cache/key", "true", timeout=5)
+            vm.scp_to(2299, "/cache/key", ["a", "b"], "/tmp/", timeout=5)
+            vm.scp_from(2299, "/cache/key", "/etc/fstab", "out", timeout=5)
+        seen.append(vm.ssh_argv(2299, "/cache/key"))  # vm.py ssh
+        self.assertEqual([a[0] for a in seen], ["ssh", "scp", "scp", "ssh"])
+        for argv in seen:
+            options = {argv[i + 1] for i, a in enumerate(argv) if a == "-o"}
+            self.assertLessEqual({"IdentitiesOnly=yes", "IdentityAgent=none", "UserKnownHostsFile=/dev/null",
+                                  "BatchMode=yes"}, options, argv)
+            self.assertEqual(argv[argv.index("-F") + 1], "/dev/null", argv)
+            self.assertEqual([argv[i + 1] for i, a in enumerate(argv) if a == "-i"], ["/cache/key"], argv)
+            self.assertEqual(argv[argv.index("-p" if argv[0] == "ssh" else "-P") + 1], "2299", argv)
+        self.assertEqual(seen[0][-2:], ["owner@127.0.0.1", "true"])
+        self.assertEqual(seen[1][-3:], ["a", "b", "owner@127.0.0.1:/tmp/"])
+        self.assertEqual(seen[2][-2:], ["owner@127.0.0.1:/etc/fstab", "out"])
+
+    def test_seed_server_is_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = vm.SeedServer({"user-data": "#cloud-config\n", "meta-data": b"instance-id: x\n"},
+                                 os.path.join(tmp, "seed.log")).start()
+            self.addCleanup(seed.stop)
+            # The guest comes in through QEMU's 10.0.2.2: nothing else on the network needs it.
+            self.assertEqual(seed.httpd.socket.getsockname(), ("127.0.0.1", seed.port))
+            self.assertEqual(seed.guest_url, "http://10.0.2.2:%d/" % seed.port)
+
+            def get(path, method="GET"):
+                c = http.client.HTTPConnection("127.0.0.1", seed.port, timeout=5)
+                self.addCleanup(c.close)
+                c.request(method, path)
+                r = c.getresponse()
+                return r.status, r.read()
+
+            self.assertEqual(get("/user-data"), (200, b"#cloud-config\n"))
+            self.assertEqual(get("/meta-data?x=1"), (200, b"instance-id: x\n"))
+            self.assertEqual(get("/user-data", "HEAD"), (200, b""))
+            self.assertEqual(get("/vendor-data"), (404, b""))
+            self.assertEqual((seed.fetched("user-data"), seed.fetched("vendor-data")), (True, False))
+            seed.stop()
+            self.assertFalse(vm.port_open(seed.port, 1))
+            self.assertEqual(read_file(os.path.join(tmp, "seed.log")).count(b"GET /"), 3)
+
+    # /proc as running_qemu reads it: pid -> (comm, real uid, command line), None for a process that is gone.
+    PROC = {"101": ("qemu-system-x86", 1000, b"qemu-system-x86_64\0-name\0sclab-a\0-S\0"),
+            "102": ("qemu-system-x86", 1001, b"qemu-system-x86_64\0-name\0theirs\0"),
+            "103": ("bash", 1000, b"bash\0"),
+            "104": None,
+            "105": ("qemu-system-x86", 1000, None)}
+
+    def test_running_qemu_is_this_users_only(self):
+        # "One VM at a time" is about this user's: another user's QEMU
+        # (uid 1001's) must not stop the lab, and is not the lab's to count.
+        def proc_open(path, mode="r"):
+            pid, name = re.match(r"^/proc/(\d+)/(status|cmdline)$", path).groups()
+            if self.PROC[pid] is None or (name == "cmdline" and self.PROC[pid][2] is None):
+                raise FileNotFoundError(path)
+            comm, uid, cmdline = self.PROC[pid]
+            if name == "cmdline":
+                return io.BytesIO(cmdline)
+            return io.StringIO("Name:\t%s\nUmask:\t0022\nState:\tS (sleeping)\nPid:\t%s\nUid:\t%d\t%d\t%d\t%d\n"
+                               "Gid:\t100\t100\t100\t100\n" % (comm, pid, uid, uid, uid, uid))
+
+        listdir = os.listdir
+        with mock.patch.object(vm, "open", proc_open, create=True), \
+                mock.patch.object(vm.os, "listdir", lambda d: sorted(self.PROC) + ["self", "uptime"] if d == "/proc"
+                                  else listdir(d)):
+            self.assertEqual(vm.running_qemu(1000), [(101, "qemu-system-x86_64 -name sclab-a -S"), (105, "")])
+            self.assertEqual(vm.running_qemu(1001), [(102, "qemu-system-x86_64 -name theirs")])
+            with mock.patch.object(vm.os, "getuid", lambda: 1001):
+                self.assertEqual([pid for pid, _ in vm.running_qemu()], [102])
 
     def test_seed_quiets_writers_of_etc(self):
         """scd records every change under /etc and check 3.6 wants the
@@ -1162,24 +1437,69 @@ class TestVm(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), h)
 
 
-class TestCacheAndLock(unittest.TestCase):
-    """The chunk D review: the lab chmods and cleans only a directory
-    that is its own; one lab command per user, whatever the cache; the
-    first signal is the only one that counts."""
+def quiet(msg):
+    pass
+
+
+def mode_of(path):
+    return os.stat(path).st_mode & 0o777
+
+
+def read_file(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+class CacheCase(unittest.TestCase):
+    """A test with a temp directory to make its cache in, lab.conf, and
+    nothing of this machine's."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.conf = vm.load_conf()
         os.makedirs(self.path("xdg"))
-        # Never this machine's QEMUs or its real per-user lock.
+        # Never this machine's QEMUs, its real per-user lock or its cache.
         for p in (mock.patch.object(vm, "running_qemu", lambda: []),
-                  mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.path("xdg")})):
+                  mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.path("xdg"),
+                                               "SC_LAB_CACHE": self.path("no-cache")})):
             p.start()
             self.addCleanup(p.stop)
 
     def path(self, *parts):
         return os.path.join(self.tmp.name, *parts)
+
+    def file(self, name, data=b"", mode=0o644):
+        """Writes a file in the temp directory; its path."""
+        p = self.path(name)
+        with open(p, "wb") as f:
+            f.write(data if isinstance(data, bytes) else data.encode())
+        os.chmod(p, mode)
+        return p
+
+    def stub(self, name, body):
+        """A stand-in for a tool the lab runs: a sh script, first on
+        PATH, that logs its command line to calls() and then runs body."""
+        d = self.path("bin")
+        if not os.path.isdir(d):
+            os.mkdir(d)
+            p = mock.patch.dict(os.environ, {"PATH": d + os.pathsep + os.environ.get("PATH", os.defpath)})
+            p.start()
+            self.addCleanup(p.stop)
+        self.file(os.path.join("bin", name), '#!/bin/sh\necho "%s $*" >>"%s"\n%s\n' % (name, self.path("calls"), body),
+                  0o755)
+
+    def calls(self):
+        try:
+            return read_file(self.path("calls")).decode().split("\n")[:-1]
+        except FileNotFoundError:
+            return []
+
+
+class TestCacheAndLock(CacheCase):
+    """The chunk D review: the lab chmods and cleans only a directory
+    that is its own; one lab command per user, whatever the cache; the
+    first signal is the only one that counts."""
 
     def test_a_foreign_directory_is_refused_untouched(self):
         proj = self.path("proj")
@@ -1231,6 +1551,78 @@ class TestCacheAndLock(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(os.path.join(cache, "images"))), sorted([pinned, "holiday.jpg", "raw.img"]))
         for f in ("thesis.docx.part", "notes.txt"):
             self.assertTrue(os.path.exists(os.path.join(cache, f)), f)
+
+    def test_an_old_cache_gets_its_mode_back(self):
+        cache = vm.ensure_cache(self.path("c"))
+        os.chmod(cache, 0o755)
+        os.rmdir(os.path.join(cache, "runs"))
+        vm.ensure_cache(cache)
+        self.assertEqual(mode_of(cache), 0o700)
+        self.assertEqual(mode_of(os.path.join(cache, "runs")), 0o700)
+
+    def test_gc_keeps_the_reference_image_of_this_checkout(self):
+        cache = vm.ensure_cache(self.path("c"))
+        stale = [os.path.join(cache, "ref-0123456789ab." + ext) for ext in ("qcow2", "VARS.fd", "json")]
+        for f in stale:
+            open(f, "w").close()
+        # Without the key nothing says which reference is this checkout's: none goes.
+        self.assertEqual(vm.gc(self.conf, cache=cache, log=quiet), [])
+        self.file(os.path.join("c", "key.pub"), KEY + "\n")
+        ref = vm.ref_info(self.conf, cache)
+        for k in ("qcow2", "vars", "json"):
+            open(ref[k], "w").close()
+        self.assertEqual(sorted(vm.gc(self.conf, cache=cache, log=quiet)), sorted(stale))
+        self.assertEqual(sorted(f for f in os.listdir(cache) if f.startswith("ref-")),
+                         sorted(os.path.basename(ref[k]) for k in ("qcow2", "vars", "json")))
+        self.assertTrue(vm.find_ref(self.conf, cache)["ready"])
+
+    def test_gc_keeps_keep_runs_and_a_live_up_json(self):
+        cache = vm.ensure_cache(self.path("c"))
+        self.conf["KEEP_RUNS"] = "2"
+        runs = ["20261005T1%05dZ-bios-abc1234" % i for i in range(3)]
+        for d in runs[1:]:
+            os.makedirs(os.path.join(cache, "runs", d))
+        # The oldest is a link to a directory elsewhere: the link goes, and nothing behind it.
+        os.mkdir(self.path("elsewhere"))
+        kept = self.file(os.path.join("elsewhere", "serial.raw"), "evidence")
+        os.symlink(self.path("elsewhere"), os.path.join(cache, "runs", runs[0]))
+        # A "vm.py up" that runs (by its command line, as vm.py looks for it), and its up.json.
+        up = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "/x/lab/vm.py", "up", "bios"])
+        self.addCleanup(up.wait)
+        self.addCleanup(up.kill)
+        state = self.file(os.path.join("c", "up.json"), json.dumps({"pid": up.pid}))
+        with vm.lab_lock(cache):  # another lab command is at work: gc deletes nothing under it
+            with self.assertRaisesRegex(vm.LabError, "another lab command holds"):
+                vm.gc(self.conf, cache=cache, log=quiet)
+        self.assertEqual(len(os.listdir(os.path.join(cache, "runs"))), 3)
+        self.assertEqual(vm.gc(self.conf, cache=cache, log=quiet), [os.path.join(cache, "runs", runs[0])])
+        self.assertEqual((sorted(os.listdir(os.path.join(cache, "runs"))), read_file(kept)), (runs[1:], b"evidence"))
+        up.kill()
+        up.wait()
+        self.assertEqual(vm.gc(self.conf, cache=cache, log=quiet), [state])  # stale now
+        self.assertFalse(os.path.exists(state))
+        self.file(os.path.join("c", "up.json"), json.dumps({"pid": os.getpid()}))  # a pid that is another program's
+        self.assertEqual(vm.gc(self.conf, cache=cache, log=quiet), [state])
+
+    def test_the_lock_file(self):
+        cache = vm.ensure_cache(self.path("c"))
+        lock = os.path.join(cache, "lock")
+        self.addCleanup(os.umask, os.umask(0o022))
+        with vm.lab_lock(cache):
+            for f in (lock, vm.user_lock_path()):
+                self.assertEqual(mode_of(f), 0o600)
+                self.assertEqual(read_file(f), b"%d\n" % os.getpid())
+            with self.assertRaisesRegex(vm.LabError, r"holds %s \(pid %d\)" % (re.escape(lock), os.getpid())):
+                with vm.lab_lock(cache):  # it says whom to look for
+                    pass
+        # A link where the lock goes is not followed: the lab truncates its lock and writes to it.
+        victim = self.file("victim", "keep me\n")
+        os.unlink(lock)
+        os.symlink(victim, lock)
+        with self.assertRaisesRegex(vm.LabError, "the lab's lock"):
+            with vm.lab_lock(cache):
+                pass
+        self.assertEqual(read_file(victim), b"keep me\n")
 
     def test_one_command_per_user_whatever_the_cache(self):
         a, b = vm.ensure_cache(self.path("a")), vm.ensure_cache(self.path("b"))
@@ -1301,6 +1693,520 @@ except BaseException as e:
         # nohup: SIGHUP is inherited as ignored, and the lab leaves it so.
         rc, out = self.signals("SIGTERM", pre=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN))
         self.assertEqual((rc, out), (0, ["hup ignored", "teardown done", "ended by SystemExit 143"]))
+
+
+# -- vm.py: the pinned image, the key, the reference image ------------------------
+
+class TestImage(CacheCase):
+    """The pinned image: nothing gets into the cache, or is used from it,
+    unless its sha256 is lab.conf's. curl is a stand-in; nothing is
+    downloaded."""
+
+    GOOD, OTHER = b"the pinned image\n", b"another image\n"
+    # curl ... -o PART URL: copies $CURL_GIVES to PART, exits $CURL_RC.
+    CURL = ('while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\n'
+            '[ -z "$CURL_GIVES" ] || cp "$CURL_GIVES" "$out"\nexit "${CURL_RC:-0}"')
+
+    def setUp(self):
+        super().setUp()
+        self.conf["IMAGE_SHA256"] = hashlib.sha256(self.GOOD).hexdigest()
+        self.cache = vm.ensure_cache(self.path("c"))
+        self.dest = vm.image_path(self.conf, self.cache)
+
+    def images(self):
+        return sorted(os.listdir(os.path.join(self.cache, "images")))
+
+    def fetch(self, src=None):
+        return vm.fetch_image(self.conf, self.cache, src, log=quiet)
+
+    def test_a_copy_with_the_pin_is_kept_read_only(self):
+        self.assertEqual(self.fetch(self.file("good.img", self.GOOD)), self.dest)
+        self.assertEqual((read_file(self.dest), mode_of(self.dest)), (self.GOOD, 0o444))
+        self.assertEqual(self.images(), [os.path.basename(self.dest)])  # no .part
+        self.assertEqual(vm.check_image(self.conf, self.cache), self.dest)
+
+    def test_a_copy_with_another_sha256_is_refused(self):
+        with self.assertRaisesRegex(vm.LabError, "has sha256 %s; lab.conf pins %s" % (
+                hashlib.sha256(self.OTHER).hexdigest(), self.conf["IMAGE_SHA256"])):
+            self.fetch(self.file("other.img", self.OTHER))
+        self.assertEqual(self.images(), [])  # neither the image nor its .part
+        with self.assertRaisesRegex(vm.LabError, "cannot copy"):
+            self.fetch(self.path("no-such.img"))
+        self.assertEqual(self.images(), [])
+
+    def test_an_image_in_the_cache_is_hashed_again(self):
+        # Taken by its name alone, a changed image would be what boots.
+        self.file(os.path.join("c", "images", os.path.basename(self.dest)), self.OTHER)
+        with self.assertRaisesRegex(vm.LabError, "lab.conf pins"):
+            vm.check_image(self.conf, self.cache)
+        self.fetch(self.file("good.img", self.GOOD))
+        self.assertEqual(read_file(self.dest), self.GOOD)
+        # The pinned one is kept as it is: the source is not even read.
+        self.fetch(self.path("no-such.img"))
+        self.assertEqual(self.images(), [os.path.basename(self.dest)])
+        os.unlink(self.dest)
+        with self.assertRaisesRegex(vm.LabError, "no image .*: run make lab-image"):
+            vm.check_image(self.conf, self.cache)
+
+    def test_a_download_is_held_to_the_pin(self):
+        self.stub("curl", self.CURL)
+        good, other = self.file("good", self.GOOD), self.file("other", self.OTHER)
+        with mock.patch.dict(os.environ, {"CURL_GIVES": other}):
+            with self.assertRaisesRegex(vm.LabError, "lab.conf pins"):
+                self.fetch()
+        self.assertEqual(self.images(), [])
+        with mock.patch.dict(os.environ, {"CURL_GIVES": good, "CURL_RC": "22"}):  # all of it there, but curl says no
+            with self.assertRaisesRegex(vm.LabError, r"curl failed \(exit 22\)"):
+                self.fetch()
+        self.assertEqual(self.images(), [])
+        with mock.patch.dict(os.environ, {"CURL_GIVES": good}):
+            self.assertEqual(self.fetch(), self.dest)
+        self.assertEqual((read_file(self.dest), mode_of(self.dest)), (self.GOOD, 0o444))
+        self.assertEqual(self.images(), [os.path.basename(self.dest)])
+        for call in self.calls():  # to the .part file, from the URL lab.conf names
+            self.assertTrue(call.endswith(" -o %s.part %s" % (self.dest, vm.image_url(self.conf))), call)
+        self.assertEqual(len(self.calls()), 3)
+
+
+class TestKey(CacheCase):
+    # ssh-keygen ... -f FILE: writes FILE and FILE.pub as a umask of 022 leaves them.
+    KEYGEN = ('while [ $# -gt 1 ]; do [ "$1" != -f ] || f=$2; shift; done\n'
+              '[ -z "$KEYGEN_SAYS" ] || { echo "$KEYGEN_SAYS" >&2; exit 1; }\n'
+              'umask 022; echo PRIVATE >"$f"; echo "%s" >"$f.pub"' % KEY)
+
+    def test_the_key_is_made_once_and_private(self):
+        cache = vm.ensure_cache(self.path("c"))
+        self.stub("ssh-keygen", self.KEYGEN)
+        with mock.patch.dict(os.environ, {"KEYGEN_SAYS": "ssh-keygen: no entropy"}):
+            with self.assertRaisesRegex(vm.LabError, "ssh-keygen failed: ssh-keygen: no entropy"):
+                vm.ensure_key(cache, log=quiet)
+        key, pub = vm.ensure_key(cache, log=quiet)
+        self.assertEqual((key, pub), vm.key_paths(cache))
+        self.assertEqual(mode_of(key), 0o600)  # whatever ssh-keygen left it as
+        self.assertEqual(read_file(pub).decode().strip(), KEY)
+        self.assertEqual(sorted(os.listdir(cache)), sorted([vm.MARKER, "images", "runs", "key", "key.pub"]))
+        self.assertEqual(vm.ensure_key(cache, log=quiet), (key, pub))  # the same key from now on
+        self.assertEqual(self.calls(), ["ssh-keygen -q -t ed25519 -N  -C sclab-lab -f %s.part" % key] * 2)
+
+
+class FakeBoot:
+    """What _await_provisioned needs of a Vm, its Qmp and its SerialTap:
+    the console's text, and the SHUTDOWN event if the guest powered off."""
+
+    def __init__(self, text, off=True, alive=True):
+        self.text, self.off, self.up = text.encode(), off, alive
+        self.qmp = self
+        self.proc = types.SimpleNamespace(returncode=1)
+        self.qemu_log = os.devnull
+
+    def data(self):
+        return self.text
+
+    def wait_event(self, names, since=0, timeout=None):
+        return {"event": "SHUTDOWN", "data": {"guest": True, "reason": "guest-shutdown"}} if self.off else None
+
+    def wait_exit(self, timeout):
+        return 0
+
+    def alive(self):
+        return self.up
+
+
+class TestProvision(CacheCase):
+    """The reference image, with the boot itself replaced: what
+    provision() leaves in the cache, and what counts as a good boot."""
+
+    IMAGE = b"the pinned image\n"
+
+    def setUp(self):
+        super().setUp()
+        self.cache = vm.ensure_cache(self.path("c"))
+        self.conf.update(IMAGE_SHA256=hashlib.sha256(self.IMAGE).hexdigest(), QEMU="sclab-test-qemu",
+                         OVMF_CODE=self.file("CODE.fd", "code"), OVMF_VARS=self.file("VARS.fd", "vars"),
+                         PROVISION_RETRIES="2")
+        self.image = self.file(os.path.join("c", "images", os.path.basename(vm.image_path(self.conf, self.cache))),
+                               self.IMAGE)
+        self.file(os.path.join("c", "key"), "PRIVATE", 0o600)
+        self.file(os.path.join("c", "key.pub"), KEY + "\n")
+        for tool in ("sclab-test-qemu", "ssh-keygen"):  # they must be there; neither is run
+            self.stub(tool, "exit 1")
+        self.stub("qemu-img", 'exit "${QEMU_IMG_RC:-0}"')
+        self.boots, self.panics = [], 0
+
+        class Seed(vm.SeedServer):  # bound, but no guest will ask: no thread to serve it (and to wait for)
+            def start(self):
+                return self
+
+        for p in (mock.patch.object(vm, "_provision_attempt", self.boot), mock.patch.object(vm, "SeedServer", Seed)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def boot(self, conf, image, part, run, h12, seed, attempt, log):
+        """A provisioning boot: the disk and the VARS it leaves, and a
+        panic in the first self.panics of them."""
+        self.boots.append(attempt)
+        self.assertEqual(image, self.image)
+        for f, data in ((part, b"disk %d" % attempt), (os.path.join(run, "VARS.fd"), b"vars %d" % attempt)):
+            with open(f, "wb") as fo:
+                fo.write(data)
+        if attempt <= self.panics:
+            return {"outcome": "panic", "why": "Kernel panic - not syncing"}
+        return {"outcome": "ok", "kernel": conf["KERNEL"], "grub_no_timer_check": 1}
+
+    def provision(self, **kw):
+        return vm.provision(self.conf, self.cache, log=quiet, **kw)
+
+    def refs(self):
+        return sorted(f for f in os.listdir(self.cache) if f.startswith("ref-"))
+
+    def test_three_read_only_files(self):
+        ref = self.provision()
+        self.assertTrue(ref["ready"])
+        self.assertEqual(self.refs(), ["ref-%s.%s" % (ref["h12"], ext) for ext in ("VARS.fd", "json", "qcow2")])
+        for k in ("qcow2", "vars", "json"):  # every run's overlay rests on them
+            self.assertEqual(mode_of(ref[k]), 0o444, k)
+        self.assertEqual((read_file(ref["qcow2"]), read_file(ref["vars"])), (b"disk 1", b"vars 1"))
+        meta = json.loads(read_file(ref["json"]))
+        self.assertEqual((meta["h"], meta["image_sha256"], meta["kernel"], meta["attempts"]),
+                         (ref["h"], self.conf["IMAGE_SHA256"], self.conf["KERNEL"], 1))
+        self.assertEqual(meta["ovmf_code_sha256"], hashlib.sha256(b"code").hexdigest())  # P.5 compares it
+        self.assertEqual(self.calls(), ["qemu-img check %s.part" % ref["qcow2"]])
+        self.assertFalse(os.path.exists(os.path.join(meta["run"], "VARS.fd")))
+        self.provision()  # it is there: no boot
+        self.assertEqual(self.boots, [1])
+        self.provision(force=True)
+        self.assertEqual((self.boots, mode_of(ref["qcow2"])), ([1, 1], 0o444))
+
+    def test_the_qcow2_appears_last(self):
+        # A reference image is one whose three files are there. The disk
+        # is the one a run opens: it must never be there without the others.
+        ref = vm.ref_info(self.conf, self.cache)
+        there, replace = [], os.replace
+
+        def watching(src, dst):
+            if dst == ref["qcow2"]:
+                there.append([os.path.exists(ref[k]) for k in ("vars", "json")])
+            replace(src, dst)
+
+        with mock.patch.object(vm.os, "replace", watching):
+            self.provision()
+        self.assertEqual(there, [[True, True]])
+
+    def test_a_failed_qemu_img_check_leaves_nothing(self):
+        with mock.patch.dict(os.environ, {"QEMU_IMG_RC": "2"}):  # corruption
+            with self.assertRaisesRegex(vm.LabError, r"qemu-img check .* failed \(exit 2\)"):
+                self.provision()
+        self.assertEqual(self.refs(), [])  # no file of it, and no .part
+        with self.assertRaisesRegex(vm.LabError, "no reference image"):
+            vm.find_ref(self.conf, self.cache)
+        with mock.patch.dict(os.environ, {"QEMU_IMG_RC": "3"}):  # leaked clusters only
+            self.assertTrue(self.provision()["ready"])
+
+    def test_a_panic_gets_a_new_disk_a_few_times(self):
+        self.panics = 2
+        ref = self.provision()
+        self.assertEqual((self.boots, read_file(ref["qcow2"])), ([1, 2, 3], b"disk 3"))
+        self.assertEqual(json.loads(read_file(ref["json"]))["attempts"], 3)
+        self.panics = 9
+        with self.assertRaisesRegex(vm.LabError, "the guest panicked 3 times"):
+            self.provision(force=True)
+        self.assertEqual((self.boots[3:], self.refs()), ([1, 2, 3], []))
+
+    def test_only_the_pinned_image_is_booted(self):
+        with open(self.image, "ab") as f:
+            f.write(b"one more byte")
+        with self.assertRaisesRegex(vm.LabError, "lab.conf pins"):
+            self.provision()
+        with self.assertRaisesRegex(vm.LabError, "lab.conf pins"):
+            self.provision(force=True)
+        self.assertEqual((self.boots, self.refs()), ([], []))
+
+    def test_one_at_a_time(self):
+        with vm.lab_lock(self.cache):
+            with self.assertRaisesRegex(vm.LabError, "another lab command holds"):
+                self.provision()
+        self.assertEqual(self.boots, [])
+        # Another provision ended between this one's look and its lock:
+        # what it made is kept, not deleted and built once more.
+        ref, lab_lock = vm.ref_info(self.conf, self.cache), vm.lab_lock
+
+        @contextlib.contextmanager
+        def after_the_other(cache, guard=True):
+            for k in ("qcow2", "vars", "json"):
+                self.file(os.path.join("c", os.path.basename(ref[k])), "theirs", 0o444)
+            with lab_lock(cache, guard) as path:
+                yield path
+
+        with mock.patch.object(vm, "lab_lock", after_the_other):
+            self.assertTrue(self.provision()["ready"])
+        self.assertEqual((self.boots, read_file(ref["qcow2"])), ([], b"theirs"))
+
+    CONSOLE = ("[    0.000000] Linux version %s (buildd@lcy02-amd64-001) #152-Ubuntu SMP\n"
+               "sclab: grub.cfg no_timer_check lines: 3\n"
+               "SCLAB-PROVISIONED sclab-0123456789ab after 412 s\n[  620.11] reboot: Power down\n")
+
+    def awaited(self, text, **kw):
+        boot = FakeBoot(text, **kw)
+        return vm._await_provisioned(self.conf, boot, boot, 0, "0123456789ab", quiet)
+
+    def test_a_good_boot_is_the_pinned_kernel_to_the_end(self):
+        kernel = self.conf["KERNEL"]
+        good = self.CONSOLE % kernel
+        self.assertEqual(self.awaited(good), {"outcome": "ok", "kernel": kernel, "grub_no_timer_check": 3})
+        # Another kernel in the image: what the lab measured on the pinned one no longer holds.
+        with self.assertRaisesRegex(vm.LabError, "boots kernel 6.8.0-999-generic; lab.conf pins KERNEL=%s" % kernel):
+            self.awaited(self.CONSOLE % "6.8.0-999-generic")
+        self.assertEqual(self.awaited(good.replace("SCLAB-PROV", "Kernel panic - not syncing: x\nSCLAB-PROV")),
+                         {"outcome": "panic", "why": "Kernel panic - not syncing"})
+        for text, why in ((good.replace("SCLAB-PROVISIONED", "SCLAB-PROV"), "powered off .* before SCLAB-PROVISIONED"),
+                          (good.replace("sclab-0123456789ab", "sclab-ba9876543210"), "before SCLAB-PROVISIONED"),
+                          (good.replace("lines: 3", "lines: 0"), "left no_timer_check out of grub.cfg")):
+            with self.assertRaisesRegex(vm.LabError, why):
+                self.awaited(text)
+        with self.assertRaisesRegex(vm.LabError, r"QEMU exited \(status 1\) without a SHUTDOWN event"):
+            self.awaited(good, off=False, alive=False)
+        self.conf["BUDGET_PROVISION"] = "0"
+        with self.assertRaisesRegex(vm.LabError, "no SCLAB-PROVISIONED and power-off within 0 s"):
+            self.awaited(good, off=False)
+
+    def test_an_overlay_has_vars_of_its_own(self):
+        ref = {"qcow2": self.file(os.path.join("c", "ref-0123456789ab.qcow2"), "disk", 0o444),
+               "vars": self.file(os.path.join("c", "ref-0123456789ab.VARS.fd"), "vars", 0o444)}
+        run = vm.new_run_dir(self.cache, "uefi", "abc1234")
+        disk, vars_path = vm.make_overlay(ref, run, "uefi")
+        # OVMF writes its variables: to the run's copy, never to the reference's.
+        self.assertEqual((read_file(vars_path), mode_of(vars_path), mode_of(ref["vars"])), (b"vars", 0o600, 0o444))
+        self.assertEqual(os.path.dirname(vars_path), run)
+        self.assertEqual(self.calls(), ["qemu-img create -q -f qcow2 -b ../../ref-0123456789ab.qcow2 -F qcow2 " + disk])
+        run = vm.new_run_dir(self.cache, "bios", "abc1234")
+        self.assertEqual(vm.make_overlay(ref, run, "bios"), (os.path.join(run, "disk.qcow2"), None))
+        self.assertEqual(os.listdir(run), ["evidence"])
+        with mock.patch.dict(os.environ, {"QEMU_IMG_RC": "1"}):
+            with self.assertRaisesRegex(vm.LabError, "qemu-img create"):
+                vm.make_overlay(ref, run, "bios")
+
+
+# -- vm.py: QMP, and QEMU as a child ----------------------------------------------
+
+class FakeQmp:
+    """QEMU's QMP monitor on a unix socket, for one client: the greeting,
+    then for each command what answer(msg) returns ({"return": ...} or
+    {"error": ...}; None: no reply). event() sends an event."""
+
+    def __init__(self, path, answer):
+        self.path, self.answer = path, answer
+        self.got = []
+        self.conn = None
+        self._lock = threading.Lock()
+        self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.srv.bind(path)
+        self.srv.listen(1)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self):
+        try:
+            self.conn, _ = self.srv.accept()
+            self.send({"QMP": {"version": {"qemu": {"major": 8, "minor": 2, "micro": 2}}, "capabilities": ["oob"]}})
+            for line in self.conn.makefile("rb"):
+                msg = json.loads(line)
+                self.got.append(msg)
+                reply = self.answer(msg)
+                if reply is not None:
+                    self.send(dict(reply, id=msg["id"]))
+        except OSError:
+            pass
+
+    def send(self, msg):
+        with self._lock:
+            self.conn.sendall((json.dumps(msg) + "\r\n").encode())
+
+    def event(self, name, **data):
+        self.send({"event": name, "data": data, "timestamp": {"seconds": 1759680000, "microseconds": 0}})
+
+    def close(self):
+        for s in (self.conn, self.srv):
+            if s is not None:
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                s.close()
+        self.thread.join(5)
+
+
+class TestQmp(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.qemu = FakeQmp(os.path.join(self.tmp.name, "qmp.sock"), self.answer)
+        self.addCleanup(self.qemu.close)
+        self.qmp = vm.Qmp(self.qemu.path, os.path.join(self.tmp.name, "qmp.log"))
+        self.addCleanup(self.qmp.close)
+        self.qmp.connect(timeout=10)
+
+    def answer(self, msg):
+        name = msg["execute"]
+        if name == "query-status":
+            return {"return": {"running": True, "status": "running"}}
+        if name == "system_wakeup":
+            return {"error": {"class": "GenericError", "desc": "Unable to wake up: guest is not in suspended state"}}
+        if name == "stall":
+            return None
+        if name == "die":  # QEMU goes away with the command unanswered
+            self.qemu.conn.shutdown(socket.SHUT_RDWR)
+            return None
+        return {"return": {}}
+
+    def test_commands_and_their_replies(self):
+        self.assertEqual(self.qmp.greeting["QMP"]["capabilities"], ["oob"])
+        self.assertEqual([m["execute"] for m in self.qemu.got], ["qmp_capabilities"])
+        self.assertEqual(self.qmp.cmd("query-status"), {"running": True, "status": "running"})
+        self.assertEqual(self.qmp.cmd("send-key", {"keys": []}), {})
+        self.assertEqual(self.qemu.got[-1], {"execute": "send-key", "arguments": {"keys": []}, "id": "sc3"})
+        # QEMU's "no" is an error: a reset or a key it refused did not happen.
+        with self.assertRaisesRegex(vm.QmpError, "QMP system_wakeup: GenericError: Unable to wake up"):
+            self.qmp.cmd("system_wakeup")
+        with self.assertRaisesRegex(vm.QmpError, "no QMP reply to stall in 0.2 s"):
+            self.qmp.cmd("stall", timeout=0.2)
+        self.assertEqual(self.qmp.cmd("query-status")["status"], "running")  # each reply goes to its command
+
+    def test_wait_event_from_a_mark(self):
+        # e2e marks, resets, and waits for the RESET that follows: one it
+        # has seen already must not answer.
+        self.qemu.event("RESET", guest=False, reason="host-qmp-system-reset")
+        first = self.qmp.wait_event("RESET", timeout=10)
+        self.assertEqual((first["seq"], first["data"]["reason"]), (0, "host-qmp-system-reset"))
+        mark = self.qmp.mark()
+        self.assertEqual(mark, 1)
+        self.assertIsNone(self.qmp.wait_event("RESET", since=mark, timeout=0.1))
+        self.qemu.event("STOP")
+        self.qemu.event("RESET", guest=True, reason="guest-reset")
+        ev = self.qmp.wait_event(("SHUTDOWN", "RESET"), since=mark, timeout=10)
+        self.assertEqual((ev["seq"], ev["data"]["reason"]), (2, "guest-reset"))
+        self.assertEqual([e["event"] for e in self.qmp.events_since(mark)], ["STOP", "RESET"])
+        self.assertEqual([e["seq"] for e in self.qmp.events_since(0, "RESET")], [0, 2])
+
+    def test_listeners_run_before_a_waiter_sees_the_event(self):
+        # e2e's listener marks the serial log at a RESET, and whoever
+        # waited for the RESET reads from that mark: it must be there.
+        seen = []
+
+        def broken(ev):
+            raise RuntimeError("a listener's bug")
+
+        self.qmp.listeners += [broken, lambda ev: seen.append((ev["event"], ev["seq"], len(self.qmp.events)))]
+        self.qemu.event("RESET")
+        self.assertIsNotNone(self.qmp.wait_event("RESET", timeout=10))
+        self.assertEqual(seen, [("RESET", 0, 0)])  # called, and the event not yet in events
+        self.qemu.event("SHUTDOWN")  # the reader lives on after the bug
+        self.assertIsNotNone(self.qmp.wait_event("SHUTDOWN", timeout=10))
+        self.assertEqual(seen[1:], [("SHUTDOWN", 1, 1)])
+        self.qmp.close()
+        self.assertIn(b"failed: RuntimeError", read_file(os.path.join(self.tmp.name, "qmp.log")))
+
+    def test_qemu_gone(self):
+        t = time.monotonic()
+        with self.assertRaisesRegex(vm.QmpError, "QMP closed before the reply to die"):
+            self.qmp.cmd("die", timeout=20)
+        self.assertIsNone(self.qmp.wait_event("SHUTDOWN", timeout=20))  # none will come
+        self.assertLess(time.monotonic() - t, 10)
+        with self.assertRaisesRegex(vm.QmpError, "QMP is closed: cannot run cont"):
+            self.qmp.cmd("cont")
+        self.qmp.close()
+        self.assertFalse(self.qmp._thread.is_alive())
+
+
+# A stand-in for QEMU: serial.sock and qmp.sock in its working directory, a
+# QMP that says yes to every command, and "quit" ends it. With
+# STAND_IN=deaf it does not end, by quit or by SIGTERM. It writes who it is
+# to child.json first. Its file name is not a QEMU's: vm.running_qemu() of
+# a lab that really runs on this machine does not count it.
+STAND_IN = r"""#!%s
+import ctypes, json, os, signal, socket, sys
+how = os.environ.get("STAND_IN")
+if how == "broken":
+    sys.exit("stand-in: could not open the disk")
+if how == "deaf":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+pdeathsig = ctypes.c_int(-1)
+ctypes.CDLL(None).prctl(2, ctypes.byref(pdeathsig), 0, 0, 0)  # PR_GET_PDEATHSIG
+with open("child.json", "w") as f:
+    json.dump({"pid": os.getpid(), "sid": os.getsid(0), "pgid": os.getpgid(0), "nice": os.nice(0),
+               "pdeathsig": pdeathsig.value, "stdin": os.readlink("/proc/self/fd/0"), "argv": sys.argv[1:]}, f)
+ser, qmp = socket.socket(socket.AF_UNIX), socket.socket(socket.AF_UNIX)
+ser.bind("serial.sock")
+ser.listen(1)
+qmp.bind("qmp.sock")
+qmp.listen(1)
+c, _ = qmp.accept()
+c.sendall(b'{"QMP": {"version": {}, "capabilities": []}}\r\n')
+for line in c.makefile("rb"):
+    m = json.loads(line)
+    c.sendall((json.dumps({"return": {}, "id": m["id"]}) + "\r\n").encode())
+    if m["execute"] == "quit" and how != "deaf":
+        sys.exit(0)
+while how == "deaf":
+    signal.pause()
+"""
+
+
+class TestVmProcess(CacheCase):
+    """Vm with a stand-in for QEMU: how the child is started, and that
+    stop() leaves none."""
+
+    def setUp(self):
+        super().setUp()
+        self.conf.update(QEMU=self.file("stand-in", STAND_IN % sys.executable, 0o755), NICE="3")
+        os.mkdir(self.path("run"))
+        self.said = []
+        # The stand-in forwards no port: whatever else on this machine takes that one is not a leftover.
+        p = mock.patch.object(vm, "port_open", lambda port, timeout=1.0: False)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def start(self, how=""):
+        m = vm.Vm(self.conf, "bios", self.path("run"), self.path("disk.qcow2"), log=self.said.append)
+        self.addCleanup(self.reap, m)
+        with mock.patch.dict(os.environ, {"STAND_IN": how}):
+            return m.start(timeout=30)
+
+    @staticmethod
+    def reap(m):
+        if m.proc is not None and m.proc.poll() is None:
+            m.proc.kill()
+            m.proc.wait(10)
+        if m.qmp is not None:
+            m.qmp.close()
+
+    def test_qemu_is_a_child_that_cannot_outlive_the_lab(self):
+        m = self.start()
+        child = json.loads(read_file(self.path("run", "child.json")))
+        self.assertEqual((child["pid"], child["argv"]), (m.proc.pid, m.args[1:]))
+        # A session of its own: Ctrl-C and a hangup of the terminal go to
+        # the lab alone, which then stops QEMU in order.
+        self.assertEqual((child["sid"], child["pgid"]), (m.proc.pid, m.proc.pid))
+        self.assertNotEqual(child["sid"], os.getsid(0))
+        # And should the lab die with no teardown, the kernel ends QEMU.
+        self.assertEqual(child["pdeathsig"], signal.SIGKILL)
+        self.assertEqual((child["nice"], child["stdin"]), (min(19, os.nice(0) + 3), "/dev/null"))
+        self.assertEqual(m.leftovers(), ["QEMU pid %d still runs" % m.proc.pid, "the QMP reader thread still runs"])
+        self.assertEqual(m.stop(grace=5), 0)  # by QMP's quit
+        self.assertEqual((m.alive(), m.leftovers(), self.said), (False, [], []))
+        self.assertEqual([f for f in os.listdir(self.path("run")) if f.endswith(".sock")], [])
+        self.assertIn(b'"execute": "quit"', read_file(m.qmp_log))
+        self.assertEqual(m.stop(), 0)  # once more does no harm
+
+    def test_a_qemu_that_does_not_quit_is_killed(self):
+        m = self.start("deaf")
+        self.assertEqual(m.stop(grace=0.3), -signal.SIGKILL)
+        self.assertEqual((m.alive(), m.leftovers()), (False, []))
+        self.assertEqual(self.said, ["vm: QEMU pid %d did not quit in 0.3 s: SIGKILL" % m.proc.pid])
+
+    def test_a_qemu_that_does_not_start(self):
+        with self.assertRaisesRegex(vm.LabError, r"QEMU did not start \(it exited, exit 1\)") as c:
+            self.start("broken")
+        self.assertIn("stand-in: could not open the disk", str(c.exception))
 
 
 if __name__ == "__main__":
