@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/spf13/cobra"
 
@@ -96,10 +97,7 @@ func writeConsoles(out io.Writer, report []byte) {
 		if err != nil {
 			continue
 		}
-		// A stopped console (Scroll Lock, XOFF, flow control without a
-		// peer) must not hold up the rescue shell, nor the other consoles.
-		f.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		if _, err := f.Write(report); err == nil {
+		if writeConsole(ttyFile{f}, report) {
 			wrote++
 		}
 		f.Close()
@@ -107,6 +105,67 @@ func writeConsoles(out io.Writer, report []byte) {
 	if wrote == 0 {
 		out.Write(report)
 	}
+}
+
+// A stopped console (Scroll Lock, XOFF, flow control without a peer) must
+// not hold up the rescue shell, nor the other consoles: one that moves
+// nothing for consoleStall is given up. A slow one is not stopped. A
+// serial line whose 4 kB queue is full of boot messages takes no byte of
+// the report for 4 s at 9600 baud, and a plain 2 s limit cut the report
+// in the middle of a line (the M4 lab, on a loaded host). So a console
+// keeps its turn while it takes bytes or its queue drains, for
+// consoleTurn at most: two consoles at their worst, after a report that
+// took all of consoleLimit, still end inside systemd's 90 s.
+var (
+	consoleStall = 5 * time.Second
+	consoleTurn  = 10 * time.Second
+	consoleSlice = 250 * time.Millisecond
+)
+
+// console is a console device as writeConsole needs it.
+type console interface {
+	Write([]byte) (int, error)
+	SetWriteDeadline(time.Time) error
+	queued() int // bytes taken and not yet sent; -1: not known
+}
+
+type ttyFile struct{ *os.File }
+
+func (t ttyFile) queued() int {
+	n := -1
+	if c, err := t.SyscallConn(); err == nil {
+		// Control, not Fd: Fd would make the file blocking again.
+		c.Control(func(fd uintptr) {
+			var q int32
+			if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCOUTQ, uintptr(unsafe.Pointer(&q))); e == 0 {
+				n = int(q)
+			}
+		})
+	}
+	return n
+}
+
+// writeConsole writes report to c and reports whether all of it went.
+func writeConsole(c console, report []byte) bool {
+	start := time.Now()
+	moved, last := start, c.queued()
+	for len(report) > 0 {
+		c.SetWriteDeadline(time.Now().Add(consoleSlice))
+		n, err := c.Write(report)
+		report = report[n:]
+		q := c.queued()
+		if n > 0 || (q >= 0 && q < last) {
+			moved = time.Now()
+		}
+		last = q
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, os.ErrDeadlineExceeded) || time.Since(moved) >= consoleStall || time.Since(start) >= consoleTurn {
+			return false
+		}
+	}
+	return true
 }
 
 // fit shortens path from the left ("...") so that a line of prefix and it

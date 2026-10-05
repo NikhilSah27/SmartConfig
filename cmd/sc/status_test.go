@@ -12,10 +12,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"bytes"
 	"smartconfig/internal/boot"
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
+	"syscall"
+	"unsafe"
 )
 
 // statusEnv is checkEnv (a graph whose fstab is dir/fstab, no validators)
@@ -623,5 +626,157 @@ func TestStatusConsoleLab(t *testing.T) {
 		if got != string(want) {
 			t.Errorf("%s differs from what sc prints now (-update rewrites it):\n--- golden\n%s--- now\n%s", tc.golden, want, got)
 		}
+	}
+}
+
+// fakeConsole is a console that takes what take says per write and whose
+// queue is what queue says; a write it does not finish times out.
+type fakeConsole struct {
+	got   []byte
+	take  func() int
+	queue func() int
+	err   error
+}
+
+func (c *fakeConsole) SetWriteDeadline(time.Time) error { return nil }
+func (c *fakeConsole) queued() int                      { return c.queue() }
+func (c *fakeConsole) Write(p []byte) (int, error) {
+	if c.err != nil {
+		return 0, c.err
+	}
+	n := min(c.take(), len(p))
+	c.got = append(c.got, p[:n]...)
+	if n < len(p) {
+		time.Sleep(time.Millisecond)
+		return n, os.ErrDeadlineExceeded
+	}
+	return n, nil
+}
+
+// A slow console gets the whole report; only one that moves nothing is
+// given up. The M4 lab's serial console took no more of the report for
+// 2 s, and the old flat limit cut it in the middle of a line. Each case
+// sets the limits it is about and leaves the other generous, so a loaded
+// machine (the first version failed under one) cannot decide it.
+func TestWriteConsoleSlowOrStopped(t *testing.T) {
+	oldStall, oldTurn := consoleStall, consoleTurn
+	t.Cleanup(func() { consoleStall, consoleTurn = oldStall, oldTurn })
+	limits := func(stall, turn time.Duration) { consoleStall, consoleTurn = stall, turn }
+	report := bytes.Repeat([]byte("600940 19:37  blocker fstab-source-missing, line 4  /etc/fstab\n"), 20)
+	none := func() int { return -1 }
+
+	// It takes ten bytes at a time: slow, never stopped.
+	limits(time.Minute, time.Minute)
+	slow := &fakeConsole{take: func() int { return 10 }, queue: none}
+	if !writeConsole(slow, report) || !bytes.Equal(slow.got, report) {
+		t.Errorf("slow: got %d of %d bytes", len(slow.got), len(report))
+	}
+
+	// A full queue that drains: no byte of the report is taken for twice
+	// consoleStall, but the queue shrinks all the while. Then it has room.
+	limits(80*time.Millisecond, time.Minute)
+	start, q := time.Now(), 4096
+	drains := &fakeConsole{
+		take: func() int {
+			if time.Since(start) < 2*consoleStall {
+				return 0
+			}
+			return 1 << 20
+		},
+		queue: func() int { q--; return q },
+	}
+	if !writeConsole(drains, report) || !bytes.Equal(drains.got, report) {
+		t.Errorf("a draining queue: got %d of %d bytes", len(drains.got), len(report))
+	}
+
+	// Stopped (XOFF): nothing taken, the queue stands. Given up after
+	// consoleStall, long before its turn is over.
+	for name, queue := range map[string]func() int{"queue stands": func() int { return 4096 }, "queue not known": none} {
+		start = time.Now()
+		stopped := &fakeConsole{take: func() int { return 0 }, queue: queue}
+		if writeConsole(stopped, report) || len(stopped.got) != 0 {
+			t.Errorf("%s: written", name)
+		}
+		if d := time.Since(start); d < consoleStall || d > consoleTurn/2 {
+			t.Errorf("%s: given up after %s, want about %s", name, d, consoleStall)
+		}
+	}
+
+	// A byte now and then for ever: its turn ends.
+	limits(time.Minute, 300*time.Millisecond)
+	start = time.Now()
+	trickle := &fakeConsole{take: func() int { time.Sleep(5 * time.Millisecond); return 1 }, queue: none}
+	if writeConsole(trickle, bytes.Repeat(report, 100)) || len(trickle.got) == 0 {
+		t.Errorf("trickle: written whole, or nothing at all (%d bytes)", len(trickle.got))
+	}
+	if d := time.Since(start); d < consoleTurn || d > consoleStall/2 {
+		t.Errorf("trickle: ended after %s, want about %s", d, consoleTurn)
+	}
+
+	// An error that is no timeout ends it at once.
+	gone := &fakeConsole{err: syscall.EIO, queue: none}
+	if writeConsole(gone, report) {
+		t.Error("EIO: written")
+	}
+}
+
+// ttyFile on real devices: a terminal says how much it has queued, and
+// asking leaves the file non-blocking (os.File.Fd would not).
+func TestTTYFileQueued(t *testing.T) {
+	reg, err := os.OpenFile(filepath.Join(t.TempDir(), "tty1"), os.O_WRONLY|os.O_CREATE|syscall.O_NONBLOCK, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	if q := (ttyFile{reg}).queued(); q != -1 {
+		t.Errorf("a regular file: queued %d", q)
+	}
+	if !writeConsole(ttyFile{reg}, []byte("report\n")) {
+		t.Error("a regular file: not written")
+	}
+	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	defer master.Close()
+	var n, unlock int32
+	ioctl := func(req uintptr, arg *int32) error {
+		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), req, uintptr(unsafe.Pointer(arg))); e != 0 {
+			return e
+		}
+		return nil
+	}
+	if err := ioctl(syscall.TIOCSPTLCK, &unlock); err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	if err := ioctl(syscall.TIOCGPTN, &n); err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	slave, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_WRONLY|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	defer slave.Close()
+	tty := ttyFile{slave}
+	if q := tty.queued(); q < 0 {
+		t.Errorf("a terminal: queued %d", q)
+	}
+	if !writeConsole(tty, []byte("This boot:\n")) {
+		t.Fatal("a terminal: not written")
+	}
+	// Nobody reads the master: the terminal fills up and then stands.
+	// Still non-blocking after queued(), so that is a timeout, not a hang.
+	oldStall := consoleStall
+	consoleStall = 300 * time.Millisecond
+	t.Cleanup(func() { consoleStall = oldStall })
+	done := make(chan bool, 1)
+	go func() { done <- writeConsole(tty, bytes.Repeat([]byte("x"), 1<<20)) }()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("a megabyte into a terminal nobody reads: written")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("writeConsole hangs on a full terminal")
 	}
 }
