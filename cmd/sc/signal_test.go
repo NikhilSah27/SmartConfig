@@ -398,3 +398,55 @@ func TestEditLeavesCtrlCToTheEditor(t *testing.T) {
 		t.Fatalf("err %v, file %q, output %q", err, b, out)
 	}
 }
+
+// A hangup of the rescue console (its getty starting) does not end
+// sc status --console: the report is still written. Plain sc status
+// still ends by SIGHUP.
+func TestConsoleStatusOutlivesHangup(t *testing.T) {
+	bin := scBinary(t)
+	home := t.TempDir()
+	env := append(os.Environ(), "SC_HOME="+home)
+	init := exec.Command(bin, "init")
+	init.Env = env
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("sc init: %v %s", err, out)
+	}
+	for _, tc := range []struct {
+		args []string
+		want syscall.Signal // 0: exit status 0
+	}{
+		{[]string{"status", "--console"}, 0},
+		{[]string{"status"}, syscall.SIGHUP},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			cmd := exec.Command(bin, tc.args...)
+			// The window after the command has returned: --console has
+			// set up its signals by then.
+			cmd.Env = append(env, "SC_TEST_AFTER_RUN=3s")
+			var stdout, stderr lockedBuffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { cmd.Process.Kill() })
+			deadline := time.Now().Add(10 * time.Second)
+			for !strings.Contains(stdout.String(), "This boot:") {
+				if time.Now().After(deadline) {
+					t.Fatalf("no report; stdout %q stderr %q", stdout.String(), stderr.String())
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			cmd.Process.Signal(syscall.SIGHUP)
+			err := cmd.Wait()
+			if tc.want == 0 {
+				if err != nil {
+					t.Fatalf("ended with %v, stderr %q", err, stderr.String())
+				}
+				return
+			}
+			if ws, ok := exitStatus(err); !ok || !ws.Signaled() || ws.Signal() != tc.want {
+				t.Fatalf("ended with %v, want death by %v", err, tc.want)
+			}
+		})
+	}
+}

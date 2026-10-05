@@ -149,6 +149,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	out := cmd.OutOrStdout()
 	var report bytes.Buffer
 	if console {
+		ignoreHangup.Store(true)
 		real := out
 		out = &report
 		defer func() {

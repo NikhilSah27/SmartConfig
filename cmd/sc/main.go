@@ -39,6 +39,13 @@ var mutating atomic.Bool
 // editing is set while sc edit's editor runs.
 var editing atomic.Bool
 
+// ignoreHangup is set by sc status --console. The console's getty can hang
+// it up while sc runs (in the M4 lab, serial-getty@ttyS0 starting next to
+// emergency.service): the report goes to consoles sc opens itself, so a
+// hangup must not end sc before it is written. Caught and dropped, not
+// SIG_IGN, which the commands sc runs would inherit.
+var ignoreHangup atomic.Bool
+
 // received is the number of the first stop signal, or 0.
 var received atomic.Int32
 
@@ -119,6 +126,8 @@ func handleSignals(sigs <-chan os.Signal) {
 			// sc watch: SIGHUP asks for a rescan (systemctl reload scd),
 			// as daemons treat it; it never stops the watcher.
 			(*watchRescan.Load())()
+		case sig == syscall.SIGHUP && ignoreHangup.Load():
+			// sc status --console: the report is still to be written.
 		case editing.Load() && (sig == os.Interrupt || sig == syscall.SIGQUIT):
 			// sc edit while its editor runs: Ctrl-C and Ctrl-\ go to the
 			// whole foreground group and are the editor's to handle, as
