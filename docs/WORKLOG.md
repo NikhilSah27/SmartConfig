@@ -78,10 +78,9 @@ modes on two more faults, now fixed: `1d25037` (sc cut the rescue
 report short on a slow serial console) and `64911f4` (the lab took a
 byte lost on serial for the kernel command line). Next, in this order
 (details: `~/smartconfig-work/review-m4d/HANDOFF.md`):
-1. Integrate the mutation-survivor tests. Scenario: on branch
-   `review-tests-wip` (`784f416`, not pushed), 1 test to fix
-   (`TestGlue.test_wait_for_and_panics` against `64911f4`'s
-   `FakeRun.wait_for`). Machinery: uncommitted in
+1. Integrate the mutation-survivor tests. Scenario: done, `fcb1b6d`
+   (283 lab tests; the one test that failed against `64911f4` fixed,
+   see the log). Machinery: uncommitted in
    `~/smartconfig-work/review-m4d/clone-b`, unfinished.
 2. `make lab-e2e` on a quiet machine (nothing else running beside it).
 3. The write-up in `docs/reviews/`, plan change C6 (the 60 s limit and
@@ -1495,3 +1494,26 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Checks on `64911f4`: tests as a user, as root and under race;
     `make lab-test` (196).
   - Not run yet: `make lab-e2e` on the fixed tree.
+- **M4 chunk D review: the scenario tests are in (`fcb1b6d`).**
+  - The review's mutations of `lab/e2e.py` (a check's condition removed
+    or loosened; 261 on the fixed code, 115 of the first 158 had
+    survived `make lab-test`) now all have a test: `execute()` end to
+    end with the VM and the flow stubbed (exit codes, NOTRUN, the
+    ledger, teardown, the summary line); one fault at a time in every
+    check from 0.5 to 5.1, on the text and facts of the passing run of
+    `56f5359`; the glue (`boot()`'s flag and limits, `flow()`,
+    `wait_healthy_end`, `panicked`, `wait_for`, `wait_ssh`, the
+    preflight). `lab/test_e2e.py` only, +1873 lines; `make lab-test`
+    196 -> 283, three runs in a row, 12 s each; `go test ./cmd/sc/` ok.
+  - One test failed against `64911f4`: `test_wait_for_and_panics`
+    expected a Retry from a panic and got None. `64911f4` had given
+    `FakeRun` a `wait_for` of its own (the fake console then had no
+    `expect`), which shadowed the real `E2E.wait_for` the test drives.
+    The new tests give `FakeCon` an `expect`, so that override is
+    removed and both tests run the real method; each still fails when
+    its code path is broken (the panic branch; the second command line).
+  - Mutations after, on `fcb1b6d` (`scratch-a/mutate.py -j 6 --fast`
+    on copies of clone-a): 260 killed, 0 survived. The 261st,
+    "check_cmdline ignored", no longer applies: `64911f4` rewrote that
+    text.
+  - Still to do: the machinery tests (clone-b), then `make lab-e2e`.
