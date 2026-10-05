@@ -66,9 +66,9 @@ three runs, none of them a fault of sc (log, 2026-10-05), and the last
 one needed a lab fix (`bec333b`). The second round (on `225e2d6`) gave
 no verdict either: UEFI stalled before GRUB, and this VM went down
 during BIOS (log, 2026-10-05). The lab now retries such a stall
-(`152ecbe`). **Now: the step 11 check, third round**, `make lab-e2e`
-on this commit, UEFI then BIOS (over an hour, no sudo, nothing on this
-machine; the VM has to stay up for it); then the chunk D review. A
+(`152ecbe`). **The step 11 check passed** on `56f5359`: `make lab-e2e`
+PASS, UEFI and BIOS, clean tree, with boot 5, no retries (log,
+2026-10-05). **Now: the chunk D review** (step 11, the lab). A
 check-in every 30 min resumes work after a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
@@ -95,6 +95,10 @@ step is built (your call, 2026-09-30).
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
   controller (black screens after login, log 2026-10-03).
+- [ ] On the host: why this VM stands still for minutes at a time (it
+  did for 233 s and 126 s in the last lab run, and went down without a
+  shutdown three times on 2026-10-05). Sleep or power saving on the
+  host is the first thing to look at.
 - [ ] A VirtualBox snapshot of this state (after the VM settings, if you
   change them), so a restore by mistake no longer undoes M2.
 
@@ -1434,3 +1438,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Checks: `make lab-test` passes (174 tests); the failed run's boot 1,
     replayed, is a stall retry; the registers command and the CPU time
     reader were tried against this QEMU. No Go file changed.
+- **M4 step 11 check, third round (`56f5359`): `make lab-e2e` PASS.**
+  - UEFI: PASS in 15m18s, no retries, `dirty=no`, with boot 5. Boot 2
+    ended as outcome b (`goal3=multi-user`, which sign-off needs
+    once). One warning, 2.5: scd was already running when the report
+    was made.
+  - BIOS: PASS in 25m02s, no retries, `dirty=no`, with boot 5. Boot 2
+    ended as outcome a. Two warnings, 3.1 and 4.1: no observer line on
+    the VGA screen, as the design expects where the menu wipes them.
+  - No stall, so the new retry did not run. The new gap notes did: in
+    the BIOS run the lab's own process stood still four times, for 19,
+    233, 16 and 126 s, all in boot 5, and the guest's console jumped
+    by the same lengths. So what looked like a TCG stall is, at least
+    here, this whole VM not running on its host. Longer pauses of the
+    same kind would explain the 10 and 18 minute stops of the earlier
+    rounds; those runs had no gap notes, so that is not shown. The
+    UEFI run had no gap and took 15 minutes.
+  - Evidence kept in `~/smartconfig-work/signoff/lab-e2e-56f5359/`
+    (result, log, ledger, mux log per mode) and the run's own log
+    beside it.
