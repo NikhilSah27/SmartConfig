@@ -68,15 +68,24 @@ no verdict either: UEFI stalled before GRUB, and this VM went down
 during BIOS (log, 2026-10-05). The lab now retries such a stall
 (`152ecbe`). **The step 11 check passed** on `56f5359`: `make lab-e2e`
 PASS, UEFI and BIOS, clean tree, with boot 5, no retries (log,
-2026-10-05). **Now: the chunk D review** (step 11, the lab). Two
-reviewers reported (raw: `~/smartconfig-work/review-m4d/findings-a.md`
-and `findings-b.md`): 1 high (narrow), 10 medium, 13 low, 5 cleanups,
-none of which changes the PASS. The fixes are in (`3115b71` for sc,
-`9d3df9e` for the lab). Still to do, in this order: tests for the
-mutations that survived, `make lab-e2e` again on the fixed tree, the
-write-up in `docs/reviews/`, plan change C6 (the 60 s limit of
-`sc status --console`). A check-in every 30 min resumes work after a
-usage limit (your ask).
+2026-10-05). **Now: the chunk D review** (step 11, the lab),
+**paused at your word** (2026-10-05, 20:40 UTC; no check-in runs, no
+VM). Two reviewers reported (raw: `~/smartconfig-work/review-m4d/
+findings-a.md`, `findings-b.md`): 1 high (narrow), 10 medium, 13 low,
+5 cleanups, none of which changes the PASS. Fixes: `3115b71` (sc),
+`9d3df9e` (lab). Their check, `make lab-e2e` on `85e9f59`, FAILed both
+modes on two more faults, now fixed: `1d25037` (sc cut the rescue
+report short on a slow serial console) and `64911f4` (the lab took a
+byte lost on serial for the kernel command line). Next, in this order
+(details: `~/smartconfig-work/review-m4d/HANDOFF.md`):
+1. Integrate the mutation-survivor tests. Scenario: on branch
+   `review-tests-wip` (`784f416`, not pushed), 1 test to fix
+   (`TestGlue.test_wait_for_and_panics` against `64911f4`'s
+   `FakeRun.wait_for`). Machinery: uncommitted in
+   `~/smartconfig-work/review-m4d/clone-b`, unfinished.
+2. `make lab-e2e` on a quiet machine (nothing else running beside it).
+3. The write-up in `docs/reviews/`, plan change C6 (the 60 s limit and
+   the console writer's turn), the worklog.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1464,3 +1473,25 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Evidence kept in `~/smartconfig-work/signoff/lab-e2e-56f5359/`
     (result, log, ledger, mux log per mode) and the run's own log
     beside it.
+- **M4 chunk D review: fixes, their check, two more fixes; paused.**
+  - Two reviewers: the checks and verdicts, and the machinery with the
+    Go fix. Fixed in `3115b71` (sc: `status --console` stops itself
+    after 60 s, since systemd ends the rescue unit, shell and all, at
+    90 s; the hangup flag set earlier; a login hint in the emergency
+    report) and `9d3df9e` (lab: ssh loss and host pauses never an [M4]
+    result, product faults never INCONCLUSIVE, one-shot signals, the
+    cache must be the lab's, one lab per user, the recordfail rule by
+    attempt).
+  - `make lab-e2e` on `85e9f59`: FAIL, both modes, no retries.
+    UEFI 3.6: the rescue report on ttyS0 ended mid-row; sc gave each
+    console one 2 s write. BIOS 3.4: the rescue kernel's first
+    "Command line:" lost one byte on serial ("oot=UUID="), after the
+    host stood still 379 s; its second print was whole. The host was
+    loaded by the test agents beside the run.
+  - `1d25037`: a console keeps its turn while it takes bytes or its
+    queue drains (5 s stalled, 10 s at most). `64911f4`: the lab reads
+    the kernel's second command line where the first lost a byte;
+    `check_decision`'s bios notes were lost (found by a test agent).
+  - Checks on `64911f4`: tests as a user, as root and under race;
+    `make lab-test` (196).
+  - Not run yet: `make lab-e2e` on the fixed tree.
