@@ -1,6 +1,8 @@
 """Unit tests for lab/e2e.py's pure parts (no QEMU, no network): the check
 registry, the verdict, what it reads from facts.sh, install.sh, grub.cfg,
-the boots file, sc log and the rescue report, and its command line.
+the boots file, sc log and the rescue report, and its command line. Then
+the checks on a run with no VM (FakeRun): a healthy run's text and facts
+with one fault at a time, and execute() with the VM and the flow stubbed.
 
   python3 -m unittest discover -s lab
 
@@ -487,11 +489,15 @@ Mark = collections.namedtuple("Mark", "txt inp")
 
 class FakeCon:
     """The serial console as the checks read it: a fixed text (offsets are
-    str offsets); cmd() answers by the command's first word(s)."""
+    str offsets); cmd() answers by the command's first word(s); typed is
+    what the guest prints when something is sent ({what was sent: text})."""
 
-    def __init__(self, text="", cmds=None):
+    def __init__(self, text="", cmds=None, typed=None):
         self.t = text
         self.cmds = cmds or {}
+        self.typed = typed or {}
+        self.sent = []
+        self.why = None
 
     def text(self, start=0, end=None):
         return self.t[start:end]
@@ -508,6 +514,36 @@ class FakeCon:
                 return console.CmdResult(rc, out, 0, 0)
         raise AssertionError("unexpected command %r" % command)
 
+    def expect(self, patterns, timeout, start=None, advance=True, abort=None):
+        """console.Console.expect on the text as it is: the earliest match
+        (the lower index on a tie), or None at once, as after a timeout."""
+        start = start or 0
+        text = self.t[start:]
+        best = None
+        for i, p in enumerate(patterns):
+            m = (p if hasattr(p, "search") else re.compile(p, re.M)).search(text)
+            if m and (best is None or m.start() < best[1].start()):
+                best = (i, m)
+        if best is None:
+            self.why = "timeout"
+            return None
+        i, m = best
+        return console.Hit(i, m, start + m.start(), start + m.end(), text[:m.start()], 1.0)
+
+    def send(self, data, delay=0.015):
+        self.sent.append(data)
+        self.t += self.typed.get(data, "")
+        return True
+
+    def line(self, text, delay=0.015):
+        return self.send(text + "\r", delay)
+
+    def prepare_shell(self, timeout=180):
+        return console.CmdResult(0, "", 0, 0)
+
+    def tail(self, n=40):
+        return "\n".join(self.t.split("\n")[-n:])
+
 
 class FakeMux:
     gaps = []
@@ -523,6 +559,9 @@ class FakeMux:
 
     def inputs(self, start=0):
         return self._inputs[start:]
+
+    def stop(self):
+        pass
 
 
 class FakeWatch:
@@ -598,25 +637,16 @@ class FakeRun(e2e.E2E):
         self.sha = {}
         self.head, self.git7, self.dirty = "0" * 40, "0000000", False
         self.logged = []
+        self._logf = io.StringIO()
+        self.stage = self.boot2_mark = None
+        self.staged = self.shell = self.at_prompt = self.torn_down = False
+        self.settle_until = 0.0
 
     def log(self, msg):
         self.logged.append(msg)
 
-    def wait_for(self, a, patterns, budget, start=None, what="it"):
-        """The first of patterns in the FakeCon's text from start, as it
-        stands (nothing more comes); None if none is there."""
-        text = self.con.text(a.mark.txt if start is None else start)
-        best = None
-        for i, pat in enumerate(patterns):
-            m = re.search(pat, text)
-            if m and (best is None or m.start() < best[1].start()):
-                best = (i, m)
-        if best is None:
-            return None
-        off = a.mark.txt if start is None else start
-        hit = argparse.Namespace(index=best[0], match=best[1], group=best[1].group, text=best[1].group(0),
-                                 start=off + best[1].start(), end=off + best[1].end(), t=1.0)
-        return hit
+    # No wait_for of its own: the real E2E.wait_for runs over FakeCon.expect,
+    # so the tests see its panic and abort handling too.
 
     def screendump(self, name):
         pass
@@ -792,24 +822,29 @@ MOUNTS = ['/ SOURCE="/dev/vda1" LABEL="cloudimg-rootfs" FSTYPE="ext4" OPTIONS="r
 OK1 = "%s ok 101 7 local-fs=active emergency=inactive rescue=inactive failed-units=0" % B1
 
 
-def rescue_facts(boots, mounts=MOUNTS, before=HASHES, after=HASHES):
-    return facts_text(
-        ("facts", 0, ["mode=rescue", "good=" + GOOD, "bad=" + BAD]),
-        ("boot-id", 0, [B3]),
-        ("mounts", 0, list(mounts)),
-        ("active", 0, ["local-fs.target=inactive", "rescue.target=active", "emergency.target=inactive"]),
-        ("show:sc-boot-seen.service", 0, ["Id=sc-boot-seen.service", "ConditionResult=no"]),
-        ("show:sc-boot-ok.service", 0, ["Id=sc-boot-ok.service", "ExecMainStartTimestampMonotonic=0"]),
-        ("boots", 0, boots.strip().split("\n")),
-        ("sc-status-console", 2, ["  sc restore " + GOOD]),
-        ("sc-diff", 1, ["+UUID=3f6c1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c /mnt/backup ext4 defaults 0 2"]),
-        ("sc-cat-good", 0, [FSTAB_SHA]),
-        ("sc-check", 2, ["/etc/fstab: blocker fstab-source-missing, line 4"]),
-        ("sc-restore", 1, ["sc: store /var/lib/smartconfig: " + e2e.RESTORE_REFUSED]),
-        ("hashes-before", 0, list(before)),
-        ("hashes-after", 0, list(after)),
-        ("leftovers", 0, []),
-        ("vcs1", 0, ["  sc restore " + GOOD]))
+def rescue_facts(boots, mounts=MOUNTS, before=HASHES, after=HASHES, **over):
+    """facts.sh rescue as a healthy rescue boot prints it; over replaces
+    blocks by name: (rc, lines), or None for a block left out."""
+    blocks = collections.OrderedDict((
+        ("facts", (0, ["mode=rescue", "good=" + GOOD, "bad=" + BAD])),
+        ("boot-id", (0, [B3])),
+        ("mounts", (0, list(mounts))),
+        ("active", (0, ["local-fs.target=inactive", "rescue.target=active", "emergency.target=inactive"])),
+        ("show:sc-boot-seen.service", (0, ["Id=sc-boot-seen.service", "ConditionResult=no"])),
+        ("show:sc-boot-ok.service", (0, ["Id=sc-boot-ok.service", "ExecMainStartTimestampMonotonic=0"])),
+        ("boots", (0, boots.strip().split("\n"))),
+        ("sc-status-console", (2, ["  sc restore " + GOOD])),
+        ("sc-diff", (1, ["+UUID=3f6c1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c /mnt/backup ext4 defaults 0 2"])),
+        ("sc-cat-good", (0, [FSTAB_SHA])),
+        ("sc-check", (2, ["/etc/fstab: blocker fstab-source-missing, line 4"])),
+        ("sc-restore", (1, ["sc: store /var/lib/smartconfig: " + e2e.RESTORE_REFUSED])),
+        ("hashes-before", (0, list(before))),
+        ("hashes-after", (0, list(after))),
+        ("leftovers", (0, [])),
+        ("vcs1", (0, ["  sc restore " + GOOD])),
+    ))
+    blocks.update({k.replace("_", "-"): v for k, v in over.items()})
+    return facts_text(*[(n, b[0], b[1]) for n, b in blocks.items() if b is not None])
 
 
 class TestRescueFacts(unittest.TestCase):
@@ -857,8 +892,13 @@ class TestRescueFacts(unittest.TestCase):
 
 
 def normal_facts(**over):
-    """facts.sh normal blocks for checks 0.7, 1.5, 1.6, 1.8, 4.4, 4.6:
-    (name, rc, lines), each replaceable (None: left out)."""
+    return e2e.Facts(normal_text(**over), "evidence/f.txt")
+
+
+def normal_text(**over):
+    """facts.sh normal as boot 1 of a healthy run prints it (0.7 reads the
+    same blocks in boot 0): (name, rc, lines), each replaceable (None:
+    left out)."""
     show = ["Result=success", "ExecMainStatus=0", "ConditionResult=yes"]
     blocks = collections.OrderedDict((
         ("grubenv", (0, [])),
@@ -872,9 +912,20 @@ def normal_facts(**over):
         ("journal-scd", (0, ["baseline: 14 files"])),
         ("sc-log-fstab", (0, ["%s  2026-10-04 12:00  scd  /etc/fstab  146" % GOOD])),
         ("critical-chain", (0, ["multi-user.target @21.6s", "└─getty.target @21.5s"])),
+        ("active", (0, ["local-fs.target=active", "emergency.target=inactive", "rescue.target=inactive",
+                        "scd.service=active"])),
+        ("boots", (0, ["%s seen 100" % B1, OK1])),
+        ("sc-status", (0, status_lines(B1))),
     ))
     blocks.update(over)
-    return e2e.Facts(facts_text(*[(n, b[0], b[1]) for n, b in blocks.items() if b is not None]), "evidence/f.txt")
+    return facts_text(*[(n, b[0], b[1]) for n, b in blocks.items() if b is not None])
+
+
+def status_lines(boot_id):
+    """sc status in a healthy boot (the uefi run of 56f5359, boot 1)."""
+    return ["This boot:     %s (normal), root read-write" % console.short_boot(boot_id),
+            "Last healthy:  this boot, 2026-10-04 12:00", "scd:           running (pid 630)", "",
+            "Nothing recorded has changed since this boot came up."]
 
 
 class TestFactsBlocks(unittest.TestCase):
@@ -1945,11 +1996,11 @@ class TestBoot2Probe(unittest.TestCase):
         r.sudo = lambda command, timeout=None, lost=False: ssh_result(1, err="cat: /var/lib/smartconfig/boots: No such file")
         self.assertEqual(r.boots_text(strict=True), "")  # no file is the guest's answer, not ssh's
 
-    def run_26(self, boots, env_rc=0, sync_rc=0):
+    def run_26(self, boots, env_rc=0, sync_rc=0, env="smartconfig_pending=1\nrecordfail=1\n"):
         r = fake_run(self)
         r.poll = lambda fn, budget, every=5.0: fn()
         r.boots_text = lambda strict=False: boots
-        answers = {"grub-editenv": ssh_result(env_rc, "smartconfig_pending=1\nrecordfail=1\n" if env_rc == 0 else ""),
+        answers = {"grub-editenv": ssh_result(env_rc, env if env_rc == 0 else ""),
                    "sync": ssh_result(sync_rc)}
         r.sudo = lambda command, timeout=None, lost=False: answers[command.split()[0]]
         r.check_26(B2)
@@ -1969,6 +2020,1787 @@ class TestBoot2Probe(unittest.TestCase):
         with self.assertRaises(e2e.Stop) as c:
             self.run_26("%s seen 10\n" % B2)
         self.assertEqual((c.exception.row.cause, c.exception.row.strength), ("M4", "H"))
+
+
+
+# ---------------------------------------------------------------- a healthy run, and one fault at a time
+#
+# The chunk D review's mutation run: with a check's condition taken out, a
+# healthy real run still passes, so only a unit test can notice. The tests
+# below start from the console text and the facts of a run that passes
+# (the uefi run of 56f5359, cut down to what the checks read), break one
+# thing, and expect that check's row to FAIL as SmartConfig's.
+
+BAD_SHA = "b" * 64
+EXP_RESCUE = ("BOOT_IMAGE=/vmlinuz-6.8.0-142-generic root=UUID=1bfe no_timer_check console=tty1 console=ttyS0 ro "
+              + e2e.RESCUE_ARGS)
+POST_CLEAN = "sclab: post timeout=[0] style=[hidden]\n"
+PRE_FLAG = "sclab: pre platform=efi pending=[1] recordfail=[] timeout=[0] style=[hidden]\n"
+POST_FLAG = "sclab: post timeout=[30] style=[menu]\n"
+# GRUB's menu on serial as serialmux.Cleaner leaves it (s2-uefi-menu-ctrln.raw), without the frame.
+UEFI_MENU = ("\n                             GNU GRUB  version 2.12\n\n*Ubuntu\n Advanced options for Ubuntu\n"
+             " UEFI Firmware Settings\n SmartConfig rescue\n\n"
+             "   The highlighted entry will be executed automatically in 30s.\n"
+             "   The highlighted entry will be executed automatically in 29s.\n")
+INIT = "[    2.763209] Run /init as init process\n"
+LOGIN = "\nUbuntu 24.04.5 LTS sclab ttyS0\n\nsclab login: "
+TIMED_OUT = "[ TIME ] Timed out waiting for device dev-d…6c1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c.\n"
+DEPEND = "[DEPEND] Dependency failed for local-fs.target - Local File Systems.\n"
+EMERGENCY_TAIL = ('You are in emergency mode. After logging in, type "journalctl -xb" to view\n'
+                  'system logs, "systemctl reboot" to reboot, or "exit"\nto continue bootup.\n'
+                  "Press Enter for maintenance\n(or press Control-D to continue): ")
+# TCG's own panic (q3c-panic-tcg.raw) and one that is not.
+TCG_PANIC = "[    1.233642] Kernel panic - not syncing: IO-APIC + timer doesn't work!  Boot with apic=debug\n"
+VFS_PANIC = "[    1.911873] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)\n"
+JOURNAL_OK = "boot %s: ok (local-fs=active emergency=inactive rescue=inactive failed-units=0)\n"
+BAD2 = "%s bad 290 9 local-fs=inactive emergency=active rescue=inactive failed-units=2" % B2
+OK4 = "%s ok 401 12 local-fs=active emergency=inactive rescue=inactive failed-units=0" % B4
+BOOTS_1 = "%s seen 100\n%s\n" % (B1, OK1)
+BOOTS_2 = BOOTS_1 + "%s seen 200\n%s\n" % (B2, BAD2)
+BOOTS_4 = BOOTS_2 + "%s seen 400\n%s\n" % (B4, OK4)
+
+
+def kernel_lines(cmdline=EXP_DEFAULT):
+    return "[    0.000000] Linux version 6.8.0-142-generic\n[    0.000000] Command line: %s\n%s" % (cmdline, INIT)
+
+
+# A boot with no menu (boots 0, 1, 5) and one with the 30 s menu left alone (boot 4), to the login prompt.
+BOOT_CLEAN = UEFI_SILENT + PRE_CLEAN + POST_CLEAN + kernel_lines() + LOGIN
+BOOT_MENU = UEFI_SILENT + PRE_FLAG + POST_FLAG + UEFI_MENU + kernel_lines() + LOGIN
+
+
+def render(golden, **values):
+    """A golden (lab/testdata/console-<golden>.golden) as sc prints it in
+    this file's run; values replace or add placeholders."""
+    fill = {"YYYY-MM-DD HH:MM": "2026-10-04 12:00", "MM-DD HH:MM": "10-04 12:05", "HH:MM": "12:03", "N": 4,
+            "GOOD": GOOD, "BAD": BAD, "K boots": "1 boot", "B1:8": console.short_boot(B1),
+            "B2:8": console.short_boot(B2), "B3:8": console.short_boot(B3)}
+    fill.update(values)
+    return console.TOKEN.sub(lambda m: str(fill[m.group(1)]), console.load_golden(golden))
+
+
+class FakeClock:
+    """time.monotonic and time.sleep as e2e.py sees them: a sleep, and a
+    wait on run's mux, pass the time at once, so a loop that waits for
+    its budget ends."""
+
+    def __init__(self, test, run=None):
+        self.now = time.monotonic()
+        for name, fn in (("monotonic", lambda: self.now), ("sleep", self.sleep)):
+            p = mock.patch.object(e2e.time, name, fn)
+            p.start()
+            test.addCleanup(p.stop)
+        if run is not None:
+            run.deadline = self.now + 10 ** 6
+            run.mux.wait = lambda size, timeout: self.sleep(timeout)
+
+    def sleep(self, secs):
+        self.now += secs
+
+
+def answers(run, table):
+    """run.ssh (and so run.sudo) answers by the first key of table that is
+    in the command: (rc, out), an ssh_result, or a function of the command
+    that gives one. Returns the list the commands asked are added to."""
+    asked = []
+
+    def ssh(command, timeout=None, input=None, lost=False):
+        asked.append(command)
+        for key, v in table.items():
+            if key in command:
+                v = v(command) if callable(v) else v
+                return v if hasattr(v, "rc") else ssh_result(*v)
+        raise AssertionError("unexpected ssh command %r" % command)
+
+    run.ssh = ssh
+    return asked
+
+
+def outcome_of(fn, *args):
+    """fn(*args); the Stop, Retry or LabError that ended it, or None."""
+    try:
+        fn(*args)
+    except (e2e.Stop, e2e.Retry, e2e.LabError) as e:
+        return e
+    return None
+
+
+class FaultCase(unittest.TestCase):
+    """What every "one fault" test asserts: the check's row is a FAIL of
+    SmartConfig's with its strength; an H failure stops the mode at that
+    row, an F failure lets it go on."""
+
+    def assert_fails(self, r, end, cid, strength, name):
+        self.assertIn(cid, r.rows, "%s: no %s row (ended with %r)" % (name, cid, end))
+        row = r.rows[cid]
+        self.assertEqual((row.status, row.cause, row.strength), ("FAIL", "M4", strength), "%s: %s" % (name, row.notes))
+        if strength == "H":
+            self.assertIsInstance(end, e2e.Stop, name)
+            self.assertEqual(end.row.id, cid, name)
+        else:
+            self.assertIsNone(end, name)
+        self.assertEqual(e2e.verdict(r.rows.values()), "FAIL", name)
+
+    def assert_passes(self, r, *cids):
+        for cid in cids:
+            self.assertEqual(r.status(cid), "PASS", "%s: %s" % (cid, r.rows[cid].notes if cid in r.rows else "no row"))
+
+
+RESCUE_ENTRY = re.search(r"menuentry 'SmartConfig rescue'.*?\n}\n", GRUB_CFG, re.S).group(0)
+RESCUE_LINUX = re.search(r"\tlinux\t[^\n]*\n", RESCUE_ENTRY).group(0)
+INSTALL = ("uid=0\nmanifest=ok\ninstall_rc=0\nupdate_grub_rc=0\n"
+           "update_grub_err=Generating grub configuration file ...\n"
+           "update_grub_err=Adding SmartConfig rescue entry: /boot/vmlinuz-%s\nupdate_grub_err=done\n"
+           "grub_script_check_rc=0\nverify_rc=0\ndone=1\n" % labvm.load_conf()["KERNEL"])
+
+
+def installed_facts(**over):
+    """facts.sh normal after install.sh (boot 0), as 0.6 and 0.7 read it."""
+    blocks = {
+        "dropins": (0, ["Id=rescue.service", "DropInPaths=/usr/lib/systemd/system/service.d/10-timeout-abort.conf "
+                        "/etc/systemd/system/rescue.service.d/50-smartconfig.conf", "", "Id=emergency.service",
+                        "DropInPaths=/etc/systemd/system/emergency.service.d/50-smartconfig.conf"]),
+        "units-cat": (0, ["# /etc/systemd/system/rescue.service.d/50-smartconfig.conf", "[Service]", e2e.DROPIN_LINE,
+                          "# /etc/systemd/system/emergency.service.d/50-smartconfig.conf", "[Service]",
+                          e2e.DROPIN_LINE]),
+        "is-enabled": (0, ["sc-boot-seen.service=enabled", "sc-boot-ok.service=enabled", "scd.service=enabled"]),
+    }
+    blocks.update(over)
+    return normal_facts(**blocks)
+
+
+class TestBoot0Faults(FaultCase):
+    """0.5, 0.6 and 0.7: what install.sh, grub.cfg and facts.sh must show
+    after the install, one fault at a time."""
+
+    def check_05(self, cfg=GRUB_CFG, install=INSTALL):
+        r = fake_run(self)
+        return r, outcome_of(r.check_05, e2e.parse_kv(install), cfg, "evidence/install.txt")
+
+    def test_05_good(self):
+        r, end = self.check_05()
+        self.assertIsNone(end)
+        self.assert_passes(r, "0.5")  # not a WARN either: the observers are around the flag block
+        self.assertEqual((r.v["EXP_DEFAULT"], r.v["EXP_RESCUE"]), (EXP_DEFAULT, EXP_RESCUE))
+
+    def test_05_one_fault(self):
+        def entry(old, new):
+            self.assertIn(old, RESCUE_ENTRY)
+            return GRUB_CFG.replace(RESCUE_ENTRY, RESCUE_ENTRY.replace(old, new))
+
+        def cfg(old, new):
+            self.assertIn(old, GRUB_CFG)
+            return GRUB_CFG.replace(old, new)
+
+        flag_first = 'if [ "${smartconfig_pending}" = "1" ] ; then\n\tset timeout_style=menu\nfi\n' + GRUB_CFG
+        for name, kw, said in (
+                ("update-grub did not add the entry", dict(install=INSTALL.replace("Adding SmartConfig", "Skipping")),
+                 "update-grub said"),
+                ("grub-script-check fails",
+                 dict(install=INSTALL.replace("grub_script_check_rc=0", "grub_script_check_rc=1")),
+                 "grub-script-check"),
+                ("two rescue entries", dict(cfg=cfg(RESCUE_ENTRY, RESCUE_ENTRY * 2)), "2 entries with --id"),
+                ("no rescue entry", dict(cfg=cfg(RESCUE_ENTRY, "")), "0 entries with --id"),
+                ("the first entry is not Ubuntu", dict(cfg=cfg("menuentry 'Ubuntu' ", "menuentry 'Ubuntu (old)' ")),
+                 "the first entry is"),
+                ("no linux line", dict(cfg=entry(RESCUE_LINUX, "")), "no linux line"),
+                ("two linux lines", dict(cfg=entry(RESCUE_LINUX, RESCUE_LINUX * 2)), "more than one linux line"),
+                ("no echo", dict(cfg=entry("\techo\t'%s'\n" % e2e.RESCUE_ECHO, "")), "has no echo"),
+                ("another echo", dict(cfg=entry("/etc/fstab ignored'", "/etc/fstab read'")), "has no echo"),
+                ("quiet", dict(cfg=entry("console=ttyS0 ro ", "console=ttyS0 quiet ro ")), "has quiet"),
+                ("splash", dict(cfg=entry("console=ttyS0 ro ", "console=ttyS0 splash ro ")), "has splash"),
+                ("rw after ro", dict(cfg=entry(" ro fstab=no", " ro rw fstab=no")), "last ro/rw is rw"),
+                ("no ro at all", dict(cfg=entry(" ro fstab=no", " fstab=no")), "last ro/rw is None"),
+                ("no SYSTEMD_SULOGIN_FORCE", dict(cfg=entry(" SYSTEMD_SULOGIN_FORCE=1", "")), "lacks"),
+                ("no fstab=no", dict(cfg=entry("fstab=no ", "")), "lacks"),
+                ("a second root=", dict(cfg=entry(" ro fstab=no", " root=/dev/vda9 ro fstab=no")), "root= differs"),
+                ("the serial console dropped", dict(cfg=entry(" console=ttyS0 ro", " ro")), "drops console=ttyS0"),
+                ("no_timer_check dropped", dict(cfg=entry(" no_timer_check", "")), "drops no_timer_check"),
+                ("no recordfail block", dict(cfg=cfg('if [ "${recordfail}" = 1 ] ; then', "if false ; then")),
+                 "no recordfail block"),
+                ("recordfail's timeout is 30",
+                 dict(cfg=cfg('= 1 ] ; then\n  set timeout=0', '= 1 ] ; then\n  set timeout=30')),
+                 "sets timeout=30"),
+                ("no flag block", dict(cfg=cfg(e2e.FLAG_BLOCK, 'if [ "${smartconfig_pending}" = "2" ] ; then')),
+                 "no menu flag block"),
+                ("the flag block before recordfail's", dict(cfg=flag_first), "comes before the recordfail block")):
+            r, end = self.check_05(**kw)
+            self.assert_fails(r, end, "0.5", "H", name)
+            self.assertIn(said, r.rows["0.5"].notes, name)
+
+    def check_06(self, f=None, install=INSTALL):
+        r = fake_run(self)
+        return r, outcome_of(r.check_06, e2e.parse_kv(install), f or installed_facts(), "evidence/install.txt")
+
+    def test_06(self):
+        r, end = self.check_06()
+        self.assertIsNone(end)
+        self.assert_passes(r, "0.6")
+        both = installed_facts().lines("dropins")
+        cat = installed_facts().lines("units-cat")
+        for name, kw in (
+                ("rescue.service has no drop-in", dict(f=installed_facts(dropins=(0, both[:1] + both[2:])))),
+                ("emergency.service has no drop-in", dict(f=installed_facts(dropins=(0, both[:4])))),
+                ("the ExecStartPre once", dict(f=installed_facts(**{"units-cat": (0, cat[:3])}))),
+                ("the ExecStartPre three times", dict(f=installed_facts(**{"units-cat": (0, cat + cat[:3])}))),
+                ("systemd-analyze verify fails", dict(install=INSTALL.replace("verify_rc=0", "verify_rc=1"))),
+                ("systemd-analyze verify says something",
+                 dict(install=INSTALL + "verify_out=sc-boot-ok.service: Unknown key 'Befor' in section [Unit]\n")),
+                ("sc-boot-seen not enabled", dict(f=installed_facts(**{"is-enabled": (0, [
+                    "sc-boot-seen.service=disabled", "sc-boot-ok.service=enabled", "scd.service=enabled"])}))),
+                ("sc-boot-ok not enabled", dict(f=installed_facts(**{"is-enabled": (0, [
+                    "sc-boot-seen.service=enabled", "scd.service=enabled"])}))),
+                ("scd not running", dict(f=installed_facts(active=(0, ["scd.service=failed"]))))):
+            r, end = self.check_06(**kw)
+            self.assert_fails(r, end, "0.6", "H", name)
+
+    def test_07(self):
+        for name, over in (
+                ("the menu flag is set already", dict(grubenv=(0, ["smartconfig_pending=1"]))),
+                ("the flag is there, empty", dict(grubenv=(0, ["smartconfig_pending="]))),
+                ("a boots file before any boot",
+                 dict(paths=(0, ["/var/lib/smartconfig/boots file 600 root:root abc"]))),
+                ("the boots file not looked at", dict(paths=(0, ["/usr/local/sbin/sc file 755 root:root abc"]))),
+                ("scd made no baseline", {"journal-scd": (0, ["watching /etc, /boot/grub (227 directories)"])}),
+                ("sc log has no row",
+                 {"sc-log-fstab": (0, ["ID      WHEN              ORIGIN  FILE        SIZE  WHAT"])})):
+            r = fake_run(self)
+            end = outcome_of(r.check_07, normal_facts(**over))
+            self.assert_fails(r, end, "0.7", "H", name)
+
+
+def menu_of(entries=tuple(e2e.MENU_ENTRIES["uefi"]), selected=0, countdown=30):
+    return console.Menu("2.12", list(entries), selected, countdown, False, False)
+
+
+MENU_LINES = ["GNU GRUB  version 2.12", "*Ubuntu", "   The highlighted entry will be executed automatically in 30s."]
+
+
+class TestDecisionFaults(FaultCase):
+    """x.1, 1.2/2.2/3.4 and the boots file's ok line: what GRUB decided,
+    one fault at a time."""
+
+    def test_observer_fields(self):
+        f = e2e.observer_problems
+        clean = PRE_CLEAN + POST_CLEAN
+        self.assertEqual(f(console.observer_lines(clean), "efi", "", "0", "hidden"), [])
+        for old, new, said in (("platform=efi", "platform=pc", "pre platform=[pc], not [efi]"),
+                               ("pending=[]", "pending=[1]", "pre pending=[1], not []"),
+                               ("pending=[]", "pending=[0]", "pre pending=[0], not []"),
+                               ("recordfail=[] timeout=[0]", "recordfail=[] timeout=[5]", "pre timeout=[5], not [0]"),
+                               ("post timeout=[0]", "post timeout=[30]", "post timeout=[30], not [0]"),
+                               ("post timeout=[0] style=[hidden]", "post timeout=[0] style=[menu]",
+                                "post style=[menu], not [hidden]")):
+            self.assertIn(old, clean)
+            self.assertEqual(f(console.observer_lines(clean.replace(old, new)), "efi", "", "0", "hidden"), [said])
+        flagged = PRE_FLAG + POST_FLAG
+        self.assertEqual(f(console.observer_lines(flagged), "efi", "1", "30", "menu"), [])
+        unset = console.observer_lines(flagged.replace("pending=[1]", "pending=[]"))
+        self.assertEqual(f(unset, "efi", "1", "30", "menu"), ["pre pending=[], not [1]"])
+        # The last line of each kind counts: an earlier attempt's lines are not this boot's.
+        self.assertEqual(f(console.observer_lines(flagged + clean), "efi", "", "0", "hidden"), [])
+
+    def test_menu_problems(self):
+        f = e2e.menu_problems
+        self.assertEqual(f(menu_of(), MENU_LINES), ([], []))
+        self.assertEqual(f(menu_of(countdown=29), [x.replace("30s", "29s") for x in MENU_LINES], (30, 29)),
+                         ([], ["first seen at 29s (the screen is polled)"]))
+        uefi = e2e.MENU_ENTRIES["uefi"]
+        for name, menu, lines, said in (
+                ("a 5 s menu", menu_of(countdown=5), [x.replace("30s", "5s") for x in MENU_LINES],
+                 "the countdown says 5s"),
+                ("29 s on serial, which is not polled", menu_of(countdown=29),
+                 [x.replace("30s", "29s") for x in MENU_LINES],
+                 "the countdown says 29s"),
+                ("no countdown: it waits for a key", menu_of(countdown=None), MENU_LINES[:2],
+                 "the countdown says None"),
+                ("no rescue entry", menu_of(uefi[:3]), MENU_LINES, "0 entries titled"),
+                ("two rescue entries", menu_of(uefi + uefi[3:]), MENU_LINES, "2 entries titled"),
+                ("the highlight on the second entry", menu_of(selected=1), MENU_LINES, "the highlight is on 'Advanced"),
+                ("the highlight on the rescue entry", menu_of(selected=3), MENU_LINES,
+                 "the highlight is on 'SmartConfig"),
+                ("no highlight", menu_of(selected=None), MENU_LINES, "the highlight is on None"),
+                ("the rescue entry first", menu_of(uefi[3:] + uefi[:3]), MENU_LINES,
+                 "the highlight is on 'SmartConfig"),
+                ("no header", menu_of(), MENU_LINES[1:], "no 'GNU GRUB  version' header"),
+                ("no countdown line", menu_of(), MENU_LINES[:2], "no line 'The highlighted entry")):
+            problems, _ = f(menu, lines)
+            self.assertTrue(any(said in p for p in problems), (name, problems))
+
+    def decide(self, mode, flag, obs_text, menu=None, seen=False, lines=MENU_LINES, vga=None):
+        r = fake_run(self, mode)
+        g = grubenv_g(console.observer_lines(obs_text), menu, seen)
+        g["menu_lines"] = lines if menu is not None else []
+        a = attempt("1", flag, vga=vga)
+        return r, outcome_of(r.check_decision, "1.1", a, g, flag)
+
+    def test_uefi_decisions(self):
+        clean, flagged = PRE_CLEAN + POST_CLEAN, PRE_FLAG + POST_FLAG
+        r, end = self.decide("uefi", False, clean)
+        self.assertIsNone(end)
+        self.assert_passes(r, "1.1")
+        r, end = self.decide("uefi", True, flagged, menu_of())
+        self.assertIsNone(end)
+        self.assert_passes(r, "1.1")
+        for name, args, said in (
+                ("a menu although the flag is unset", (False, clean, None, True),
+                 "GNU GRUB (a menu) showed before the kernel"),
+                ("the flag is set in grubenv", (False, clean.replace("pending=[]", "pending=[1]")), "pre pending=[1]"),
+                ("a timeout before the flag block", (False, clean.replace("[] timeout=[0]", "[] timeout=[5]")),
+                 "pre timeout"),
+                ("the flag block gave a menu", (False, PRE_CLEAN + POST_FLAG), "post timeout=[30]"),
+                ("no observer line", (False, ""), "no 'sclab: pre' line"),
+                ("flag set: no menu", (True, flagged), "no GRUB menu"),
+                ("flag set: the flag block did nothing", (True, PRE_FLAG + POST_CLEAN, menu_of()), "post timeout=[0]"),
+                ("flag set: the flag not in grubenv", (True, PRE_CLEAN + POST_FLAG, menu_of()), "pre pending=[]"),
+                ("flag set: a 5 s menu", (True, flagged, menu_of(countdown=5), False, [
+                    x.replace("30s", "5s") for x in MENU_LINES]), "the countdown says 5s"),
+                ("flag set: the highlight is not on Ubuntu", (True, flagged, menu_of(selected=3)),
+                 "the highlight is on"),
+                ("flag set: no rescue entry", (True, flagged, menu_of(e2e.MENU_ENTRIES["bios"][:2])),
+                 "0 entries titled")):
+            r, end = self.decide("uefi", *args)
+            self.assert_fails(r, end, "1.1", "H", name)
+            self.assertIn(said, r.rows["1.1"].notes, name)
+        # Another set of entries than the image's is worth a look, not a failure.
+        r, end = self.decide("uefi", True, flagged, menu_of(e2e.MENU_ENTRIES["bios"]))
+        self.assertEqual((end, r.status("1.1")), (None, "WARN"))
+
+    def test_bios_decisions(self):
+        hidden = console.vgatext(fixture("vga-bios-hidden.bin"))
+        clean = "\n".join(hidden)
+        watch = FakeWatch(hidden)
+        # A menu with the flag unset is all of 1.1/2.1/5.1's H content on bios.
+        r, end = self.decide("bios", False, clean, None, True, vga=watch)
+        self.assert_fails(r, end, "1.1", "H", "bios: a menu although the flag is unset")
+        # The screen is polled: an observer line that is off is a WARN there, and is said.
+        r, end = self.decide("bios", False, "sclab: pre platform=pc pending=[] recordfail=[] timeout=[0] "
+                             "style=[hidden]\nsclab: post timeout=[30] style=[menu]\n", vga=watch)
+        self.assertEqual((end, r.status("1.1")), (None, "WARN"))
+        self.assertIn("observers: post timeout=[30]", r.rows["1.1"].notes)
+        # Flag set: the menu wiped the observers' lines, as it must. No WARN for that.
+        menu = menu_of(e2e.MENU_ENTRIES["bios"])
+        r, end = self.decide("bios", True, "", menu, True, vga=watch)
+        self.assertEqual((end, r.status("1.1")), (None, "PASS"))
+        # Observers still on the screen under a menu that says otherwise: worth a WARN.
+        r, end = self.decide("bios", True, clean, menu, True, vga=watch)
+        self.assertEqual((end, r.status("1.1")), (None, "WARN"))
+        r, end = self.decide("bios", True, clean, None, False, vga=watch)
+        self.assert_fails(r, end, "1.1", "H", "bios: flag set, the observers say no menu was drawn")
+        r, end = self.decide("bios", True, "", menu_of(e2e.MENU_ENTRIES["bios"], selected=2), True, vga=watch)
+        self.assert_fails(r, end, "1.1", "H", "bios: the highlight on the rescue entry")
+
+    def test_cmdline(self):
+        for cid, expected in (("1.2", EXP_DEFAULT), ("2.2", EXP_DEFAULT), ("3.4", EXP_RESCUE)):
+            r = fake_run(self)
+            r.check_cmdline(cid, attempt(), None, expected, FakeHit(expected.replace(" ", "  ")))  # the spaces do not count
+            self.assert_passes(r, cid)
+            for name, seen in (("another root", expected.replace("1bfe", "0b1c")),
+                               ("one more argument", expected + " quiet"),
+                               ("one less", expected.replace(" no_timer_check", "")),
+                               ("the other entry", EXP_RESCUE if expected == EXP_DEFAULT else EXP_DEFAULT)):
+                r = fake_run(self)
+                end = outcome_of(r.check_cmdline, cid, attempt(), None, expected, FakeHit(seen))
+                self.assert_fails(r, end, cid, "H", "%s %s" % (cid, name))
+                self.assertEqual(r.rows[cid].seen, seen)
+
+    def test_ok_line(self):
+        ok = e2e.ok_line_rx(B1)
+        self.assertEqual(ok.search(BOOTS_4).group(1), "7")
+        for old, new in (("emergency=inactive", "emergency=active"), ("local-fs=active", "local-fs=failed"),
+                         ("rescue=inactive", "rescue=active"), (" ok ", " bad "), (B1 + " ok", B5 + " ok")):
+            self.assertIn(old, OK1)
+            self.assertIsNone(ok.search(BOOTS_1.replace(old, new)), new)
+        self.assertEqual(ok.search(BOOTS_1.replace(" 7 ", " -1 ")).group(1), "-1")  # 1.4 says so: R1 is -1
+
+
+class TestBoot1Faults(FaultCase):
+    """Boot 1 (1.1 to 1.9) on the text and facts of a healthy boot, then
+    with one thing wrong."""
+
+    def boot1(self, text=BOOT_CLEAN, flag=False, boots=BOOTS_1, ssh=None, **facts):
+        r = fake_run(self, con=FakeCon(text), EXP_DEFAULT=EXP_DEFAULT)
+        FakeClock(self, r)
+        r.wait_ssh = lambda a: B1
+        facts.setdefault("boots", (0, boots.strip().split("\n")))
+        table = {"is-system-running": (0, "running\n"),
+                 "systemctl --failed": (0, "snapd.service loaded failed failed\n"),
+                 "cat /var/lib/smartconfig/boots": (0, boots), "-t scd | grep -c": (0, "1\n"),
+                 "-t sc-boot": (0, JOURNAL_OK % B1), "facts.sh normal": (0, normal_text(**facts)),
+                 "sc cat %s" % GOOD: (0, FSTAB_SHA + "  -\n")}
+        table.update(ssh or {})
+        answers(r, table)
+        return r, outcome_of(r.boot1, attempt("1", flag))
+
+    def test_good(self):
+        r, end = self.boot1()
+        self.assertIsNone(end)
+        self.assertEqual(r.status("1.0"), "SKIP")
+        self.assert_passes(r, "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9")
+        self.assertEqual((r.v["B1"], r.v["R1"], r.v["GOOD"], r.v["FSTAB_SHA"]), (B1, 7, GOOD, FSTAB_SHA))
+        self.assertIn("evidence/facts-boot1.txt", r.rows["1.4"].evidence)
+
+    def test_the_flag_is_known_after_boot_1(self):
+        # A retried boot 1 (flag not known) skips 1.1; its ok verdict then makes the flag unset for boot 2.
+        r, end = self.boot1(flag=None)
+        self.assertIsNone(end)
+        self.assertEqual(r.status("1.1"), "SKIP")
+        self.assert_passes(r, "1.2", "1.4", "1.9")
+        r.flag = None  # as boot() leaves it after a retry by no-ssh
+        self.assertIsNone(outcome_of(r.boot1, attempt("1b", None)))
+        self.assertIs(r.flag, False)
+
+    def test_one_fault(self):
+        show = ["Result=success", "ExecMainStatus=0", "ConditionResult=yes"]
+        journal = [(JOURNAL_OK % B1).strip()]
+        status = status_lines(B1)
+        for cid, strength, name, kw in (
+                ("1.1", "H", "a menu showed", dict(text=BOOT_CLEAN.replace(POST_CLEAN, POST_CLEAN + UEFI_MENU))),
+                ("1.1", "H", "the flag is set", dict(text=BOOT_CLEAN.replace("pending=[]", "pending=[1]"))),
+                ("1.1", "H", "the flag block made a menu of it", dict(text=BOOT_CLEAN.replace(POST_CLEAN, POST_FLAG))),
+                ("1.1", "H", "no post line", dict(text=BOOT_CLEAN.replace(POST_CLEAN, ""))),
+                ("1.2", "H", "quiet on the command line",
+                 dict(text=BOOT_CLEAN.replace(EXP_DEFAULT, EXP_DEFAULT + " quiet"))),
+                ("1.2", "H", "the rescue entry booted", dict(text=BOOT_CLEAN.replace(EXP_DEFAULT, EXP_RESCUE))),
+                ("1.3", "H", "the system is starting for ever", dict(ssh={"is-system-running": (1, "starting\n")})),
+                ("1.3", "H", "maintenance", dict(ssh={"is-system-running": (1, "maintenance\n")})),
+                ("1.4", "H", "no seen line", dict(boots=OK1 + "\n")),
+                ("1.4", "H", "no ok line", dict(boots="%s seen 100\n" % B1)),
+                ("1.4", "H", "an ok line of another boot", dict(boots=BOOTS_1.replace(B1 + " ok", B5 + " ok"))),
+                ("1.4", "H", "ok with emergency=active",
+                 dict(boots=BOOTS_1.replace("emergency=inactive", "emergency=active"))),
+                ("1.4", "H", "R1 below 0", dict(boots=BOOTS_1.replace(" 7 ", " -1 "))),
+                ("1.5", "H", "sc-boot-ok failed", {"show:sc-boot-ok.service": (0, ["Result=exit-code"] + show[1:])}),
+                ("1.5", "H", "sc-boot-seen exit 1",
+                 {"show:sc-boot-seen.service": (0, [show[0], "ExecMainStatus=1", show[2]])}),
+                ("1.5", "H", "sc-boot-seen's condition",
+                 {"show:sc-boot-seen.service": (0, show[:2] + ["ConditionResult=no"])}),
+                ("1.5", "H", "sc-boot-ok not shown", {"show:sc-boot-ok.service": None}),
+                ("1.5", "H", "systemctl show failed", {"show:sc-boot-ok.service": (1, show)}),
+                ("1.5", "H", "grub-editenv failed", {"journal-sc-boot": (0, journal + [
+                    "sc: boot verdict: grub-editenv unset failed: exit status 1"])}),
+                ("1.5", "H", "no GRUB environment block", {"journal-sc-boot": (0, [
+                    "sc: boot seen: /boot/grub/grubenv: no GRUB environment block"] + journal)}),
+                ("1.6", "H", "the flag set after an ok boot", dict(grubenv=(0, ["smartconfig_pending=1"]))),
+                ("1.6", "H", "the flag emptied, not unset", dict(grubenv=(0, ["smartconfig_pending="]))),
+                ("1.7", "H", "sc status exit 2", {"sc-status": (2, status)}),
+                ("1.7", "H", "sc status names another boot", {"sc-status": (0, status_lines(B2))}),
+                ("1.7", "H", "this boot is not normal", {"sc-status": (0, [status[0].replace("(normal)", "(emergency)")]
+                                                                     + status[1:])}),
+                ("1.7", "H", "root read-only",
+                 {"sc-status": (0, [status[0].replace("read-write", "read-only")] + status[1:])}),
+                ("1.7", "H", "the last healthy boot is another", {"sc-status": (0, [
+                    status[0], "Last healthy:  2026-10-04 11:00, boot 0a0b0c0d"] + status[2:])}),
+                ("1.7", "H", "scd not running",
+                 {"sc-status": (0, status[:2] + ["scd:           not running"] + status[3:])}),
+                ("1.7", "H", "failed since", {"sc-status": (0, status[:2] + [
+                    "Failed since:  1 boot, last 10-04 12:05: a mount failed"] + status[2:])}),
+                ("1.9", "H", "no baseline in this boot", {"journal-scd": (0, ["watching /etc (227 directories)"])}),
+                ("1.9", "H", "no fstab row", {"sc-log-fstab": (0, ["ID      WHEN              ORIGIN  FILE"])}),
+                ("1.9", "H", "sc cat GOOD is not /etc/fstab", dict(ssh={"sc cat %s" % GOOD: (0, "5" * 64 + "  -\n")})),
+                ("1.9", "H", "sc cat GOOD fails", dict(ssh={"sc cat %s" % GOOD: (0, "sc: no snapshot\n")}))):
+            r, end = self.boot1(**kw)
+            self.assert_fails(r, end, cid, strength, name)
+
+    def test_warnings(self):
+        # degraded: SmartConfig's units are held by 1.5, another unit's failure is a W.
+        r, end = self.boot1(ssh={"is-system-running": (1, "degraded\n")})
+        self.assertEqual((end, r.status("1.3")), (None, "WARN"))
+        self.assertIn("snapd.service", r.rows["1.3"].notes)
+        r, end = self.boot1(**{"sc-status": (0, status_lines(B1)[:3])})
+        self.assertEqual((end, r.status("1.7")), (None, "WARN"))
+        self.assertIn("Nothing recorded has changed", r.rows["1.7"].notes)
+
+
+LOG_EDIT = ("ID      WHEN              ORIGIN  FILE        SIZE  WHAT\n"
+            "%s  2026-10-04 12:03  auto    /etc/fstab  218   changed\n"
+            "%s  2026-10-04 12:00  auto    /etc/fstab  146   first seen\n" % (BAD, GOOD))
+# scd's journal and sc status after the edit (ssh.log of the uefi run of 56f5359), this file's ids.
+SCD_JOURNAL = ("baseline: 0 first seen, 0 changed and 0 deleted while not watching (11.837s)\n"
+               "T1 /etc/fstab: changed (%s)\n"
+               "T1 /etc/fstab: check: blocker fstab-source-missing, line 4: UUID=%s (for /mnt/backup) is not a device "
+               "on this machine (%s)\n" % (BAD, e2e.BAD_UUID, BAD))
+STATUS_ROW = "%s  2026-10-04 12:03  /etc/fstab  blocker fstab-source-missing, line 4\n" % BAD
+STATUS_EDIT = ("This boot:     1a2b3c4d (normal), root read-write\nLast healthy:  this boot, 2026-10-04 12:00\n"
+               "scd:           running (pid 630)\n\nChanged since this boot came up, newest first:\n"
+               "ID      WHEN              FILE        PROBLEM\n" + STATUS_ROW + "\n"
+               "To put /etc/fstab back as it was during the last healthy boot:\n  sc restore %s\n  sync\n"
+               "It takes effect at the next boot (now: systemctl daemon-reload, then mount -a).\n" % GOOD)
+
+
+class TestEditFaults(FaultCase):
+    """The edit (E.1 to E.6): scd records the bad line, sc check and sc
+    status say what a restore takes."""
+
+    def edit(self, reset_by_guest=True, **ssh):
+        r = fake_run(self, GOOD=GOOD)
+        self.clock = FakeClock(self, r)
+        r.reboot_ssh = lambda cid, how="reboot": qmp_event(1, "RESET", reset_by_guest, 100.0)
+        table = {"printf": (0, "4\n%s  /etc/fstab\n" % BAD_SHA), "sc log -n 3": (0, LOG_EDIT),
+                 "-t scd": (0, SCD_JOURNAL),
+                 "sc check": (2, "blocker   /etc/fstab  4     fstab-source-missing  UUID=%s\n" % e2e.BAD_UUID),
+                 "sc status": (2, STATUS_EDIT)}
+        table.update(ssh)
+        self.asked = answers(r, table)
+        return r, outcome_of(r.edit)
+
+    def test_good(self):
+        r, end = self.edit()
+        self.assertIsNone(end)
+        self.assert_passes(r, "E.1", "E.2", "E.3", "E.4", "E.5", "E.6")
+        self.assertEqual((r.v["N"], r.v["BAD_SHA"], r.v["BAD"]), (4, BAD_SHA, BAD))
+        # BAD stood for 10 s before it was taken: asked every 2 s.
+        self.assertGreaterEqual(len([c for c in self.asked if "sc log -n 3" in c]), 6)
+
+    def test_e2_needs_a_new_row_that_stays(self):
+        flap = iter(range(10000))
+        for name, log in (
+                ("scd recorded nothing", (0, LOG_EDIT.split("\n", 2)[0] + "\n" + LOG_EDIT.split("\n", 2)[2])),
+                ("sc log shows no row", (0, "ID      WHEN              ORIGIN  FILE        SIZE  WHAT\n")),
+                ("sc log fails", (1, "")),
+                ("a new row at every look", lambda c: (0, "%06x  2026-10-04 12:03  auto  /etc/fstab  218  changed\n%s"
+                                                       % (next(flap), LOG_EDIT.split("\n", 1)[1])))):
+            r, end = self.edit(**{"sc log -n 3": log})
+            self.assert_fails(r, end, "E.2", "H", name)
+            self.assertIsNone(r.v["BAD"], name)
+            self.assertIn("after 120 s", r.rows["E.2"].notes, name)
+
+    def test_one_fault(self):
+        def status(old, new):
+            self.assertIn(old, STATUS_EDIT)
+            return {"sc status": (2, STATUS_EDIT.replace(old, new))}
+
+        restore, sync = "  sc restore %s\n" % GOOD, "  sync\n"
+        for cid, name, ssh in (
+                ("E.3", "scd checked nothing", {"-t scd": (0, SCD_JOURNAL.split("T1 /etc/fstab: check:")[0])}),
+                ("E.3", "the blocker is on another snapshot",
+                 {"-t scd": (0, SCD_JOURNAL.replace("(%s)\n" % BAD, "(%s)\n" % GOOD))}),
+                ("E.3", "the blocker is on another line", {"-t scd": (0, SCD_JOURNAL.replace("line 4:", "line 3:"))}),
+                ("E.4", "sc check finds nothing", {"sc check": (0, "No problem found.\n")}),
+                ("E.4", "sc check fails", {"sc check": (1, "sc: store: database is locked\n")}),
+                ("E.5", "sc status exit 0", {"sc status": (0, STATUS_EDIT)}),
+                ("E.5", "no row for BAD", status(STATUS_ROW, "")),
+                ("E.5", "the row is GOOD's", status(STATUS_ROW, STATUS_ROW.replace(BAD, GOOD))),
+                ("E.5", "the row is of another line", status("line 4\n", "line 3\n")),
+                ("E.5", "no sc restore", status(restore, "")),
+                ("E.5", "sc restore of another snapshot", status(restore, "  sc restore %s\n" % BAD)),
+                ("E.5", "sc restore only above the row",
+                 {"sc status": (2, STATUS_EDIT.replace(restore, "").replace(STATUS_ROW, restore + STATUS_ROW))}),
+                ("E.5", "no sync", status(sync, "")),
+                ("E.5", "sync before sc restore", status(restore + sync, sync + restore)),
+                ("E.5", "not said when it takes effect",
+                 status("It takes effect at the next boot", "Reboot to apply it")),
+                ("E.5", "it says remount", status(restore, "  mount -o remount,rw /\n" + restore)),
+                ("E.5", "it says reboot", status(sync, sync + "  systemctl reboot\n"))):
+            r, end = self.edit(**ssh)
+            self.assert_fails(r, end, cid, "F", name)
+            self.assert_passes(r, *[c for c in ("E.1", "E.2", "E.3", "E.4", "E.5", "E.6") if c != cid])
+
+    def test_e1_is_the_labs(self):
+        r, end = self.edit(printf=(1, ""))  # the append failed: nothing to hold scd to
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual((end.row.id, end.row.cause, e2e.verdict(r.rows.values())), ("E.1", "lab", "INCONCLUSIVE"))
+        r, end = self.edit(printf=(0, "5\n%s  /etc/fstab\n" % BAD_SHA))  # another image's fstab: said, and N is bound
+        self.assertEqual((r.status("E.1"), r.v["N"]), ("WARN", 5))
+
+    def test_e6_wants_the_guests_own_reset(self):
+        r, end = self.edit(reset_by_guest=False)
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual((end.row.id, end.row.status, end.row.cause), ("E.6", "FAIL", "lab"))
+        self.assertEqual(e2e.verdict(r.rows.values()), "INCONCLUSIVE")
+
+
+BOOT_BROKEN = (UEFI_SILENT + PRE_CLEAN + POST_CLEAN + kernel_lines()
+               + "[  OK  ] Finished sc-boot-seen.service - SmartConfig: record that this boot started (sc boot seen).\n"
+               + TIMED_OUT + DEPEND + render("emergency") + EMERGENCY_TAIL)
+
+
+class TestBoot2Faults(FaultCase):
+    """Boot 2 (2.1 to 2.6): the bad line's boot, with nothing typed."""
+
+    def boot2(self, text=BOOT_BROKEN, outcome="b", **ssh):
+        r = fake_run(self, con=FakeCon(text), EXP_DEFAULT=EXP_DEFAULT, GOOD=GOOD, BAD=BAD, B1=B1, N=4)
+        FakeClock(self, r)
+        r.unexpected = lambda a: None
+        r.probe_boot2 = lambda: (outcome, None if outcome == "a" else B2, "active" if outcome == "b" else "inactive",
+                                 "inactive" if outcome == "a" else "active", 0 if outcome == "a" else 1)
+        table = {"cat /var/lib/smartconfig/boots": (0, BOOTS_2), "grub-editenv": (0, "smartconfig_pending=1\n"),
+                 "'sync'": (0, "")}
+        table.update(ssh)
+        answers(r, table)
+        return r, outcome_of(r.boot2, attempt("2", False))
+
+    def test_good(self):
+        for outcome in "bc":
+            boots = BOOTS_2 if outcome == "b" else BOOTS_2.replace("emergency=active", "emergency=inactive")
+            r, end = self.boot2(outcome=outcome, **{"cat /var/lib/smartconfig/boots": (0, boots)})
+            self.assertIsNone(end)
+            self.assert_passes(r, "2.1", "2.2", "2.3", "2.4", "2.5", "2.6")
+            self.assertEqual((r.v["outcome"], r.v["B2"]), (outcome, B2))
+            self.assertEqual(r.v["B2_emergency"], "active" if outcome == "b" else "inactive")
+            self.assertIs(r.flag, True)  # sc-boot-seen set it: boot 3 expects the menu
+        r, end = self.boot2(outcome="a")
+        self.assertIsNone(end)
+        self.assert_passes(r, "2.1", "2.2", "2.3", "2.4", "2.5")
+        self.assertEqual((r.status("2.6"), r.v["outcome"], r.v["B2"]), ("SKIP", "a", None))
+        self.assertEqual(r.v["B2_short"], console.short_boot(B2))  # from the report: 3.8.boots holds the file to it
+
+    def test_one_fault(self):
+        no_seen = BOOTS_2.replace("%s seen 200\n" % B2, "")
+        for cid, name, kw in (
+                ("2.1", "a menu showed", dict(text=BOOT_BROKEN.replace(POST_CLEAN, POST_CLEAN + UEFI_MENU))),
+                ("2.1", "the flag was set before the bad boot",
+                 dict(text=BOOT_BROKEN.replace("pending=[]", "pending=[1]"))),
+                ("2.2", "another command line", dict(text=BOOT_BROKEN.replace(EXP_DEFAULT, EXP_DEFAULT + " fstab=no"))),
+                ("2.3", "emergency mode with no device timeout", dict(text=BOOT_BROKEN.replace(TIMED_OUT, ""))),
+                ("2.3", "a login prompt and no timeout", dict(text=BOOT_BROKEN.split(TIMED_OUT)[0] + LOGIN)),
+                ("2.3", "the timeout, but local-fs.target did not fail", dict(text=BOOT_BROKEN.replace(DEPEND, ""))),
+                ("2.3", "the timeout, then a login prompt", dict(text=BOOT_BROKEN.split(DEPEND)[0] + LOGIN)),
+                ("2.3", "local-fs.target failed before the timeout",
+                 dict(text=BOOT_BROKEN.replace(TIMED_OUT + DEPEND, DEPEND + TIMED_OUT + "[  OK  ] Reached x.\n"))),
+                ("2.4", "no prompt and no login", dict(text=BOOT_BROKEN.split("This boot:")[0])),
+                ("2.6", "no seen line for B2", {"cat /var/lib/smartconfig/boots": (0, no_seen)}),
+                ("2.6", "no bad line for B2",
+                 {"cat /var/lib/smartconfig/boots": (0, BOOTS_2.replace(BAD2 + "\n", ""))}),
+                ("2.6", "B2 bad with local-fs=active",
+                 {"cat /var/lib/smartconfig/boots": (0, BOOTS_2.replace("local-fs=inactive", "local-fs=active"))}),
+                ("2.6", "the menu flag is not set", {"grub-editenv": (0, "recordfail=1\n")}),
+                ("2.6", "the menu flag is 0", {"grub-editenv": (0, "smartconfig_pending=0\n")}),
+                ("2.6", "sync fails", {"'sync'": (1, "")})):
+            r, end = self.boot2(**kw)
+            self.assert_fails(r, end, cid, "H", name)
+
+    def test_25_is_held_in_boot_2(self):
+        # 2.5 is F: the mode goes on to 2.6 and the reset.
+        r, end = self.boot2(text=BOOT_BROKEN.replace("  sync\n", ""))
+        self.assert_fails(r, end, "2.5", "F", "the report lacks a line")
+        self.assert_passes(r, "2.6")
+        r, end = self.boot2(text=BOOT_BROKEN.replace(render("emergency"), ""))
+        self.assert_fails(r, end, "2.5", "F", "no report")
+
+    def test_25_waits_for_the_reports_end(self):
+        # 2.4's prompt can be on the console before sc has written all of
+        # its report: 2.5 reads when what ends the report is there.
+        con = FakeCon(BOOT_BROKEN[:BOOT_BROKEN.index("Changed since")])
+        r = fake_run(self, con=con, GOOD=GOOD, BAD=BAD, B1=B1, N=4)
+        clock = FakeClock(self, r)
+        r.mux.wait = lambda size, timeout: (clock.sleep(timeout), setattr(r.con, "t", BOOT_BROKEN))
+        r.check_emergency_report(attempt("2"), "b", B2)
+        self.assert_passes(r, "2.5")
+        self.assertNotIn("nothing came after the report", r.rows["2.5"].notes)
+
+    def test_the_flag_is_set_from_23_on(self):
+        # A flake after 2.3 retries boot 2 with the menu expected (sc-boot-seen ran).
+        r, end = self.boot2(text=BOOT_BROKEN.replace(DEPEND, DEPEND + TCG_PANIC))
+        self.assertIsInstance(end, e2e.Retry)
+        self.assertEqual((end.sig, r.status("2.3"), r.flag), ("panic", "PASS", True))
+        self.assertNotIn("2.4", r.rows)
+
+    def test_a_panic_that_is_not_tcgs_is_no_retry(self):
+        r, end = self.boot2(text=BOOT_BROKEN.replace(DEPEND, DEPEND + VFS_PANIC))
+        self.assertIsInstance(end, e2e.LabError)
+        self.assertNotIsInstance(end, e2e.Retry)
+        self.assertIn("not TCG's", str(end))
+        self.assertNotIn("2.4", r.rows)
+
+    def test_an_end_that_is_no_end_of_boot_2(self):
+        # A grub> prompt or a shutdown is not one of 2.4's outcomes, and nothing says it is sc's.
+        for tail, said in (("[   95.103312] reboot: Power down\n", "boot 2 ended in shutdown"),
+                           ("error: no such device: 0b1c.\ngrub> ", "boot 2 ended in grub")):
+            r, end = self.boot2(text=BOOT_BROKEN.split("This boot:")[0] + tail)
+            self.assertIsInstance(end, e2e.LabError)
+            self.assertIn(said, str(end))
+            self.assertEqual((r.status("2.3"), r.status("2.4")), ("PASS", None))
+
+    def test_reset_at_timeout(self):
+        r = fake_run(self, con=FakeCon(BOOT_BROKEN), EXP_DEFAULT=EXP_DEFAULT)
+        FakeClock(self, r)
+        r.args.boot2 = "reset-at-timeout"
+        self.assertIsNone(outcome_of(r.boot2, attempt("2", False)))
+        self.assert_passes(r, "2.1", "2.2", "2.3", "2.4")
+        self.assertEqual((r.status("2.5"), r.status("2.6"), r.v["outcome"], r.flag), ("SKIP", "SKIP", "a", True))
+
+
+BOOTS_3 = BOOTS_2
+RESTORED = "restored /etc/fstab from %s (mode 0644 root:root), previous state saved as %s\n" % (GOOD, PRE)
+# What the console shows after Enter on the rescue entry: GRUB's echo, the kernel, sc's report, the prompt.
+AFTER_ENTER = "\n" + e2e.RESCUE_ECHO + "\n" + kernel_lines(EXP_RESCUE) + rescue_report("b") + RESCUE_TAIL
+UNDO_ANSWERS = {"mount ": (0, ""), "findmnt": (0, "rw,relatime\n"), "sc restore": (0, RESTORED),
+                "sha256sum": (0, FSTAB_SHA + "  /etc/fstab\n"), "sync": (0, ""), "systemctl daemon-reload": (0, "")}
+
+
+class TestBoot3Faults(FaultCase):
+    """Boot 3 (3.0 to 3.9): the menu, the rescue entry, sc's report, the
+    root shell and the report's commands."""
+
+    def boot3(self, menu=UEFI_MENU, after=AFTER_ENTER, enter="\nroot@sclab:~# ", facts=None, events=None, cmds=None,
+              **v):
+        cmds = dict({"sh ": (0, facts or rescue_facts(BOOTS_3))}, **dict(UNDO_ANSWERS, **(cmds or {})))
+        con = FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG + menu, cmds=cmds, typed={"\r": enter})
+        values = dict(EXP_RESCUE=EXP_RESCUE, GOOD=GOOD, BAD=BAD, B1=B1, B2=B2, N=4, outcome="b", FSTAB_SHA=FSTAB_SHA)
+        r = fake_run(self, con=con, **dict(values, **v))
+        FakeClock(self, r)
+        r.flag = True
+        r.qmp = FakeQmp([qmp_event(0, "RESET", True, 100.0)] if events is None else events)
+        r.qmp.mark = lambda: 0
+        r.machine = FakeMachine()
+        r.new_boot = lambda ev: ev
+
+        def pick(a, g, target):  # 3.2's keys: console.pick has its own tests (test_lab.py)
+            g["keys"], g["enter_pos"] = ["0e", "0e", "0e"], con.size()
+            con.t += after
+
+        r.pick = pick
+        return r, outcome_of(r.boot3, attempt("3", True))
+
+    def test_good(self):
+        r, end = self.boot3()
+        self.assertIsNone(end)
+        self.assert_passes(r, "3.0", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8.ro", "3.8.mounts",
+                           "3.8.units", "3.8.boots", "3.8.sc", "3.8.hashes", "3.8.vcs1", "3.9")
+        self.assertEqual(r.status("3.8.vga"), "SKIP")
+        self.assertEqual((r.v["K"], r.v["reason"], r.v["B3"], r.v["PRE"]), (1, "b", B3, PRE))
+        self.assertEqual(r.con.sent, ["\r", "systemctl reboot\r"])  # Enter at the prompt; the reboot is not awaited
+        self.assertFalse(r.shell)
+
+    def test_one_fault(self):
+        noise = "".join("EXT4-fs (vda1): re-mounted, pass %d\n" % i for i in range(12))
+        on_rescue = UEFI_MENU.replace("*Ubuntu", " Ubuntu").replace(" SmartConfig rescue", "*SmartConfig rescue")
+        rw = rescue_facts(BOOTS_3, mounts=[MOUNTS[0].replace("ro,relatime", "rw,relatime")] + MOUNTS[1:])
+        for cid, name, kw in (
+                ("3.1", "a 5 s menu", dict(menu=UEFI_MENU.replace("in 30s.", "in 5s."))),
+                ("3.1", "the highlight is on the rescue entry", dict(menu=on_rescue)),
+                ("3.1", "two rescue entries",
+                 dict(menu=UEFI_MENU.replace(" SmartConfig rescue\n", " SmartConfig rescue\n" * 2))),
+                ("3.3", "GRUB did not echo the entry's line",
+                 dict(after=AFTER_ENTER.replace(e2e.RESCUE_ECHO + "\n", ""))),
+                ("3.4", "another root than grub.cfg's entry", dict(EXP_RESCUE=EXP_RESCUE.replace("1bfe", "0b1c"))),
+                ("3.4", "an argument more than grub.cfg's entry",
+                 dict(after=AFTER_ENTER.replace(EXP_RESCUE, EXP_RESCUE + " quiet"))),
+                ("3.5", "a login prompt, no rescue prompt", dict(after=AFTER_ENTER.split("This boot:")[0] + LOGIN)),
+                ("3.5", "the bad device was waited for", dict(after=AFTER_ENTER.replace(INIT, INIT + TIMED_OUT))),
+                ("3.5", "local-fs.target failed", dict(after=AFTER_ENTER.replace(INIT, INIT + DEPEND))),
+                ("3.6", "no report above the prompt", dict(after=AFTER_ENTER.replace(rescue_report("b"), ""))),
+                ("3.6", "the report scrolled off: 25 rows",
+                 dict(after=AFTER_ENTER.replace("Press Enter for maintenance", noise + "Press Enter for maintenance"))),
+                ("3.6", "a line of the report is gone",
+                 dict(after=AFTER_ENTER.replace("  systemctl daemon-reload\n", ""))),
+                ("3.7", "a password is asked for", dict(enter="\nGive root password for maintenance\nPassword: ")),
+                ("3.7", "sulogin gives up",
+                 dict(enter="\nCannot open access to console, the root account is locked.\n")),
+                ("3.7", "nothing after Enter", dict(enter="")),
+                ("3.8.ro", "/ is mounted read-write", dict(facts=rw)),
+                ("3.9", "the remount fails", dict(cmds={"mount ": (32, "mount: /: cannot remount read-write\n")})),
+                ("3.9", "a SHUTDOWN, not a reset", dict(events=[qmp_event(0, "SHUTDOWN", True, 100.0)])),
+                ("3.9", "a reset the guest did not ask for", dict(events=[qmp_event(0, "RESET", False, 100.0)]))):
+            r, end = self.boot3(**kw)
+            self.assert_fails(r, end, cid, "H", name)
+
+    def test_kernel_without_fstab_no_is_a_missed_pick(self):
+        # Enter landed on another entry: the lab's keys, not sc's entry. The boot again.
+        r, end = self.boot3(after=AFTER_ENTER.replace(EXP_RESCUE, EXP_DEFAULT))
+        self.assertIsInstance(end, e2e.Retry)
+        self.assertEqual(end.sig, "menu-missed")
+        self.assertNotIn("3.2", r.rows)
+
+    def test_36_wants_the_prompt_under_the_report(self):
+        # The screen from the report to the prompt is what must fit: with no prompt read, 3.6 cannot say so.
+        text = INIT + rescue_report("b") + RESCUE_TAIL.split("Press Enter")[0]
+        r = fake_run(self, con=FakeCon(text), GOOD=GOOD, BAD=BAD, B1=B1, N=4, outcome="b")
+        end = outcome_of(r.check_rescue_report, attempt("3", True), len(text))
+        self.assert_fails(r, end, "3.6", "H", "no prompt after the report")
+        self.assertIn("no 'Press Enter for maintenance' after the report", r.rows["3.6"].notes)
+
+    def rescue(self, boots=BOOTS_3, v=None, **over):
+        values = dict(GOOD=GOOD, BAD=BAD, B1=B1, B2=B2, FSTAB_SHA=FSTAB_SHA, K=1, reason="b", B3_short="3c4d5e6f")
+        r = fake_run(self, con=FakeCon(cmds={"sh ": (0, rescue_facts(boots, **over))}), **dict(values, **(v or {})))
+        return r, outcome_of(r.check_rescue_facts, attempt("3", True))
+
+    def test_38_good(self):
+        r, end = self.rescue()
+        self.assertIsNone(end)
+        self.assert_passes(r, "3.8.ro", "3.8.mounts", "3.8.units", "3.8.boots", "3.8.sc", "3.8.hashes", "3.8.vcs1")
+
+    def test_38_one_fault(self):
+        mounted = 'SOURCE="/dev/vda16" LABEL="BOOT" FSTYPE="ext4" OPTIONS="rw,relatime"'
+        refused = "sc: store /var/lib/smartconfig: " + e2e.RESTORE_REFUSED
+        third = "6f708192-0000-4000-8000-000000000006"
+        for cid, name, kw in (
+                ("3.8.mounts", "/boot is mounted", dict(mounts=[MOUNTS[0], "/boot " + mounted] + MOUNTS[2:])),
+                ("3.8.mounts", "/mnt/backup is mounted", dict(mounts=MOUNTS[:3] + ["/mnt/backup " + mounted])),
+                ("3.8.mounts", "rescue.target is not active", dict(active=(0, ["rescue.target=inactive"]))),
+                ("3.8.units", "sc-boot-seen ran on the read-only root",
+                 {"show:sc-boot-seen.service": (0, ["Id=sc-boot-seen.service", "ConditionResult=yes"])}),
+                ("3.8.units", "sc-boot-seen not shown", {"show:sc-boot-seen.service": None}),
+                ("3.8.units", "sc-boot-ok started",
+                 {"show:sc-boot-ok.service": (0, ["Id=sc-boot-ok.service", "ExecMainStartTimestampMonotonic=2351120"])}),
+                ("3.8.boots", "the rescue boot is in the boots file", dict(boots=BOOTS_3 + "%s seen 300\n" % B3,
+                                                                           v=dict(K=2, reason="a"))),
+                ("3.8.boots", "no seen line for B2", dict(boots=BOOTS_3.replace("%s seen 200\n" % B2, ""))),
+                ("3.8.boots", "two failed boots, the report said 1",
+                 dict(boots=BOOTS_3 + "%s seen 250\n" % third, v=dict(reason="a"))),
+                ("3.8.boots", "no failed boot in the file", dict(boots=BOOTS_1, v=dict(B2=None, reason=None))),
+                ("3.8.boots", "B1 is not in the file",
+                 dict(boots=BOOTS_3.replace(B1, third), v=dict(K=None, reason=None))),
+                ("3.8.boots", "the report named another boot as this one", dict(v=dict(B3_short="0a0b0c0d"))),
+                ("3.8.boots", "boot 2's report named another boot (outcome a)",
+                 dict(v=dict(B2=None, B2_short="0a0b0c0d"))),
+                ("3.8.sc", "sc status --console exit 0", dict(sc_status_console=(0, ["  sc restore " + GOOD]))),
+                ("3.8.sc", "sc status --console did not run", dict(sc_status_console=None)),
+                ("3.8.sc", "sc diff shows no added line", dict(sc_diff=(0, [" LABEL=BOOT /boot ext4 defaults 0 2"]))),
+                ("3.8.sc", "sc cat GOOD is not boot 1's fstab", dict(sc_cat_good=(0, ["5" * 64]))),
+                ("3.8.sc", "sc check exit 0", dict(sc_check=(0, ["/etc/fstab: blocker fstab-source-missing, line 4"]))),
+                ("3.8.sc", "sc check finds another problem",
+                 dict(sc_check=(2, ["/etc/fstab: blocker fstab-syntax, line 4"]))),
+                ("3.8.sc", "sc restore worked on a read-only root",
+                 dict(sc_restore=(0, ["restored /etc/fstab from " + GOOD]))),
+                ("3.8.sc", "sc restore not run: facts.sh found the root writable", dict(sc_restore=(125, [refused]))),
+                ("3.8.sc", "sc restore did not run", dict(sc_restore=None)),
+                ("3.8.sc", "sc restore failed for another reason", dict(sc_restore=(1, ["sc: no snapshot " + GOOD]))),
+                ("3.8.hashes", "the store changed",
+                 dict(after=["/var/lib/smartconfig/changes.db " + "9" * 64] + HASHES[1:])),
+                ("3.8.hashes", "sc check left a file", dict(leftovers=(0, ["/etc/sc-check-812345"]))),
+                ("3.8.hashes", "the leftovers were not looked for",
+                 dict(leftovers=(1, ["find: /etc: Permission denied"]))),
+                ("3.8.vcs1", "the screen does not show the restore", dict(vcs1=(0, ["sclab login:"]))),
+                ("3.8.vcs1", "the screen shows another snapshot's restore", dict(vcs1=(0, ["  sc restore " + BAD])))):
+            r, end = self.rescue(**kw)
+            self.assert_fails(r, end, cid, "F", name)
+            for other in ("3.8.ro", "3.8.mounts", "3.8.units", "3.8.boots", "3.8.sc", "3.8.hashes", "3.8.vcs1"):
+                if other != cid:
+                    self.assertEqual(r.status(other), "PASS", "%s: %s is %s" % (name, other, r.rows[other].notes))
+
+    def undo(self, cmds=None, undo=None, events=None, gap=False):
+        con = FakeCon(cmds=dict(UNDO_ANSWERS, **(cmds or {})))
+        r = fake_run(self, con=con, GOOD=GOOD, FSTAB_SHA=FSTAB_SHA,
+                     undo=[c.format(GOOD=GOOD) for c in e2e.UNDO] if undo is None else undo)
+        r.shell = True
+        r.qmp = FakeQmp([qmp_event(0, "RESET", True, 100.0)] if events is None else events)
+        r.qmp.mark = lambda: 0
+        r.machine = FakeMachine()
+        r.new_boot = lambda ev: ev
+        if gap:  # the host stood still while a command ran
+            real = con.cmd
+            con.cmd = lambda c, t=180: (setattr(r.mux, "gaps", r.mux.gaps + [(1.0, 400.0)]), real(c, t))[1]
+            self.addCleanup(setattr, FakeMux, "gaps", [])
+        return r, outcome_of(r.run_undo, attempt("3", True))
+
+    def test_39_good(self):
+        r, end = self.undo()
+        self.assertIsNone(end)
+        self.assert_passes(r, "3.9")
+        self.assertEqual((r.v["PRE"], r.shell, r.con.sent), (PRE, False, ["systemctl reboot\r"]))
+
+    def test_39_one_fault(self):
+        want = [c.format(GOOD=GOOD) for c in e2e.UNDO]
+        for name, kw, said in (
+                ("the report restores another snapshot", dict(undo=[c.replace(GOOD, BAD) for c in want]),
+                 "the report's commands"),
+                ("the report has no sync", dict(undo=[c for c in want if c != "sync"]), "the report's commands"),
+                ("the report has no remount", dict(undo=want[1:]), "the report's commands"),
+                ("the report gives no command", dict(undo=[]), "the report's commands"),
+                ("the report reboots before the restore", dict(undo=want[:1] + want[:0:-1]), "the report's commands"),
+                ("the remount fails", dict(cmds={"mount ": (32, "mount: /: cannot remount\n")}), "exit 32"),
+                ("/ is still read-only", dict(cmds={"findmnt": (0, "ro,relatime\n")}), "after the remount"),
+                ("sc restore fails", dict(cmds={"sc restore": (1, "sc: store: database is locked\n")}), "exit 1"),
+                ("sc restore does not say what it saved", dict(cmds={"sc restore": (0, "restored /etc/fstab\n")}),
+                 "previous state saved as"),
+                ("sc restore restored from another snapshot",
+                 dict(cmds={"sc restore": (0, RESTORED.replace("from " + GOOD, "from " + BAD))}),
+                 "previous state saved as"),
+                ("/etc/fstab is not boot 1's after the restore",
+                 dict(cmds={"sha256sum": (0, "5" * 64 + "  /etc/fstab\n")}),
+                 "after the restore"),
+                ("sync fails", dict(cmds={"sync": (1, "")}), "'sync' exit 1"),
+                ("daemon-reload fails", dict(cmds={"systemctl daemon-reload": (1, "Failed to reload daemon\n")}),
+                 "exit 1"),
+                ("sc restore never returns", dict(cmds={"sc restore": (None, "")}), "no answer in time"),
+                ("the guest powers off", dict(events=[qmp_event(0, "SHUTDOWN", True, 100.0)]),
+                 "systemctl reboot gave SHUTDOWN"),
+                ("the reset is not the guest's", dict(events=[qmp_event(0, "RESET", False, 100.0)]),
+                 "systemctl reboot gave RESET")):
+            r, end = self.undo(**kw)
+            self.assert_fails(r, end, "3.9", "H", name)
+            self.assertIn(said, r.rows["3.9"].notes, name)
+
+    def test_39_no_answer_while_the_host_stood_still_is_the_labs(self):
+        r, end = self.undo(cmds={"sc restore": (None, "")}, gap=True)
+        self.assertIsInstance(end, e2e.LabError)
+        self.assertIn("while the host stood still", str(end))
+        self.assertNotIn("3.9", r.rows)
+        r, end = self.undo(gap=True)  # a gap, but every command answered: nothing to excuse
+        self.assertIsNone(end)
+        self.assert_passes(r, "3.9")
+
+
+LOG_4 = ["ID      WHEN              ORIGIN       FILE        SIZE  WHAT",
+         "f00d12  2026-10-04 12:10  restore      /etc/fstab  146   restored from %s" % GOOD,
+         "%s  2026-10-04 12:10  pre-restore  /etc/fstab  202   before restoring %s" % (PRE, GOOD),
+         "%s  2026-10-04 12:03  auto         /etc/fstab  202   changed" % BAD,
+         "%s  2026-10-04 12:00  auto         /etc/fstab  146   first seen" % GOOD]
+
+
+class TestBoot4Faults(FaultCase):
+    """Boot 4 (4.1 to 4.6): the menu once more, left alone; a healthy boot
+    with /etc/fstab back; the ok verdict against the ledger."""
+
+    def boot4(self, text=BOOT_MENU, boots=BOOTS_4, ssh=None, v=None, **facts):
+        values = dict(EXP_DEFAULT=EXP_DEFAULT, GOOD=GOOD, BAD=BAD, PRE=PRE, B1=B1, B2=B2, B3=B3, K=1, R1=7,
+                      FSTAB_SHA=FSTAB_SHA, BAD_SHA=BAD_SHA)
+        r = fake_run(self, con=FakeCon(text), **dict(values, **(v or {})))
+        FakeClock(self, r)
+        r.flag = True
+        r.wait_ssh = lambda a: B4
+        blocks = {"boots": (0, boots.strip().split("\n")), "journal-sc-boot": (0, [(JOURNAL_OK % B4).strip()]),
+                  "sc-status": (0, status_lines(B4)), "sc-log-fstab": (0, LOG_4)}
+        table = {"is-system-running": (0, "running\n"), "cat /var/lib/smartconfig/boots": (0, boots),
+                 "-t sc-boot": (0, JOURNAL_OK % B4), "facts.sh normal": (0, normal_text(**dict(blocks, **facts))),
+                 "sc cat %s" % PRE: (0, BAD_SHA + "  -\n")}
+        table.update(ssh or {})
+        answers(r, table)
+        return r, outcome_of(r.boot4, attempt("4", True))
+
+    def test_good(self):
+        r, end = self.boot4()
+        self.assertIsNone(end)
+        self.assert_passes(r, "4.1.cmdline", "4.1.nokey", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6")
+        self.assertEqual((r.v["B4"], r.v["R4"]), (B4, 12))
+        self.assertIs(r.flag, False)  # the ok verdict unset it: boot 5 expects no menu
+
+    def test_one_fault(self):
+        show = ["Result=success", "ExecMainStatus=0", "ConditionResult=yes"]
+        fstab = normal_facts().lines("fstab")
+        active = ["local-fs.target=active", "emergency.target=inactive", "rescue.target=inactive"]
+        with_b3 = BOOTS_4.replace("%s seen 400" % B4, "%s seen 300\n%s seen 400" % (B3, B4))
+        for cid, strength, name, kw in (
+                ("4.1", "H", "no menu although the flag is set", dict(text=BOOT_MENU.replace(UEFI_MENU, ""))),
+                ("4.1", "H", "a 5 s menu", dict(text=BOOT_MENU.replace("in 30s.", "in 5s."))),
+                ("4.1", "H", "the highlight is on the rescue entry", dict(text=BOOT_MENU.replace(
+                    "*Ubuntu", " Ubuntu").replace(" SmartConfig rescue", "*SmartConfig rescue"))),
+                ("4.1", "H", "no rescue entry", dict(text=BOOT_MENU.replace(" SmartConfig rescue\n", ""))),
+                ("4.1", "H", "the menu, but the flag is not in grubenv",
+                 dict(text=BOOT_MENU.replace(PRE_FLAG, PRE_CLEAN))),
+                ("4.2", "H", "the bad device was waited for", dict(text=BOOT_MENU.replace(INIT, INIT + TIMED_OUT))),
+                ("4.2", "H", "emergency mode again",
+                 dict(text=BOOT_MENU.split(LOGIN)[0] + TIMED_OUT + DEPEND + EMERGENCY_TAIL)),
+                ("4.2", "H", "local-fs.target failed", dict(active=(0, ["local-fs.target=failed"] + active[1:]))),
+                ("4.2", "H", "emergency.target active",
+                 dict(active=(0, [active[0], "emergency.target=active", active[2]]))),
+                ("4.2", "H", "rescue.target active", dict(active=(0, active[:2] + ["rescue.target=active"]))),
+                ("4.2", "H", "the units' states not read", dict(active=(1, []))),
+                ("4.2", "H", "the system never came up", dict(ssh={"is-system-running": (1, "starting\n")})),
+                ("4.3", "H", "no seen line for B4", dict(boots=BOOTS_4.replace("%s seen 400\n" % B4, ""))),
+                ("4.3", "H", "no ok line for B4", dict(boots=BOOTS_4.replace(OK4 + "\n", ""))),
+                ("4.3", "H", "R4 is R1: no restore between them", dict(boots=BOOTS_4.replace(" 401 12 ", " 401 7 "))),
+                ("4.3", "H", "R1 is not known", dict(v=dict(R1=None))),
+                ("4.3", "H", "the rescue boot left a line", dict(boots=with_b3, v=dict(K=None))),
+                ("4.3", "H", "an ok boot between B1 and B4", dict(boots=BOOTS_4.replace(BAD2, OK1.replace(B1, B2)))),
+                ("4.4", "H", "/etc/fstab is not boot 1's", {"fstab-sha256": (0, ["5" * 64])}),
+                ("4.4", "H", "the bad line is still there", dict(fstab=(0, fstab + [e2e.BAD_LINE]))),
+                ("4.4", "H", "the menu flag is still set", dict(grubenv=(0, ["smartconfig_pending=1"]))),
+                ("4.5", "H", "sc status still says failed", {"sc-status": (2, status_lines(B4)[:2] + [
+                    "Failed since:  1 boot, last 10-04 12:05: a mount failed"] + status_lines(B4)[2:])}),
+                ("4.5", "H", "sc status is of another boot", {"sc-status": (0, status_lines(B1))}),
+                ("4.6", "F", "the newest row is no restore", {"sc-log-fstab": (0, LOG_4[:1] + LOG_4[3:])}),
+                ("4.6", "F", "restored from another snapshot", {"sc-log-fstab": (0, [LOG_4[0], LOG_4[1].replace(
+                    "restored from " + GOOD, "restored from " + BAD)] + LOG_4[2:])}),
+                ("4.6", "F", "no pre-restore row under it", {"sc-log-fstab": (0, LOG_4[:2] + LOG_4[3:])}),
+                ("4.6", "F", "the pre-restore row is not the one sc restore named",
+                 {"sc-log-fstab": (0, LOG_4[:2] + [LOG_4[2].replace(PRE, "0f0e0d")] + LOG_4[3:])}),
+                ("4.6", "F", "one row only", {"sc-log-fstab": (0, LOG_4[:2])}),
+                ("4.6", "F", "PRE is not the bad fstab", dict(ssh={"sc cat %s" % PRE: (0, FSTAB_SHA + "  -\n")})),
+                ("4.6", "F", "sc restore named no PRE", dict(v=dict(PRE=None))),
+                ("4.6", "F", "sc-boot-ok failed", {"show:sc-boot-ok.service": (0, ["Result=exit-code"] + show[1:])}),
+                ("4.6", "F", "grub-editenv failed", {"journal-sc-boot": (0, [
+                    (JOURNAL_OK % B4).strip(), "sc: boot verdict: grub-editenv unset failed: exit status 1"])})):
+            r, end = self.boot4(**kw)
+            self.assert_fails(r, end, cid, strength, name)
+
+    def ledger(self, boots, tries4=0, **v):
+        r = fake_run(self, **dict(dict(B1=B1, B2=B2, B3=B3, K=1), **v))
+        for n in range(tries4 + 1):  # boot 4's attempts: all but the last were retried
+            a = attempt("4", True)
+            a.result = "retry" if n < tries4 else None
+            r.attempts.append(a)
+        return r.ledger_problems(boots, B4)
+
+    def test_ledger(self):
+        third = "6f708192-0000-4000-8000-000000000006"
+        seen3 = "%s seen 350\n" % third
+        self.assertEqual(self.ledger(BOOTS_4), [])
+        self.assertEqual(self.ledger(BOOTS_4, B2=None, K=None, B3=None), [])  # nothing known: nothing to hold it to
+        # A boot 4 that was retried after userspace began left a seen line of its own.
+        retried = BOOTS_4.replace("%s seen 400" % B4, seen3 + "%s seen 400" % B4)
+        self.assertEqual(self.ledger(retried, tries4=1), [])
+        for name, boots, kw, said in (
+                ("the rescue boot left a line",
+                 BOOTS_4.replace("%s seen 400" % B4, "%s seen 300\n%s seen 400" % (B3, B4)),
+                 dict(K=None), "a line for the rescue boot B3"),
+                ("B1 has no ok line", BOOTS_4.replace(OK1 + "\n", ""), {}, "no B1 ok line"),
+                ("B1 is not in the file", BOOTS_4.replace(B1, third), {}, "no B1 ok line"),
+                ("a boot after B4", BOOTS_4 + "%s seen 500\n" % B5, {}, "the last boot in the file"),
+                ("an empty file", "", {}, "no B1 ok line"),
+                ("a verdict with no seen line", BOOTS_4.replace("%s seen 200\n" % B2, ""), {}, "without a seen line"),
+                ("one failed boot more than the report said", retried, {}, "the ledger expects 1"),
+                ("two more, one retry of boot 4", retried.replace(seen3, seen3 + "%s seen 360\n" % B5), dict(tries4=1),
+                 "the ledger expects 1 (+1 boot 4 retries)"),
+                ("no failed boot, the report said 1", BOOTS_1 + "%s seen 400\n%s\n" % (B4, OK4), dict(B2=None),
+                 "0 boots between B1 and B4"),
+                ("B2 came up ok", BOOTS_4.replace(BAD2, OK1.replace(B1, B2)), {}, "an ok boot between B1 and B4"),
+                ("the first boot after B1 is not B2", BOOTS_4.replace(B2, third), {}, "the first boot after B1 is")):
+            problems = self.ledger(boots, **kw)
+            self.assertTrue(any(said in p for p in problems), (name, problems))
+
+
+class TestBoot5Faults(FaultCase):
+    """Boot 5 (5.1): no menu again, and that is looked at before anything
+    in the boot can be retried."""
+
+    def boot5(self, text=BOOT_CLEAN, flag=False, healthy_end=None):
+        r = fake_run(self, con=FakeCon(text))
+        FakeClock(self, r)
+        r.flag = True
+        r.wait_ssh = lambda a: B5
+        if healthy_end is not None:
+            r.wait_healthy_end = healthy_end
+        answers(r, {"cat /var/lib/smartconfig/boots": (0, BOOTS_4 + TestHeldRows.OK5)})
+        return r, outcome_of(r.boot5, attempt("5", flag))
+
+    def test_good(self):
+        r, end = self.boot5()
+        self.assertIsNone(end)
+        self.assert_passes(r, "5.1", "5.1.ok", "5.1.notime")
+        self.assertEqual((r.v["B5"], r.flag), (B5, False))
+
+    def test_a_menu_fails_51(self):
+        for name, text in (("a menu", BOOT_CLEAN.replace(POST_CLEAN, POST_CLEAN + UEFI_MENU)),
+                           ("the flag still set", BOOT_CLEAN.replace("pending=[]", "pending=[1]")),
+                           ("the flag block made a menu of it", BOOT_CLEAN.replace(POST_CLEAN, POST_FLAG))):
+            r, end = self.boot5(text)
+            self.assert_fails(r, end, "5.1", "H", name)
+            self.assert_passes(r, "5.1.ok", "5.1.notime")  # the boot's other rows are recorded first
+
+    def test_51_is_recorded_before_a_retry(self):
+        def no_ssh(a, cid):
+            raise e2e.Retry("no-ssh", "a login prompt, but no ssh in 600 s")
+
+        r, end = self.boot5(healthy_end=no_ssh)
+        self.assertIsInstance(end, e2e.Retry)
+        self.assert_passes(r, "5.1")  # 5b's attempt (flag unknown) skips it: this result stands
+        r, end = self.boot5(BOOT_CLEAN.replace(POST_CLEAN, POST_CLEAN + UEFI_MENU), healthy_end=no_ssh)
+        self.assertIsInstance(end, e2e.Retry)
+        self.assertEqual((r.rows["5.1"].status, r.rows["5.1"].cause), ("FAIL", "M4"))
+        self.assertEqual(e2e.verdict(r.rows.values()), "FAIL")
+
+
+class TestGlue(FaultCase):
+    """What ties the checks together: boot()'s retries, flow()'s second
+    looks, the waits that tell a flake of the lab from a failure, and
+    the small [lab] checks."""
+
+    def boot_run(self, text=""):
+        r = fake_run(self, con=FakeCon(text))
+        r.resets = []
+        r.reset_vm = lambda why: r.resets.append(why)
+        return r
+
+    def test_boot_passes_the_flag_on(self):
+        # no-ssh: the boot reached userspace, so the next attempt does not know the flag.
+        r = self.boot_run(BOOT_CLEAN)
+        r.flag = True
+        flags = []
+
+        def fn(a):
+            flags.append(a.flag)
+            if len(flags) == 1:
+                raise e2e.Retry("no-ssh", "test")
+
+        a = r.boot("4", fn)
+        self.assertEqual((flags, r.flag, a.n, a.flag), ([True, None], None, 2, None))
+        self.assertEqual(([x.result for x in r.attempts], r.retries, len(r.resets)), (["retry", "done"], 1, 1))
+        with open(os.path.join(r.run, "ledger.json")) as f:
+            self.assertEqual([x["flag_expected"] for x in json.load(f)["attempts"]], [True, None])
+
+    def test_boot_the_modes_retries_run_out(self):
+        limit = fake_run(self).b("RETRIES_MODE")
+        for used, retried in ((limit, False), (limit - 1, True)):
+            r = self.boot_run()
+            r.retries = used  # by the boots before this one
+            calls = []
+
+            def fn(a):
+                calls.append(a.n)
+                if len(calls) == 1:
+                    raise e2e.Retry("stall", "test")
+
+            end = outcome_of(r.boot, "5", fn)
+            if retried:
+                self.assertIsNone(end)
+                self.assertEqual((calls, len(r.resets), r.retries), ([1, 2], 1, limit))
+            else:
+                self.assertIsInstance(end, e2e.LabError)
+                self.assertIn("no retry left (%d in this mode)" % limit, str(end))
+                self.assertEqual((calls, r.resets, r.retries), ([1], [], limit))
+
+    def test_boot_limits_by_signature(self):
+        r = self.boot_run()
+
+        def panic(a):
+            raise e2e.Retry("panic", "test")
+
+        self.assertIsInstance(outcome_of(r.boot, "1", panic), e2e.LabError)
+        self.assertEqual(len(r.resets), r.b("RETRIES_PANIC"))
+        self.assertLess(r.b("RETRIES_PANIC"), r.b("RETRIES_MODE"))
+        # A grub> prompt and a missed menu are one kind: one retry a boot for both.
+        r = self.boot_run()
+        sigs = iter(("grub-prompt", "menu-missed", "grub-prompt"))
+
+        def menu(a):
+            raise e2e.Retry(next(sigs), "test")
+
+        self.assertIsInstance(outcome_of(r.boot, "3", menu), e2e.LabError)
+        self.assertEqual((len(r.resets), [a.result for a in r.attempts]), (1, ["retry", "retry"]))
+
+    def test_boot_stopped_is_not_retried(self):
+        r = self.boot_run()
+        end = outcome_of(r.boot, "1", lambda a: r.record("1.2", problems=["Command line differs"]))
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual(([a.result for a in r.attempts], r.resets), (["stopped"], []))
+
+    def flow_run(self, unknown=(), by_guest=True, qemu_rc=0):
+        r = fake_run(self)
+        r.machine = argparse.Namespace(wait_exit=lambda timeout: qemu_rc)
+        calls = []
+
+        def boot(label, fn):
+            calls.append("boot " + label)
+            a = attempt(label, None if label in unknown else False)
+            cid = {"1": "1.1", "5": "5.1"}.get(label[0])
+            if cid and a.flag is None:  # as boot1 and boot5 do
+                r.skip(cid, "a retried attempt: the menu flag is not known")
+            elif cid:
+                r.record(cid)
+            return a
+
+        def reboot_ssh(cid, how="reboot"):
+            calls.append("%s %s" % (how, cid))
+            return qmp_event(1, "SHUTDOWN" if how == "poweroff" else "RESET", by_guest, 100.0)
+
+        r.boot, r.reboot_ssh = boot, reboot_ssh
+        r.edit = lambda: calls.append("edit")
+        r.reset_settled = lambda: calls.append("reset")
+        return r, calls, outcome_of(r.flow)
+
+    FLOW = ["boot 0", "reboot 0.7", "boot 1", "edit", "boot 2", "reset", "boot 3", "boot 4", "reboot 5.1", "boot 5",
+            "poweroff 5.2"]
+
+    def test_flow(self):
+        r, calls, end = self.flow_run()
+        self.assertIsNone(end)
+        self.assertEqual(calls, self.FLOW)
+        self.assert_passes(r, "1.1", "5.1", "5.2")
+
+    def test_flow_looks_again_when_the_flag_was_unknown(self):
+        # Boot 1 or 5 retried after userspace began: its x.1 was skipped. A clean reboot repeats the boot.
+        r, calls, end = self.flow_run(unknown=("1", "5"))
+        self.assertIsNone(end)
+        want = list(self.FLOW)
+        want[3:3] = ["reboot 1.1", "boot 1b"]
+        want[-1:-1] = ["reboot 5.1", "boot 5b"]
+        self.assertEqual(calls, want)
+        self.assert_passes(r, "1.1", "5.1", "5.2")
+
+    def test_flow_never_passes_an_unchecked_decision(self):
+        for unknown, cid, last in ((("1", "1b"), "1.1", "boot 1b"), (("5", "5b"), "5.1", "boot 5b")):
+            r, calls, end = self.flow_run(unknown=unknown)
+            self.assertIsInstance(end, e2e.LabError)
+            self.assertIn("%s was never checked" % cid, str(end))
+            self.assertEqual((calls[-1], r.ctx, r.status(cid)), (last, cid, "SKIP"))
+
+    def test_52(self):
+        for name, kw in (("the host's shutdown", dict(by_guest=False)), ("QEMU exit 1", dict(qemu_rc=1)),
+                         ("QEMU did not exit", dict(qemu_rc=None))):
+            r, calls, end = self.flow_run(**kw)
+            self.assert_fails(r, end, "5.2", "H", name)
+
+    def healthy_end(self, text, label="4", cid="4.2"):
+        r = fake_run(self, con=FakeCon(text))
+        FakeClock(self, r)
+        r.unexpected = lambda a: None
+        try:
+            return r, r.wait_healthy_end(attempt(label), cid)
+        except (e2e.Stop, e2e.Retry, e2e.LabError) as e:
+            return r, e
+
+    def test_healthy_end(self):
+        up = UEFI_SILENT + PRE_CLEAN + POST_CLEAN + kernel_lines()
+        # What the boot before still printed after this boot's mark is not this boot's end.
+        for text in (BOOT_CLEAN, "[  196.601943] reboot: Restarting system\n" + BOOT_CLEAN):
+            r, end = self.healthy_end(text)
+            self.assertIsInstance(end, console.BootEnd)
+            self.assertEqual((end.kind, r.rows), ("login", {}))
+        # Any end that is no known flake of the lab fails the check, as SmartConfig's.
+        for name, text, said in (
+                ("emergency mode on the bad device", up + TIMED_OUT + DEPEND + EMERGENCY_TAIL,
+                 "the boot ended in emergency"),
+                ("a maintenance prompt with no timeout at all", up + DEPEND + EMERGENCY_TAIL,
+                 "the boot ended in emergency"),
+                ("the guest powered off", up + "[   31.224031] reboot: Power down\n", "the boot ended in shutdown")):
+            r, end = self.healthy_end(text)
+            self.assert_fails(r, end, "4.2", "H", name)
+            self.assertIn(said, r.rows["4.2"].notes, name)
+        # The lab's known flakes: the boot again, and no row.
+        slow = "[ TIME ] Timed out waiting for device dev-disk-by\\x2dlabel-BOOT.device - /dev/disk/by-label/BOOT.\n"
+        for name, text, sig in (("slow udev", up + slow + EMERGENCY_TAIL, "slow-udev"),
+                                ("TCG's panic", up + TCG_PANIC, "panic"),
+                                ("a grub> prompt", UEFI_SILENT + "error: no such device: 0b1c.\ngrub> ",
+                                 "grub-prompt")):
+            r, end = self.healthy_end(text)
+            self.assertIsInstance(end, e2e.Retry, name)
+            self.assertEqual((end.sig, r.rows), (sig, {}), name)
+        # A panic that is not TCG's is nobody's known flake: no retry, and no [M4] row outside the rescue boot.
+        r, end = self.healthy_end(up + VFS_PANIC)
+        self.assertIsInstance(end, e2e.LabError)
+        self.assertEqual((r.rows, "not TCG's" in str(end)), ({}, True))
+
+    def test_wait_for_and_panics(self):
+        r = fake_run(self, con=FakeCon(kernel_lines() + TCG_PANIC))
+        self.assertEqual(r.wait_for(attempt("1"), [e2e.INIT_RX], 5).index, 0)  # what came before the panic is a hit
+        end = outcome_of(r.wait_for, attempt("1"), [e2e.LOGIN_RX], 5)
+        self.assertIsInstance(end, e2e.Retry)
+        self.assertEqual(end.sig, "panic")
+        self.assertIsNone(fake_run(self, con=FakeCon(kernel_lines())).wait_for(attempt("1"), [e2e.LOGIN_RX], 5))
+        # The rescue entry's kernel panics (a wrong root=): 42_smartconfig wrote its arguments.
+        for label, ctx in (("3", "3.5"), ("1", "1.3"), ("4", "4.2")):
+            r = fake_run(self, con=FakeCon(kernel_lines(EXP_RESCUE) + VFS_PANIC))
+            r.at(ctx)
+            end = outcome_of(r.wait_for, attempt(label, True), [e2e.PROMPT_RX, e2e.LOGIN_RX], 5)
+            if label == "3":
+                self.assert_fails(r, end, "3.5", "H", "the rescue entry's kernel panics")
+                self.assertIn("VFS: Unable to mount root fs", r.rows["3.5"].notes)
+                self.assertEqual(r.rows["3.5"].source, "scripts/42_smartconfig")
+            else:
+                self.assertIsInstance(end, e2e.LabError, label)
+                self.assertEqual(r.rows, {}, label)
+
+    def test_vga_menu_wait_panic(self):
+        r = fake_run(self, "bios", con=FakeCon(TCG_PANIC))
+        FakeClock(self, r)
+        r.unexpected = lambda a: None
+        a = attempt("3", True, FakeWatch(["SeaBIOS (version 1.16.3-debian-1.16.3-2)"]))
+        end = outcome_of(r.vga_menu_wait, a, {}, 600)
+        self.assertIsInstance(end, e2e.Retry)
+        self.assertEqual(end.sig, "panic")
+
+    def test_wait_ssh(self):
+        r = fake_run(self)
+        r.machine = argparse.Namespace(ssh_port=1, alive=lambda: True)
+        answers(r, {"boot_id": (0, B4 + "\n")})
+        a = attempt("4")
+        with mock.patch.object(e2e.labvm, "wait_ssh", lambda *args, **kw: ssh_result(0)):
+            self.assertEqual((r.wait_ssh(a), a.boot_id), (B4, B4))
+        with mock.patch.object(e2e.labvm, "wait_ssh", lambda *args, **kw: None):
+            # A login prompt and no ssh under TCG is the lab's known flake; QEMU gone is not.
+            end = outcome_of(r.wait_ssh, a)
+            self.assertIsInstance(end, e2e.Retry)
+            self.assertEqual(end.sig, "no-ssh")
+            r.machine.alive = lambda: False
+            self.assertIsInstance(outcome_of(r.wait_ssh, a), e2e.LabError)
+
+    def test_grub_prompt_is_retried(self):
+        r = fake_run(self, con=FakeCon(UEFI_SILENT + "error: no such device: 0b1c.\ngrub> "))
+        for menu in (False, True, None):
+            end = outcome_of(r.grub_phase, attempt("1", menu), "1.1", menu)
+            self.assertIsInstance(end, e2e.Retry, menu)
+            self.assertEqual(end.sig, "grub-prompt", menu)
+
+    def test_a_menu_that_waits_for_a_key(self):
+        # The flag is set and GRUB drew its menu, but with no countdown: it
+        # waits for a key for ever. That is x.1 failed, not a run to repeat.
+        no_countdown = UEFI_MENU.split("   The highlighted")[0]
+        r = fake_run(self, con=FakeCon(UEFI_SILENT + PRE_FLAG + "sclab: post timeout=[-1] style=[menu]\n" + no_countdown))
+        end = outcome_of(r.grub_phase, attempt("4", True), "4.1", True)
+        self.assert_fails(r, end, "4.1", "H", "a menu with no countdown")
+        self.assertIn("waits for a key for ever", r.rows["4.1"].notes)
+        r = fake_run(self, con=FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG))  # GRUB ran, then nothing: whose is not known
+        end = outcome_of(r.grub_phase, attempt("4", True), "4.1", True)
+        self.assertIsInstance(end, e2e.LabError)
+        self.assertEqual(r.rows, {})
+
+    def test_an_entry_that_does_not_boot(self):
+        error = "\nerror: file `/vmlinuz-6.8.0-142-generic' not found.\n\nPress any key to continue..."
+        for said, kind in ((error, e2e.Stop), ("\n" + e2e.RESCUE_ECHO + "\n", e2e.LabError)):
+            con = FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG + UEFI_MENU)
+            r = fake_run(self, con=con)
+
+            def pick(a, g, target):
+                g["enter_pos"] = con.size()
+                con.t += said
+
+            r.pick = pick
+            end = outcome_of(r.grub_phase, attempt("3", True), "3.1", True, e2e.RESCUE_TITLE)
+            self.assertIsInstance(end, kind)
+            if kind is e2e.Stop:  # GRUB said why: the entry 42_smartconfig wrote is wrong
+                self.assert_fails(r, end, "3.2", "H", "GRUB's error after Enter")
+                self.assertIn("the entry did not boot: error: file", r.rows["3.2"].notes)
+            else:
+                self.assertNotIn("3.2", r.rows)
+
+    def test_30(self):
+        key = serialmux.Entry(1.0, "serial", "1b5b42", "down")
+        for name, boot2_inp, a, status in (
+                ("nothing since boot 2's reset", 3, e2e.Attempt("3", 1, Mark(0, 3), None, True), "PASS"),
+                ("a key in boot 2", 2, e2e.Attempt("3", 1, Mark(0, 3), None, True), "FAIL"),
+                # A retried boot 3: the first attempt's own keys (its pick) came after boot 2's reset.
+                ("the keys of the attempt before", 1, e2e.Attempt("3", 2, Mark(0, 3), None, True), "PASS"),
+                ("a key since the retried attempt's reset", 1, e2e.Attempt("3", 2, Mark(0, 2), None, True), "FAIL")):
+            r = fake_run(self)
+            r.mux = FakeMux([key, key, key])
+            r.boot2_mark = Mark(0, boot2_inp)
+            end = outcome_of(r.check_30, a)
+            self.assertEqual(r.status("3.0"), status, name)
+            if status == "FAIL":
+                self.assertIsInstance(end, e2e.Stop, name)
+                self.assertEqual((end.row.cause, e2e.verdict(r.rows.values())), ("lab", "INCONCLUSIVE"), name)
+
+    def test_27(self):
+        for by_guest, status in ((False, "PASS"), (True, "FAIL")):
+            r = fake_run(self)
+            clock = FakeClock(self, r)
+            start = clock.now
+            r.settle_until = start + 35
+            r.reset_vm = lambda why: qmp_event(3, "RESET", by_guest, 100.0)
+            end = outcome_of(r.reset_settled)
+            self.assertEqual((r.status("2.7"), r.rows["2.7"].cause), (status, "lab"))
+            self.assertEqual(end is None, status == "PASS")
+            self.assertAlmostEqual(clock.now - start, 35)  # the reset waits for the boot to settle
+
+    def test_k1(self):
+        down, esc = serialmux.Entry(1.0, "serial", "1b5b42", "down"), serialmux.Entry(2.0, "serial", "1b", "")
+        for inputs, status in (([down, down], "PASS"), ([down, esc], "FAIL")):
+            r = fake_run(self)
+            r.mux = FakeMux(inputs)
+            r.check_k1()  # at the end of the run: recorded, never a Stop
+            self.assertEqual((r.status("K.1"), r.rows["K.1"].cause), (status, "lab"))
+
+    def test_a_w_check_that_fails_is_a_warning(self):
+        r = fake_run(self)
+        r.record("3.8.vga", problems=["'sc restore 1d5b0a' not in the 32 KiB VGA window"])
+        r.record("3.3", problems=["not seen between Enter and the kernel"], strength="W")  # bios
+        self.assertEqual((r.status("3.8.vga"), r.status("3.3"), e2e.verdict(r.rows.values())), ("WARN", "WARN", "PASS"))
+
+
+class DoneMachine:
+    """The VM as the end of a run sees it: stopped, with what it left."""
+
+    def __init__(self, left=()):
+        self.left = list(left)
+        self.stops = 0
+
+    def alive(self):
+        return False
+
+    def stop(self):
+        self.stops += 1
+        return 0
+
+    def leftovers(self):
+        return list(self.left)
+
+
+def passing(r, upto=None, faults=None):
+    """flow() of a healthy run: every check of boots 0 to 5 passes, up to
+    the check upto (left out). faults: {check: its problem}."""
+    for cid in e2e.REGISTRY:
+        if cid[0] in "PKT" or cid == "0.1":
+            continue
+        if cid == upto:
+            return
+        r.at(cid)
+        r.record(cid, problems=[faults[cid]] if cid in (faults or {}) else [])
+
+
+class TestExecute(unittest.TestCase):
+    """execute() from preflight to the summary line, with the preflight,
+    the VM and the flow stubbed: the verdict, the exit status make reads,
+    result.txt and ledger.json."""
+
+    def execute(self, flow=passing, preflight=None, start_vm=None, machine=None, dirty=False, **args):
+        r = fake_run(self)
+        r.dirty, r.mux = dirty, None  # the mux is start_vm's
+        for k, v in args.items():
+            setattr(r.args, k, v)
+        r.dumps = []
+        r.failure_dump = lambda: r.dumps.append(1) or "== facts rc=0\nmode=dump"
+
+        def pre(stack):
+            for cid in ("P.1", "P.2", "P.3", "P.4", "P.5"):
+                r.at(cid)
+                r.record(cid)
+
+        def start():
+            r.at("0.1")
+            r.machine, r.mux = machine or DoneMachine(), FakeMux()
+            r.record("0.1")
+
+        r.preflight = (lambda stack: preflight(r)) if preflight else pre
+        r.start_vm = (lambda: start_vm(r)) if start_vm else start
+        r.flow = lambda: flow(r)
+        out, err = io.StringIO(), io.StringIO()
+        # No thread of another test counts as a leftover of this run.
+        with mock.patch.object(e2e.labvm, "discard_disks") as discard, \
+                mock.patch.object(e2e.threading, "enumerate", lambda: []), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = r.execute()
+        r.discards, r.out, r.err = discard.call_count, out.getvalue(), err.getvalue()
+        with open(os.path.join(r.run, "result.txt")) as f:
+            lines = f.read().split("\n")
+        r.header = lines[:2]
+        r.result = collections.OrderedDict((x.split("\t")[0], x.split("\t")) for x in lines[3:] if x)
+        with open(os.path.join(r.run, "ledger.json")) as f:
+            r.ledger = json.load(f)
+        return r, rc
+
+    def consistent(self, r, rc, verdict):
+        """The exit status, the summary line, result.txt and ledger.json say the same."""
+        self.assertEqual(rc, {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 3}[verdict])
+        self.assertEqual(r.out.count("\n"), 1)
+        self.assertTrue(r.out.startswith(verdict + " uefi "), r.out)
+        self.assertIn("# lab/e2e.py uefi: %s in " % verdict, r.header[0])
+        self.assertEqual(r.ledger["verdict"], verdict)
+        self.assertEqual(sorted(r.result), sorted(e2e.REGISTRY))  # a row for every check
+        recorded = {c["id"]: c for c in r.ledger["checks"]}  # these runs record a check once
+        for cid, cells in r.result.items():
+            if cid in recorded:
+                cls, cause = e2e.REGISTRY[cid].cls, recorded[cid]["cause"]
+                self.assertEqual(cells[1:3], [recorded[cid]["status"], cls if cause == cls else "%s(%s)" % (cls, cause)])
+            else:  # never recorded: filled in at the end
+                self.assertIn(cells[1], ("NOTRUN", "SKIP"), cid)
+        self.assertTrue(r._logf.closed)
+
+    def test_pass(self):
+        r, rc = self.execute()
+        self.consistent(r, rc, "PASS")
+        self.assertEqual({cells[1] for cells in r.result.values()}, {"PASS"})
+        self.assertEqual((r.discards, r.machine.stops, r.ledger["lab_error"]), (1, 1, None))
+        self.assertNotIn("lab error", r.header[1])
+        self.assertEqual(r.err, "")
+        r, rc = self.execute(keep=True)
+        self.assertEqual((rc, r.discards), (0, 0))  # --keep: the disks stay after a PASS too
+
+    def test_an_m4_failure_exits_1(self):
+        # F: the mode goes on to its end, every other check passes; the verdict is FAIL all the same.
+        r, rc = self.execute(lambda r: passing(r, faults={"1.8": "critical-chain names sc-boot-seen"}))
+        self.consistent(r, rc, "FAIL")
+        self.assertEqual(r.result["1.8"][1:4], ["FAIL", "M4", "F"])
+        self.assertEqual({cells[1] for cid, cells in r.result.items() if cid != "1.8"}, {"PASS"})
+        self.assertEqual((r.dumps, r.discards), ([1], 0))  # the guest's state is kept and shown
+        self.assertIn("failing: 1.8\tFAIL", r.err)
+        self.assertIn("-- facts.sh dump --\n== facts rc=0", r.err)
+
+    def test_a_stop_exits_1_and_leaves_the_rest_notrun(self):
+        r, rc = self.execute(lambda r: passing(r, faults={"1.2": "Command line differs"}))  # H: the mode stops there
+        self.consistent(r, rc, "FAIL")
+        self.assertEqual((r.result["1.1"][1], r.result["1.2"][1], r.result["1.3"][1], r.result["5.2"][1]),
+                         ("PASS", "FAIL", "NOTRUN", "NOTRUN"))
+        self.assertEqual((r.result["K.1"][1], r.result["T.1"][1]), ("PASS", "PASS"))  # the teardown still ran
+        self.assertIsNone(r.ledger["lab_error"])
+        self.assertTrue(any("stopped: 1.2" in x for x in r.logged))
+
+    def test_checks_never_reached_are_inconclusive(self):
+        # Every check that ran passed, but the flow ended early: not a PASS.
+        r, rc = self.execute(lambda r: passing(r, "5.1"))
+        self.consistent(r, rc, "INCONCLUSIVE")
+        notrun = [c for c, cells in r.result.items() if cells[1] == "NOTRUN"]
+        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2"])
+        self.assertEqual(r.result["5.1"][8], "not reached")
+        self.assertEqual(r.discards, 0)
+        self.assertIn("failing: 5.1\tNOTRUN", r.err)
+
+    def test_a_lab_error_exits_3(self):
+        def flow(r):
+            passing(r, "2.3")
+            r.at("2.3")
+            raise e2e.LabError("QEMU exited (status 1), while waiting for the bad device's timeout")
+
+        r, rc = self.execute(flow)
+        self.consistent(r, rc, "INCONCLUSIVE")
+        self.assertEqual(r.result["2.3"][1:3], ["FAIL", "M4(lab)"])  # an [M4] check the lab could not finish
+        self.assertIn("[lab] QEMU exited (status 1)", r.result["2.3"][9])
+        self.assertIn("QEMU exited (status 1)", r.ledger["lab_error"])
+        self.assertIn("; lab error: QEMU exited (status 1)", r.header[1])
+        self.assertEqual((r.dumps, r.discards), ([1], 0))
+
+    def test_a_lab_error_lands_on_the_next_check_when_the_current_one_passed(self):
+        def flow(r):
+            passing(r, "1.3")  # 1.2 passed, then the wait for 1.3's login prompt ended the run
+            raise e2e.LabError("no login prompt 900 s after the kernel")
+
+        r, rc = self.execute(flow)
+        self.consistent(r, rc, "INCONCLUSIVE")
+        self.assertEqual((r.result["1.2"][1], r.result["1.3"][1:3]), ("PASS", ["FAIL", "M4(lab)"]))
+
+    def test_an_m4_failure_is_not_replaced_by_a_lab_error(self):
+        def flow(r):
+            passing(r, "E.4")
+            r.at("E.4")
+            r.record("E.4", problems=["sc check exit 0"])  # F: the mode goes on
+            raise e2e.LabError("ssh failed (exit 255): sc status")
+
+        r, rc = self.execute(flow)
+        self.assertEqual(rc, 1)  # SmartConfig's failure wins over the lab's
+        self.assertEqual(r.result["E.4"][1:3], ["FAIL", "M4"])
+        self.assertEqual((r.ledger["verdict"], "ssh failed" in r.ledger["lab_error"]), ("FAIL", True))
+        self.assertTrue(r.out.startswith("FAIL uefi "))
+        self.assertEqual([c["cause"] for c in r.ledger["checks"] if c["id"] == "E.4"], ["M4", "lab"])  # both on record
+
+    def test_anything_else_exits_3(self):
+        def retry(r):
+            passing(r, "1.1")
+            raise e2e.Retry("panic", "outside a boot")
+
+        def bug(r):
+            passing(r, "1.1")
+            raise KeyError("GOOD")
+
+        for flow, said in ((retry, "a retry outside a boot: panic"), (bug, "e2e.py: KeyError('GOOD')")):
+            r, rc = self.execute(flow)
+            self.consistent(r, rc, "INCONCLUSIVE")
+            self.assertIn(said, r.ledger["lab_error"])
+            self.assertEqual((r.result["1.0"][1], r.result["1.1"][1:3]), ("PASS", ["FAIL", "M4(lab)"]))
+            self.assertEqual(r.dumps, [1])
+
+    def test_no_dump_after_an_interrupt(self):
+        def ctrl_c(r):
+            passing(r, "3.5")
+            raise KeyboardInterrupt()
+
+        def sigterm(r):
+            passing(r, "3.5")
+            raise SystemExit(143)
+
+        for flow, said in ((ctrl_c, "interrupted (KeyboardInterrupt)"), (sigterm, "interrupted (signal, exit 143)")):
+            r, rc = self.execute(flow)
+            self.consistent(r, rc, "INCONCLUSIVE")
+            self.assertEqual(r.ledger["lab_error"], said)
+            # Stop now: nothing is asked of the guest first; QEMU is stopped and T.1 says what is left.
+            self.assertEqual((r.dumps, r.machine.stops, r.result["T.1"][1]), ([], 1, "PASS"))
+            self.assertNotIn("facts.sh dump", r.err)
+
+    def test_qemu_never_started(self):
+        def preflight(r):
+            r.record("P.1")
+            r.at("P.2")
+            r.record("P.2", problems=["bin/sc is not this tree's build: make build"])
+
+        def start_vm(r):
+            raise AssertionError("QEMU started after a failed preflight")
+
+        r, rc = self.execute(preflight=preflight, start_vm=start_vm)
+        self.consistent(r, rc, "INCONCLUSIVE")
+        self.assertEqual((r.result["P.2"][1:3], r.ledger["lab_error"], r.machine), (["FAIL", "lab"], None, None))
+        self.assertEqual(r.result["K.1"][1::7], ["SKIP", "QEMU never started"])
+        self.assertEqual(r.result["T.1"][1::7], ["SKIP", "QEMU never started"])
+        self.assertEqual({cells[1] for c, cells in r.result.items() if c[0] not in "PKT"}, {"NOTRUN"})
+        self.assertEqual(r.dumps, [1])  # asked for; with no machine there is nothing to ask (test_failure_dump)
+
+    def test_qemu_started_and_the_mux_did_not(self):
+        m = DoneMachine()
+
+        def start_vm(r):
+            r.at("0.1")
+            r.machine = m
+            raise e2e.LabError("serial.sock: no connection in 30 s")
+
+        r, rc = self.execute(start_vm=start_vm)
+        self.consistent(r, rc, "INCONCLUSIVE")
+        # K.1 could not be checked: with a QEMU that ran, that is not a SKIP.
+        self.assertEqual([r.result[c][1] for c in ("0.1", "K.1", "T.1")], ["FAIL", "NOTRUN", "PASS"])
+        self.assertEqual(m.stops, 1)
+
+    def test_what_the_run_left_behind(self):
+        left = ["qemu-system-x86_64 pid 4242 still runs", "port 53691 still listens"]
+        r, rc = self.execute(machine=DoneMachine(left))
+        self.consistent(r, rc, "INCONCLUSIVE")  # every boot passed; the lab did not clean up
+        self.assertEqual(r.result["T.1"][1:3], ["FAIL", "lab"])
+        self.assertIn("pid 4242", r.result["T.1"][9])
+        self.assertEqual(r.discards, 0)
+
+    def test_a_teardown_that_fails(self):
+        class Stuck(DoneMachine):
+            def stop(self):
+                raise OSError("QMP socket: Broken pipe")
+
+        r, rc = self.execute(machine=Stuck())
+        self.consistent(r, rc, "INCONCLUSIVE")
+        self.assertEqual(r.result["T.1"][1:3], ["FAIL", "lab"])
+        self.assertIn("teardown: OSError", r.ledger["lab_error"])
+
+    def test_a_lone_esc_is_inconclusive(self):
+        def flow(r):
+            r.mux = FakeMux([serialmux.Entry(2.0, "serial", "1b", "")])
+            passing(r)
+
+        r, rc = self.execute(flow)
+        self.consistent(r, rc, "INCONCLUSIVE")
+        self.assertEqual(r.result["K.1"][1:3], ["FAIL", "lab"])
+
+    def test_dirty_is_said(self):
+        for dirty, word in ((True, "dirty=yes"), (False, "dirty=no")):
+            r, rc = self.execute(dirty=dirty)
+            self.assertEqual(rc, 0)
+            self.assertIn(" %s " % word, r.out)
+            self.assertIn(" %s " % word, r.header[1])
+            self.assertIs(r.ledger["dirty"], dirty)
+
+    def test_forced_is_said(self):
+        def flow(r):
+            r.v["outcome"] = "a"
+            passing(r)
+
+        self.assertIn(" boot2=a(forced) ", self.execute(flow, boot2="reset-at-timeout")[0].out)
+        self.assertIn(" boot2=a goal3=early-only ", self.execute(flow)[0].out)
+
+
+class TestFailureDump(unittest.TestCase):
+    """What a failed run asks of the guest, and for how long: the
+    teardown (T.1, result.txt) must fit before make's timeout."""
+
+    def dump_run(self, **kw):
+        r = fake_run(self, **kw)
+        self.clock = FakeClock(self, r)
+        r.machine = argparse.Namespace(alive=lambda: True, ssh_port=1)
+        r.staged = True
+        r.t_start = self.clock.now
+        self.timeouts = []
+
+        def ssh(port, key, command, timeout, input=None):
+            self.timeouts.append(timeout)
+            out = "== facts rc=0\nmode=dump\n" if "facts.sh dump" in command else ""
+            return labvm.Result([], 0, out, "", False, 0.1)
+
+        for name, fn in (("port_open", lambda port: True), ("ssh", ssh)):
+            p = mock.patch.object(e2e.labvm, name, fn)
+            p.start()
+            self.addCleanup(p.stop)
+        return r
+
+    def test_over_ssh_within_the_modes_time(self):
+        r = self.dump_run()
+        mode = r.b("BUDGET_MODE")
+        for used, want in ((0, [20, 300]), (mode - 45 - 100, [20, 100]), (mode - 45 - 5, [5, 5]), (mode + 600, [1, 1])):
+            self.timeouts[:] = []
+            self.clock.now = r.t_start + used
+            self.assertIn("mode=dump", r.failure_dump())
+            self.assertEqual([round(t, 3) for t in self.timeouts], want, used)
+        with open(r.evpath("facts-dump.txt")) as f:
+            self.assertIn("mode=dump", f.read())
+
+    def test_no_way_in(self):
+        r = self.dump_run()
+        r.staged = False  # facts.sh never reached the guest
+        self.assertIsNone(r.failure_dump())
+        r.staged, r.machine.alive = True, lambda: False
+        self.assertIsNone(r.failure_dump())
+        r.machine = None
+        self.assertIsNone(r.failure_dump())
+        self.assertEqual((self.timeouts, os.listdir(r.evdir)), ([], []))
+
+    def test_at_the_rescue_prompt(self):
+        # Stopped at boot 3's prompt: Enter, as 3.7 would have, then facts.sh on the console.
+        con = FakeCon(typed={"\r": "\nroot@sclab:~# "}, cmds={"sh ": (0, "== facts rc=0\nmode=dump\n")})
+        r = self.dump_run(con=con)
+        r.at_prompt = True
+        self.assertIn("mode=dump", r.failure_dump())
+        self.assertEqual((con.sent, r.shell, self.timeouts), (["\r"], True, []))
+
+
+class TestPreflight(unittest.TestCase):
+    """P.1 to P.5 with the host's tools, the build, the lock and the cache
+    stubbed: what must stop a run before QEMU starts."""
+
+    def preflight(self, mode="uefi", dirty=False, staged="a" * 64, ref_mode=0o444, made_under=None, missing=(), **env):
+        r = fake_run(self, mode)
+        r.dirty, r.cache = dirty, r.tmp
+        code = os.path.join(r.tmp, "OVMF_CODE_4M.fd")
+        with open(code, "wb") as f:
+            f.write(b"this firmware")
+        r.conf["OVMF_CODE"] = r.conf["OVMF_VARS"] = code
+        ref = {"h12": "fcb2359f531b"}
+        for k in ("qcow2", "vars", "json"):
+            ref[k] = os.path.join(r.tmp, "ref-fcb2359f531b." + k)
+            with open(ref[k], "w") as f:
+                json.dump({"ovmf_code_sha256": made_under or labvm.sha256_file(code)}, f)
+            os.chmod(ref[k], ref_mode)
+        r.check_p2 = lambda: (r.v.__setitem__("sc_fresh_sha256", "a" * 64), r.record("P.2"))
+        r.stage_files = lambda: r.sha.__setitem__("sc", staged)
+        environ = {k: v for k, v in os.environ.items() if k != "LAB_REQUIRE_CLEAN"}
+        environ.update(env)
+        with mock.patch.object(e2e.shutil, "which", lambda tool: None if tool in missing else "/usr/bin/" + tool), \
+                mock.patch.object(e2e.labvm, "lab_lock", lambda cache: contextlib.nullcontext()), \
+                mock.patch.object(e2e.labvm, "check_image", lambda conf, cache: None), \
+                mock.patch.object(e2e.labvm, "find_ref", lambda conf, cache: ref), \
+                mock.patch.object(e2e.labvm, "key_paths", lambda cache: (os.path.join(cache, "key"), "")), \
+                mock.patch.dict(os.environ, environ, clear=True), contextlib.ExitStack() as stack:
+            end = outcome_of(r.preflight, stack)
+        return r, end
+
+    def stopped_at(self, cid, said, **kw):
+        r, end = self.preflight(**kw)
+        self.assertIsInstance(end, e2e.Stop, kw)
+        self.assertEqual((end.row.id, end.row.cause), (cid, "lab"), kw)
+        self.assertIn(said, r.rows[cid].notes)
+        self.assertEqual(e2e.verdict(r.rows.values()), "INCONCLUSIVE")
+
+    def test_good(self):
+        for mode in ("uefi", "bios"):
+            r, end = self.preflight(mode)
+            self.assertIsNone(end)
+            self.assertEqual([r.status(c) for c in ("P.1", "P.2", "P.3", "P.4", "P.5")], ["PASS"] * 5)
+            self.assertEqual((r.v["head"], r.key), (r.head, os.path.join(r.tmp, "key")))
+            self.assertIn("dirty=no", r.rows["P.3"].seen)
+
+    def test_p1_a_tool_is_missing(self):
+        self.stopped_at("P.1", "missing: go", missing=("go",))
+
+    def test_p3_the_staged_sc_is_the_build_p2_checked(self):
+        self.stopped_at("P.3", "is not the build P.2 checked", staged="b" * 64)
+
+    def test_p3_a_dirty_tree(self):
+        r, end = self.preflight(dirty=True)
+        self.assertIsNone(end)  # allowed, and said: the summary line has dirty=yes
+        self.assertIn("dirty=yes", r.rows["P.3"].seen)
+        self.stopped_at("P.3", "the tree is dirty and LAB_REQUIRE_CLEAN=1", dirty=True, LAB_REQUIRE_CLEAN="1")
+        self.assertIsNone(self.preflight(LAB_REQUIRE_CLEAN="1")[1])
+        self.assertIsNone(self.preflight(dirty=True, LAB_REQUIRE_CLEAN="0")[1])
+
+    def test_p5_the_reference_image_is_read_only(self):
+        self.stopped_at("P.5", "is 644, not 444", ref_mode=0o644)
+
+    def test_p5_the_firmware_the_image_was_made_under(self):
+        self.stopped_at("P.5", "make lab-image", made_under="0" * 64)
+        self.assertIsNone(self.preflight("bios", made_under="0" * 64)[1])  # bios has no OVMF
+
+    def test_ovmf_problems(self):
+        d = tempfile.mkdtemp(prefix="sclab-test-")
+        self.addCleanup(shutil.rmtree, d, True)
+        code, ref = os.path.join(d, "OVMF_CODE_4M.fd"), os.path.join(d, "ref.json")
+        with open(code, "wb") as f:
+            f.write(b"this firmware")
+        sha = labvm.sha256_file(code)
+        for text, said in ((json.dumps({"ovmf_code_sha256": sha}), None),
+                           (json.dumps({"ovmf_code_sha256": "0" * 64}),
+                            "the reference image was made under 000000000000"),
+                           (json.dumps({"image_sha256": "1" * 64}), None),  # an image from before the json had it
+                           ("{not json", "ref.json")):
+            with open(ref, "w") as f:
+                f.write(text)
+            problems = e2e.ovmf_problems(ref, code)
+            self.assertEqual(len(problems), 1 if said else 0, text)
+            if said:
+                self.assertIn(said, problems[0])
+        os.unlink(ref)
+        self.assertEqual(len(e2e.ovmf_problems(ref, code)), 1)  # no json is not "nothing to compare"
 
 
 if __name__ == "__main__":
