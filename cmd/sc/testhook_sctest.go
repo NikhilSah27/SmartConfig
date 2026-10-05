@@ -3,15 +3,28 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 )
 
 // Only in the signal tests' build of sc (go build -tags sctest):
 // SC_TEST_AFTER_RUN holds sc back for a while after the command has
-// returned, so a test can send a signal in that window.
+// returned, and SC_TEST_IN_STATUS inside sc status before it reads
+// anything (it says "sctest: in status" on stderr first), so a test can
+// send a signal in that window.
+// SC_TEST_CONSOLE_LIMIT is sc status --console's limit.
 func init() {
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_AFTER_RUN")); err == nil {
 		testHookAfterRun = func() { time.Sleep(d) }
+	}
+	if d, err := time.ParseDuration(os.Getenv("SC_TEST_IN_STATUS")); err == nil {
+		testHookInStatus = func() {
+			fmt.Fprintln(os.Stderr, "sctest: in status")
+			time.Sleep(d)
+		}
+	}
+	if d, err := time.ParseDuration(os.Getenv("SC_TEST_CONSOLE_LIMIT")); err == nil {
+		consoleLimit = d
 	}
 }

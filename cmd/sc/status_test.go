@@ -577,7 +577,10 @@ func labNormalise(t *testing.T, out string, ids map[string]string) string {
 // undo list exactly, the menu promise, 80 columns and 20 rows.
 func TestStatusConsoleLab(t *testing.T) {
 	undo := "\nTo put /etc/fstab back:\n" + "%s  sc restore <GOOD>\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n" +
-		"The menu shows once more: the first entry, Ubuntu, is the one.\n"
+		"%sThe menu shows once more: the first entry, Ubuntu, is the one.\n"
+	// Only the emergency shell can end at a login prompt (Ubuntu's getty
+	// on the same console); the rescue entry's never did.
+	const login = "At a \"login:\" prompt instead of \"#\": log in, then put sudo before each.\n"
 	for _, tc := range []struct{ outcome, golden, head, why, remount string }{
 		{"a", "console-rescue-a.golden", "This boot:     <B3:8> (rescue), root read-only\n", ": never reached multi-user\n", "  mount -o remount,rw /\n"},
 		{"b", "console-rescue-b.golden", "This boot:     <B3:8> (rescue), root read-only\n", ": a mount failed, emergency mode\n", "  mount -o remount,rw /\n"},
@@ -595,10 +598,13 @@ func TestStatusConsoleLab(t *testing.T) {
 		}
 		got := labNormalise(t, out, ids)
 		for _, want := range []string{tc.head, "Last healthy:  <YYYY-MM-DD HH:MM>, boot <B1:8>\n",
-			"\n<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab\n", fmt.Sprintf(undo, tc.remount)} {
+			"\n<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab\n", fmt.Sprintf(undo, tc.remount, map[bool]string{true: login}[tc.outcome == "emergency"])} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: lacks %q:\n%s", tc.outcome, want, got)
 			}
+		}
+		if tc.outcome != "emergency" && strings.Contains(got, "login:") {
+			t.Errorf("%s: the login hint is for the emergency shell only:\n%s", tc.outcome, got)
 		}
 		if failed := strings.Contains(got, "\nFailed since:  <K boots>, last <MM-DD HH:MM>"+tc.why); failed != (tc.why != "") {
 			t.Errorf("%s: Failed since, for %q:\n%s", tc.outcome, tc.why, got)

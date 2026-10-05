@@ -77,11 +77,36 @@ var watchRescan atomic.Pointer[func()]
 // watchStopped is set when a signal ended sc watch through watchCancel.
 var watchStopped atomic.Bool
 
-// testHookAfterRun runs in main after the command has returned; the signal
-// tests' build (-tags sctest) sets it.
-var testHookAfterRun = func() {}
+// testHookAfterRun runs in main after the command has returned, and
+// testHookInStatus in sc status once it has set itself up; the signal
+// tests' build (-tags sctest) sets them.
+var (
+	testHookAfterRun = func() {}
+	testHookInStatus = func() {}
+)
+
+// consoleStatus reports whether args are sc status --console, as the
+// rescue drop-in runs it.
+func consoleStatus(args []string) bool {
+	if len(args) == 0 || args[0] != "status" {
+		return false
+	}
+	for _, a := range args[1:] {
+		if a == "--console" || a == "--console=true" {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
+	// Before the handlers are there: a hangup caught while cobra is still
+	// on its way to sc status would end sc (the chunk D review measured
+	// that window at 3 to 5 ms). What comes before signal.Notify below is
+	// the kernel's default and cannot be closed from in here.
+	if consoleStatus(os.Args[1:]) {
+		ignoreHangup.Store(true)
+	}
 	sigs := make(chan os.Signal, len(stopSignals))
 	for _, sig := range stopSignals {
 		// A signal the caller chose to ignore (nohup, a script's trap)

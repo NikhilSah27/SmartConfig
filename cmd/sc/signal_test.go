@@ -420,27 +420,32 @@ func TestConsoleStatusOutlivesHangup(t *testing.T) {
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			cmd := exec.Command(bin, tc.args...)
-			// The window after the command has returned: --console has
-			// set up its signals by then.
-			cmd.Env = append(env, "SC_TEST_AFTER_RUN=3s")
+			// The hangup comes while the command runs and its report is
+			// still to be written: that is the getty's race. (After the
+			// report it proves nothing: the chunk D review moved the fix
+			// behind the write and the test still passed.)
+			cmd.Env = append(env, "SC_TEST_IN_STATUS=2s")
 			var stdout, stderr lockedBuffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { cmd.Process.Kill() })
-			deadline := time.Now().Add(10 * time.Second)
-			for !strings.Contains(stdout.String(), "This boot:") {
+			deadline := time.Now().Add(30 * time.Second)
+			for !strings.Contains(stderr.String(), "sctest: in status") {
 				if time.Now().After(deadline) {
-					t.Fatalf("no report; stdout %q stderr %q", stdout.String(), stderr.String())
+					t.Fatalf("sc status never began; stdout %q stderr %q", stdout.String(), stderr.String())
 				}
 				time.Sleep(10 * time.Millisecond)
+			}
+			if s := stdout.String(); s != "" {
+				t.Fatalf("output before the hangup, so it proves nothing: %q", s)
 			}
 			cmd.Process.Signal(syscall.SIGHUP)
 			err := cmd.Wait()
 			if tc.want == 0 {
-				if err != nil {
-					t.Fatalf("ended with %v, stderr %q", err, stderr.String())
+				if err != nil || !strings.Contains(stdout.String(), "This boot:") {
+					t.Fatalf("ended with %v, stdout %q stderr %q", err, stdout.String(), stderr.String())
 				}
 				return
 			}
@@ -448,5 +453,62 @@ func TestConsoleStatusOutlivesHangup(t *testing.T) {
 				t.Fatalf("ended with %v, want death by %v", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestConsoleStatusGivesWayToTheShell: systemd ends rescue.service when its
+// ExecStartPre takes over 90 s, and then there is no shell. A report that
+// hangs stops itself long before, says so on the console and exits 1,
+// which the drop-in's "-" forgives.
+func TestConsoleStatusGivesWayToTheShell(t *testing.T) {
+	bin := scBinary(t)
+	home := t.TempDir()
+	env := append(os.Environ(), "SC_HOME="+home)
+	init := exec.Command(bin, "init")
+	init.Env = env
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("sc init: %v %s", err, out)
+	}
+	run := func(args []string, extra ...string) (string, int, time.Duration) {
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(env, extra...)
+		start := time.Now()
+		out, err := cmd.Output()
+		code := 0
+		if ws, ok := exitStatus(err); ok {
+			code = ws.ExitStatus()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), code, time.Since(start)
+	}
+	out, code, took := run([]string{"status", "--console"}, "SC_TEST_IN_STATUS=20s", "SC_TEST_CONSOLE_LIMIT=300ms")
+	if code != 1 || took > 10*time.Second || strings.Contains(out, "This boot:") ||
+		!strings.Contains(out, "sc: the report took over 300ms and was stopped") || !strings.Contains(out, "sc status\n") {
+		t.Errorf("a hung report: exit %d after %s, stdout %q", code, took, out)
+	}
+	// In time: the report, once, and no word of a stop.
+	out, code, _ = run([]string{"status", "--console"}, "SC_TEST_IN_STATUS=100ms", "SC_TEST_CONSOLE_LIMIT=30s")
+	if code != 0 || strings.Count(out, "This boot:") != 1 || strings.Contains(out, "stopped") {
+		t.Errorf("a report in time: exit %d, stdout %q", code, out)
+	}
+	// Only --console has the limit: a slow sc status is the owner's to wait for.
+	out, code, _ = run([]string{"status"}, "SC_TEST_IN_STATUS=600ms", "SC_TEST_CONSOLE_LIMIT=100ms")
+	if code != 0 || !strings.Contains(out, "This boot:") {
+		t.Errorf("sc status: exit %d, stdout %q", code, out)
+	}
+}
+
+func TestConsoleStatusArgs(t *testing.T) {
+	for _, tc := range []struct {
+		args string
+		want bool
+	}{
+		{"status --console", true}, {"status --console=true", true}, {"status", false}, {"status --console=false", false},
+		{"watch --console", false}, {"", false}, {"log status --console", false},
+	} {
+		if got := consoleStatus(strings.Fields(tc.args)); got != tc.want {
+			t.Errorf("consoleStatus(%q) = %v", tc.args, got)
+		}
 	}
 }

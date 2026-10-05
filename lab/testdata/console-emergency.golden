@@ -10,4 +10,5 @@ To put /etc/fstab back:
   sync
   systemctl daemon-reload
   systemctl reboot
+At a "login:" prompt instead of "#": log in, then put sudo before each.
 The menu shows once more: the first entry, Ubuntu, is the one.

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -69,6 +70,14 @@ var (
 		return syscall.Fstat(int(f.Fd()), &st) == nil && st.Mode&syscall.S_IFMT == syscall.S_IFCHR && st.Rdev == 5<<8|1 // 5:1
 	}
 )
+
+// consoleLimit ends sc status --console. systemd gives rescue.service and
+// emergency.service 90 s to start, their ExecStartPre lines included, and
+// ends the unit when that runs out: the "-" before the line forgives an
+// exit status, not a timeout, and the owner would get no shell at all (the
+// chunk D review tried it). The report takes seconds; one that hangs, on
+// a sick disk, must give way to the shell well before that.
+var consoleLimit = 60 * time.Second
 
 // writeConsoles writes the rescue report. To /dev/console (the drop-in:
 // rescue.service's tty) it goes to every console the kernel uses, as
@@ -152,7 +161,18 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		ignoreHangup.Store(true)
 		real := out
 		out = &report
+		// One of the two writes, never both: the report, or the word that
+		// it was stopped.
+		var once sync.Once
+		stop := time.AfterFunc(consoleLimit, func() {
+			once.Do(func() {
+				writeConsoles(real, []byte(fmt.Sprintf("sc: the report took over %s and was stopped, so that the shell can start.\n"+
+					"Run it from the shell: sc status\n", consoleLimit)))
+				os.Exit(1)
+			})
+		})
 		defer func() {
+			stop.Stop()
 			// An error goes into the report, on every console, not to
 			// stderr, which is the last console= one only.
 			var code exitCode
@@ -160,9 +180,10 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 				fmt.Fprintf(&report, "sc: %v\n", err)
 				err = exitCode(1)
 			}
-			writeConsoles(real, report.Bytes())
+			once.Do(func() { writeConsoles(real, report.Bytes()) })
 		}()
 	}
+	testHookInStatus()
 	home := store.Home()
 	cur, _ := boot.CurrentID()
 	mode, ro := bootMode(ctx), rootReadOnly()
@@ -441,6 +462,12 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 	fmt.Fprintln(out, "  sync")
 	if mode != "normal" {
 		fmt.Fprintln(out, "  systemctl daemon-reload\n  systemctl reboot")
+		if console && mode == "emergency" {
+			// Ubuntu may start a login prompt on the emergency shell's
+			// console, and sometimes only that is left (5 of 11 failed
+			// boots in the M4 lab had one; the rescue entry's shell never).
+			fmt.Fprintln(out, `At a "login:" prompt instead of "#": log in, then put sudo before each.`)
+		}
 		// A rescue boot cannot clear the menu flag (/boot is not mounted),
 		// one after a healthy boot has none set.
 		if !currentOK {

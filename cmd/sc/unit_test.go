@@ -236,6 +236,9 @@ func TestLabGuestFacts(t *testing.T) {
 	labStubs(t, dir, map[string]string{
 		"systemctl":  `case "$1" in is-active) echo active ;; is-enabled) echo enabled ;; esac`,
 		"journalctl": "", "systemd-analyze": "", "grub-editenv": "", "passwd": "", "dmesg": "",
+		// Not this machine's processes: a command line with "p_" in it
+		// (an sshd session of backup_user) failed the test below.
+		"ps": `echo "    1 Ss   /usr/lib/systemd/systemd-journald"`,
 		"sc": `case "$1" in
 status) echo "This boot:     3b3b3b3b (rescue), root read-only"; exit 2 ;;
 check) echo blocker; exit 2 ;;
