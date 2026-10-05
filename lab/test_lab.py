@@ -248,6 +248,16 @@ class TestMux(unittest.TestCase):
         with open(os.path.join(self.run, name), "rb") as f:
             return f.read()
 
+    def test_gaps(self):
+        mux = self.start()
+        mux._gap(serialmux.GAP)  # a wake on time
+        self.assertEqual(mux.gaps, [])
+        mux._gap(596.25)
+        self.assertEqual([g[1] for g in mux.gaps], [596.2])
+        self.assertIn(b"gap: the mux did not run for 596.2 s", self.read("mux.log"))
+        time.sleep(0.5)  # the loop's own wakes, five a second, add none
+        self.assertEqual(len(mux.gaps), 1)
+
     def test_logs_and_forwards(self):
         mux = self.start(listen=True)
         raw = b"\x1b[0mBdsDxe: starting\r\n\x1b[05;03H*Ubuntu  \x1b[06;03H Advanced\r\n"

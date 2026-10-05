@@ -113,6 +113,7 @@ PROMPT_END_RX = r"\(or press Control-D to continue\): "
 LOGIN_RX = r"\b%s login: " % re.escape(HOST)
 SHELL_RX = r"root@[\w.-]+:[^\n]*# "
 SEEN_DONE_RX = r"Finished sc-boot-seen\.service"
+INIT_RX = r"Run /init as init process"
 LOG_ROW = re.compile(r"^([0-9a-f]{6})\s+(\d{4}-\d\d-\d\d \d\d:\d\d)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.*?))?\s*$")
 
 EXIT = {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 3}
@@ -282,7 +283,7 @@ MENU_SIGS = ("grub-prompt", "menu-missed")
 # before the menu's first screen means its countdown cannot be held to
 # 30 s, so the boot is retried ("vga-gap") rather than the range widened.
 MAX_VGA_GAP = 2.0
-PER_BOOT = {"menu": 1, "no-ssh": 1, "vga-gap": 2}  # and RETRIES_PANIC for "panic"
+PER_BOOT = {"menu": 1, "no-ssh": 1, "vga-gap": 2, "stall": 1}  # and RETRIES_PANIC for "panic"
 
 # bios: one guest reboot gives two guest RESETs about 15 ms apart (the first
 # bios run: QMP seq 3 and 4, nothing on serial or VGA between them), the
@@ -290,6 +291,14 @@ PER_BOOT = {"menu": 1, "no-ssh": 1, "vga-gap": 2}  # and RETRIES_PANIC for "pani
 # the one before it (QEMU's timestamps) is the same boot's start, not a
 # reset of its own; one any later is (the boot's waits say so).
 RESET_CHAIN = 2.0
+# stall_dump samples QEMU twice, this many seconds apart.
+STALL_SAMPLE = 5.0
+
+
+def last_line(text):
+    """The last line of text that is not empty."""
+    lines = text.strip().split("\n")
+    return lines[-1].strip()
 
 
 def qmp_time(ev):
@@ -311,9 +320,9 @@ def flag_after_retry(flag, sig):
     """The menu flag a boot can expect after a reset that ended an attempt
     with sig: True, False, or None (not known). sc-boot-seen sets it early
     in every boot and an ok verdict unsets it, so a boot that reached
-    userspace (slow-udev, no-ssh) may have changed it; a panic, a grub>
-    prompt, a missed menu or a VGA poll gap came before userspace."""
-    if sig in ("panic", "vga-gap") + MENU_SIGS:
+    userspace (slow-udev, no-ssh) may have changed it; a panic, a stall,
+    a grub> prompt, a missed menu or a VGA poll gap came before userspace."""
+    if sig in ("panic", "stall", "vga-gap") + MENU_SIGS:
         return flag
     if sig == "slow-udev" and flag is True:
         return True  # seen sets it (if /boot was there) or leaves it set
@@ -541,10 +550,15 @@ def last_console(tokens):
 
 
 def observer_problems(obs, platform, pending, post_timeout, style):
-    """What is wrong with the last pre and post observer lines of a boot."""
+    """What is wrong with the last pre and post observer lines of a boot.
+    style "hidden" is what 00_header sets after a clean boot. After a
+    reset (a retry) recordfail is still 1 and 00_header sets no style;
+    the flag block changes none without the flag, so none is right then."""
     pre = [o for o in obs if o.get("phase") == "pre"]
     post = [o for o in obs if o.get("phase") == "post"]
     p = []
+    if style == "hidden" and pre and pre[-1].get("recordfail") == "1":
+        style = ""
     if not pre:
         p.append("no 'sclab: pre' line")
     else:
@@ -1368,6 +1382,51 @@ class E2E:
             if w is not None:
                 w.stop()
 
+    # A stall (README "Stalls"): the guest's console stops for a whole
+    # budget where SmartConfig has no part in the boot yet. Either before
+    # GRUB ran its configuration (42_smartconfig's flag block comes after
+    # 41_sclab's line), or in the kernel before /init (sc is userspace).
+    # A reset there loses nothing sc did, so the boot is retried.
+
+    def grub_silent(self, a):
+        """True when nothing of GRUB's configuration shows in this boot: no
+        observer line and no menu, on serial (uefi) or on the VGA screens
+        (bios; a failed or empty watch cannot tell, so False)."""
+        if self.uefi:
+            text = self.text(a)
+            return not console.observer_lines(text) and "GNU GRUB" not in text
+        w = a.vga
+        if w is None or w.error or not w.screens:
+            return False
+        rows = w.all_rows()
+        return not console.observer_lines(rows) and not any("GNU GRUB" in r for r in rows)
+
+    def grub_stall(self, a, budget):
+        """After a wait for GRUB ran out: a stall if GRUB showed nothing."""
+        if self.grub_silent(a):
+            self.stall(a, "nothing from GRUB %d s after the reset; the last line: %s"
+                       % (budget, _cell(last_line(self.text(a)), 120)))
+
+    def stall(self, a, what):
+        raise Retry("stall", "%s (%s)" % (what, self.stall_dump(a, what)))
+
+    def stall_dump(self, a, what):
+        """Evidence of what stood still: the gaps in the lab's own running
+        (a paused or starved host), QEMU's CPU time over 5 s and its
+        registers before and after (a vCPU that spins, halts or moves)."""
+        out = ["boot %s, attempt %d: %s" % (a.label, a.n, what),
+               "mux gaps over %g s (seconds since t0, length): %s"
+               % (serialmux.GAP, ", ".join("+%s %ss" % g for g in self.mux.gaps) or "none")]
+        try:
+            c0, r0 = self.machine.cpu_seconds(), self.qmp.hmp("info registers -a")
+            time.sleep(STALL_SAMPLE)
+            c1, r1 = self.machine.cpu_seconds(), self.qmp.hmp("info registers -a")
+            out += ["QEMU used %.1f s of CPU in %g s (%s vCPUs)" % (c1 - c0, STALL_SAMPLE, self.conf["SMP"]),
+                    "", "registers:", r0.rstrip(), "", "%g s later:" % STALL_SAMPLE, r1.rstrip()]
+        except Exception as e:  # evidence only: the retry goes on without it
+            out.append("no QEMU state: %r" % (e,))
+        return self.save("stall-%s-%d.txt" % (a.label, a.n), "\n".join(out))
+
     def grub_phase(self, a, cid, menu, pick=None):
         """The boot from its reset to the kernel: GRUB's observer lines and
         its menu. menu: True (a 30 s menu must show), False (none may) or
@@ -1381,6 +1440,7 @@ class E2E:
             if self.uefi:
                 hit = self.wait_for(a, [COUNTDOWN_RX, LINUX_RX, GRUB_PROMPT_RX], budget, what="the GRUB menu")
                 if hit is None:
+                    self.grub_stall(a, budget)
                     raise LabError("no GRUB menu and no kernel %d s after the reset" % budget)
                 if hit.index == 2:
                     raise Retry("grub-prompt", hit.text)
@@ -1408,6 +1468,8 @@ class E2E:
         start = g["enter_pos"] if g["enter_pos"] is not None else a.mark.txt
         hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX], budget, start=start, what="the kernel")
         if hit is None:
+            if not pick:
+                self.grub_stall(a, budget)
             raise LabError("no kernel %d s after the %s" % (budget, "Enter" if pick else "reset"))
         if hit.index == 1:
             raise Retry("grub-prompt", hit.text)
@@ -1452,6 +1514,7 @@ class E2E:
             if why:
                 raise LabError("%s, while waiting for the GRUB menu" % why)
             if time.monotonic() > deadline:
+                self.grub_stall(a, budget)
                 raise LabError("no GRUB menu on the VGA screen and no kernel %d s after the reset" % budget)
             time.sleep(0.25)
 
@@ -1597,6 +1660,9 @@ class E2E:
             if why:
                 raise LabError(why + ", before the login prompt")
             if time.monotonic() > deadline:
+                if not re.search(INIT_RX, text):
+                    self.stall(a, "the kernel did not reach /init in %d s; its last line: %s"
+                               % (self.b("BUDGET_KERNEL_LOGIN"), _cell(last_line(text), 120)))
                 raise LabError("no login prompt %d s after the kernel" % self.b("BUDGET_KERNEL_LOGIN"))
             self.mux.wait(size, 1.0)
 

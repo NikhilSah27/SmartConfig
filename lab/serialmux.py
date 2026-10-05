@@ -14,7 +14,9 @@ the run directory:
                input.sock, hex), sendkey (a QEMU key name), error
   marks.log    "+SECS LABEL raw=N txt=N input=N": the logs' sizes at a
                mark (QMP RESET or SHUTDOWN), where a boot's text starts
-  mux.log      the mux's own events (connects, resets, client errors)
+  mux.log      the mux's own events (connects, resets, client errors, and
+               "gap": the mux's thread did not run for over GAP s, so the
+               host stalled or was paused; Mux.gaps keeps them)
 
 As a thread (lab/e2e.py):
 
@@ -43,6 +45,9 @@ import threading
 import time
 
 LOGS = ("serial.raw", "serial.txt", "serial.ts")
+# The loop wakes five times a second. A wake this late was not the guest's
+# doing: the lab's own process did not run.
+GAP = 10.0
 
 
 class MuxError(Exception):
@@ -206,6 +211,7 @@ class Mux:
         self.closed = False
         self.why = None  # why the mux stopped
         self.marks = []
+        self.gaps = []  # (seconds since t0, how long): see GAP
         self._cv = threading.Condition()
         self._wlock = threading.Lock()
         self._stop = threading.Event()
@@ -359,6 +365,14 @@ class Mux:
             self._txt += txt
             self._cv.notify_all()
 
+    def _gap(self, waited):
+        """Keeps a wake of the loop that came over GAP s late."""
+        if waited <= GAP:
+            return
+        with self._cv:
+            self.gaps.append((round(self.clock() - self.t0, 2), round(waited, 1)))
+        self._log("gap: the mux did not run for %.1f s" % waited)
+
     def _loop(self):
         sel = selectors.DefaultSelector()
         why = "stopped"
@@ -367,7 +381,10 @@ class Mux:
             if self._lst is not None:
                 sel.register(self._lst, selectors.EVENT_READ, "lst")
             while not self._stop.is_set():
-                for key, _ in sel.select(0.2):
+                t = time.monotonic()
+                ready = sel.select(0.2)
+                self._gap(time.monotonic() - t)
+                for key, _ in ready:
                     if key.data == "ser":
                         try:
                             data = self._ser.recv(65536)

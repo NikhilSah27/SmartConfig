@@ -35,7 +35,7 @@ times a mode: a TCG panic, a healthy boot that TCG starved into emergency
 mode (slow udev on `LABEL=BOOT`, `LABEL=UEFI` or ttyS0), a missed menu or a
 `grub>` prompt, on bios a gap of over 2 s in the VGA polling before the
 menu's first screen (its countdown cannot be held to 30 s then), a login
-prompt without ssh. Nothing else is ever retried. A reboot over ssh that
+prompt without ssh, a stall (below). Nothing else is ever retried. A reboot over ssh that
 ssh lost (exit 255) is sent once more only when the guest answers from the
 same boot with no reboot queued; otherwise its RESET decides. A guest RESET within 2 s
 of the one before it (on bios every guest reboot gives two, about 15 ms
@@ -98,6 +98,31 @@ python3 lab/vm.py stop
 `--boot2 reset-at-timeout` resets boot 2 right at the device timeout,
 which forces outcome a. `--keep` keeps the run's disk after a PASS too.
 
+## Stalls
+
+Under TCG a boot sometimes stands still for ten minutes and more. The lab
+retries one only where SmartConfig has no part in the boot yet, so the
+reset loses nothing sc did:
+
+- before GRUB ran its configuration: a whole `BUDGET_MENU` with no
+  `sclab: pre` line and no menu (41_sclab's line comes before
+  42_smartconfig's flag block);
+- in the kernel before `Run /init as init process`: a whole
+  `BUDGET_KERNEL_LOGIN` in a boot that should reach a login prompt
+  (boots 0, 1, 4 and 5).
+
+Once per boot. A stall anywhere else is still INCONCLUSIVE. Each one
+leaves `evidence/stall-<boot>-<attempt>.txt`: QEMU's CPU time over 5 s and
+its registers before and after (a vCPU that spins, halts or moves), and
+the mux's gaps. A gap is the lab's own process not running for over 10 s,
+which means the host was paused or starved, not the guest; `mux.log` has
+them for every run.
+
+After a reset that came later than GRUB (a stall in the kernel, a panic),
+Ubuntu's `recordfail` is still 1 in the next attempt and `00_header` sets
+no `timeout_style`. Without the flag, 42_smartconfig must leave it so:
+x.1 then expects `style=[]`, not `style=[hidden]`.
+
 ## Cost
 
 A mode takes about 25 minutes on this host (75 at most: `BUDGET_MODE`),
@@ -127,7 +152,7 @@ A run directory holds:
 | `serial.raw`, `serial.txt`, `serial.ts` | the serial console: raw, cleaned, with `[+seconds]` per line |
 | `input.log`, `marks.log` | every byte and key sent; where each boot starts (QMP RESET) |
 | `qmp.log`, `qemu.log`, `mux.log`, `ssh.log` | QMP traffic, QEMU's command line and output, the serial mux, every ssh call |
-| `evidence/` | facts.sh output per boot, install.sh output, grub.cfg, the reports, VGA dumps (bios), the menu PNG |
+| `evidence/` | facts.sh output per boot, install.sh output, grub.cfg, the reports, VGA dumps (bios), the menu PNG, `stall-*.txt` after a stall |
 | `stage/` | exactly what was copied to the guest, with `MANIFEST` |
 | `disk.qcow2`, `VARS.fd` | the overlay; deleted after a PASS unless `--keep` |
 

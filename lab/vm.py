@@ -1157,6 +1157,12 @@ class Vm:
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
+    def cpu_seconds(self):
+        """The CPU time QEMU has used so far, user and system, in seconds."""
+        with open("/proc/%d/stat" % self.proc.pid) as f:
+            fields = f.read().rsplit(")", 1)[1].split()  # from field 3, the state
+        return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
+
     def wait_exit(self, timeout):
         """QEMU's exit status, or None if it still runs after timeout s."""
         try:

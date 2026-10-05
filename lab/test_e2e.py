@@ -111,7 +111,7 @@ class TestVerdict(unittest.TestCase):
     def test_flag_after_retry(self):
         f = e2e.flag_after_retry
         for flag in (True, False, None):
-            for sig in ("panic", "grub-prompt", "menu-missed"):
+            for sig in ("panic", "stall", "grub-prompt", "menu-missed"):
                 self.assertIs(f(flag, sig), flag)
             self.assertIsNone(f(flag, "no-ssh"))
         self.assertIs(f(True, "slow-udev"), True)
@@ -509,8 +509,16 @@ class FakeCon:
 
 
 class FakeMux:
+    gaps = []
+
     def __init__(self, inputs=()):
         self._inputs = list(inputs)
+
+    def size(self):
+        return 0
+
+    def wait(self, size, timeout):
+        return 0
 
     def inputs(self, start=0):
         return self._inputs[start:]
@@ -1177,6 +1185,134 @@ class TestVgaGap(unittest.TestCase):
             r.boot("3", fn)
         self.assertEqual((len(resets), r.retries, r.flag), (2, 2, True))
         self.assertEqual([a.result for a in r.attempts], ["retry"] * 3)
+
+
+UEFI_SILENT = ('BdsDxe: loading Boot0007 "Ubuntu" from HD(15,GPT)/\\EFI\\ubuntu\\shimx64.efi\n'
+               'BdsDxe: starting Boot0007 "Ubuntu" from HD(15,GPT)/\\EFI\\ubuntu\\shimx64.efi\n')
+PRE_CLEAN = "sclab: pre platform=efi pending=[] recordfail=[] timeout=[0] style=[hidden]\n"
+KERNEL = "[    0.000000] Linux version 6.8.0-142-generic\n[    1.217443] smpboot: x86: Booting SMP configuration:\n"
+
+
+class TestStall(unittest.TestCase):
+    """A console that stops before GRUB's configuration ran, or in the
+    kernel before /init, is a [lab] retry (README "Stalls"): once a boot,
+    with stall-*.txt as evidence. Anywhere later it is no retry."""
+
+    def run_(self, mode="uefi", text=""):
+        r = fake_run(self, mode, con=FakeCon(text))
+        r.b = lambda key: 0  # every budget has run out
+        r.wait_for = lambda a, patterns, budget, start=None, what="it": None
+        r.unexpected = lambda a: None
+        return r
+
+    def test_uefi_nothing_from_grub(self):
+        # The 16:54 uefi run on 225e2d6: shim started, then 596 s of nothing.
+        r = self.run_(text=UEFI_SILENT)
+        a = attempt("1")
+        with self.assertRaises(e2e.Retry) as c:
+            r.grub_phase(a, "1.1", menu=False)
+        self.assertEqual(c.exception.sig, "stall")
+        self.assertIn("shimx64.efi", c.exception.detail)
+        self.assertIn("evidence/stall-1-1.txt", c.exception.detail)
+        with open(r.evpath("stall-1-1.txt")) as f:
+            dump = f.read()
+        self.assertIn("mux gaps over 10 s", dump)
+        self.assertIn("no QEMU state", dump)  # no machine here: the retry goes on
+        with self.assertRaises(e2e.Retry) as c:  # a menu was due (boot 3): the same
+            r.grub_phase(attempt("3", True), "3.1", menu=True)
+        self.assertEqual(c.exception.sig, "stall")
+
+    def test_uefi_grub_ran(self):
+        # The observer line is there: the flag block may have run. No retry.
+        for seen in (PRE_CLEAN, "                 GNU GRUB  version 2.12\n"):
+            r = self.run_(text=UEFI_SILENT + seen)
+            with self.assertRaises(e2e.LabError) as c:
+                r.grub_phase(attempt("1"), "1.1", menu=False)
+            self.assertNotIsInstance(c.exception, e2e.Retry)
+            self.assertIn("no kernel", str(c.exception))
+            self.assertEqual(os.listdir(r.evdir), [])
+
+    def test_bios_screens(self):
+        seabios = ["SeaBIOS (version 1.16.3-debian-1.16.3-2)", "Booting from Hard Disk..."]
+        hidden = console.vgatext(fixture("vga-bios-hidden.bin"))
+        menu = console.vgatext(fixture("vga-bios-menu-rescue.bin"))  # no countdown: not the menu waited for
+        for rows, error, silent in ((seabios, None, True), (hidden, None, False), (menu, None, False),
+                                    (seabios, "screendump failed", False), (None, None, False)):
+            r = self.run_("bios")
+            a = attempt("1", vga=FakeWatch(rows, error=error))
+            self.assertEqual(r.grub_silent(a), silent, (rows, error))
+            for menu_due in (False, True):
+                a = attempt("1", menu_due, vga=FakeWatch(rows, error=error))
+                with self.assertRaises((e2e.Retry, e2e.LabError)) as c:
+                    r.grub_phase(a, "1.1", menu=menu_due)
+                self.assertEqual(isinstance(c.exception, e2e.Retry), silent, (rows, error, menu_due))
+        self.assertFalse(self.run_("bios").grub_silent(attempt("1")))  # no watch at all
+
+    def test_kernel_before_init(self):
+        # bios run 2 on 618e4e9, boot 5: the kernel stood at smpboot for 18 minutes.
+        r = self.run_(text=UEFI_SILENT + PRE_CLEAN + KERNEL)
+        with self.assertRaises(e2e.Retry) as c:
+            r.wait_healthy_end(attempt("5"), "5.1")
+        self.assertEqual(c.exception.sig, "stall")
+        self.assertIn("smpboot: x86: Booting SMP configuration:", c.exception.detail)
+        # Userspace began: sc's units may have run. No retry.
+        r = self.run_(text=UEFI_SILENT + PRE_CLEAN + KERNEL + "[    5.194221] Run /init as init process\n")
+        with self.assertRaises(e2e.LabError) as c:
+            r.wait_healthy_end(attempt("5"), "5.1")
+        self.assertNotIsInstance(c.exception, e2e.Retry)
+        self.assertIn("no login prompt", str(c.exception))
+
+    def test_once_a_boot(self):
+        r = fake_run(self)
+        r.flag = True
+        resets = []
+        r.reset_vm = lambda why: resets.append(why)
+
+        def fn(a):
+            raise e2e.Retry("stall", "test")
+
+        with self.assertRaises(e2e.LabError) as c:
+            r.boot("1", fn)
+        self.assertIn("no retry left", str(c.exception))
+        self.assertEqual((len(resets), r.retries, r.flag), (1, 1, True))
+
+    def test_dump_with_a_machine(self):
+        r = fake_run(self)
+        r.mux.gaps = [(431.5, 596.2)]
+        self.addCleanup(setattr, FakeMux, "gaps", [])
+
+        class Machine:
+            cpu = iter((100.0, 109.5))
+
+            def cpu_seconds(self):
+                return next(self.cpu)
+
+        class Qmp:
+            def hmp(self, line):
+                return "CPU#0\nRIP=000000007e1a2b3c HLT=0\n" if line == "info registers -a" else ""
+
+        r.machine, r.qmp = Machine(), Qmp()
+        with mock.patch.object(e2e, "STALL_SAMPLE", 0.01):
+            ev = r.stall_dump(attempt("1"), "nothing from GRUB")
+        self.assertEqual(ev, "evidence/stall-1-1.txt")
+        with open(r.evpath("stall-1-1.txt")) as f:
+            dump = f.read()
+        self.assertIn("mux gaps over 10 s (seconds since t0, length): +431.5 596.2s", dump)
+        self.assertIn("QEMU used 9.5 s of CPU in 0.01 s (2 vCPUs)", dump)
+        self.assertEqual(dump.count("RIP=000000007e1a2b3c"), 2)
+
+    def test_observers_after_a_reset(self):
+        # recordfail=1 after a reset: 00_header sets no style, and without
+        # the flag 42_smartconfig must not either.
+        obs = console.observer_lines("sclab: pre platform=efi pending=[] recordfail=[1] timeout=[0] style=[]\n"
+                                     "sclab: post timeout=[0] style=[]\n")
+        self.assertEqual(e2e.observer_problems(obs, "efi", "", "0", "hidden"), [])
+        obs = console.observer_lines("sclab: pre platform=efi pending=[] recordfail=[1] timeout=[0] style=[]\n"
+                                     "sclab: post timeout=[30] style=[menu]\n")
+        self.assertEqual(e2e.observer_problems(obs, "efi", "", "0", "hidden"),
+                         ["post timeout=[30], not [0]", "post style=[menu], not []"])
+        obs = console.observer_lines(PRE_CLEAN + "sclab: post timeout=[0] style=[]\n")
+        self.assertEqual(e2e.observer_problems(obs, "efi", "", "0", "hidden"), ["post style=[], not [hidden]"])
 
 
 def qmp_event(seq, name, guest, secs):
