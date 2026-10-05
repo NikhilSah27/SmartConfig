@@ -1,0 +1,28 @@
+[    0.248010] ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1
+[    0.267237] ..MP-BIOS bug: 8254 timer not connected to IO-APIC
+[    0.267573] ...trying to set up timer (IRQ0) through the 8259A ...
+[    0.267742] ..... (found apic 0 pin 2) ...
+[    0.285285] ....... failed.
+[    0.285531] ...trying to set up timer as Virtual Wire IRQ...
+[    0.303571] ..... failed.
+[    0.303843] ...trying to set up timer as ExtINT IRQ...
+[    1.224500] ..... failed :(.
+[    1.225222] Kernel panic - not syncing: IO-APIC + timer doesn't work!  Boot with apic=debug and send a report.  Then try booting with the 'noapic' option.
+[    1.226238] CPU: 0 PID: 0 Comm: swapper/0 Not tainted 6.8.0-142-generic #142-Ubuntu
+[    1.226788] Hardware name: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 2024.02-2ubuntu0.9 06/02/2026
+[    1.227165] Call Trace:
+[    1.227848]  <TASK>
+[    1.228866]  dump_stack_lvl+0x27/0xa0
+[    1.229514]  dump_stack+0x10/0x20
+[    1.229598]  panic+0x366/0x3c0
+[    1.229775]  check_timer+0x601/0x610
+[    1.230290]  setup_IO_APIC+0x2c3/0x370
+[    1.230704]  ? enable_IO_APIC+0x1af/0x290
+[    1.230849]  apic_intr_mode_init+0x61/0x130
+[    1.230937]  x86_late_time_init+0x24/0x40
+[    1.231055]  start_kernel+0x2be/0x450
+[    1.231136]  x86_64_start_reservations+0x18/0x30
+[    1.231552]  x86_64_start_kernel+0xbf/0x110
+[    1.231851]  secondary_startup_64_no_verify+0x184/0x18b
+[    1.232214]  </TASK>
+[    1.233642] ---[ end Kernel panic - not syncing: IO-APIC + timer doesn't work!  Boot with apic=debug and send a report.  Then try booting with the 'noapic' option. ]---

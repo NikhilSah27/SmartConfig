@@ -1,0 +1,15 @@
+#!/bin/sh
+# 41_sclab: an M4 lab observer (lab/README.md); lab only, never shipped.
+# In the lab's guest it is /etc/grub.d/41_sclab, so update-grub puts its
+# one line into grub.cfg just before 42_smartconfig's part: what GRUB
+# knows before the menu flag is read. 43_sclab prints what it decided.
+# The lines show on the console also when the menu stays hidden, so the
+# lab sees each boot's menu decision (checks 1.1, 2.1, 3.1, 4.1, 5.1).
+# Only an echo, outside 42_smartconfig's part: it changes nothing there.
+#
+# Double quotes: GRUB expands no variable inside single quotes (the step
+# 11 spike printed ${timeout} as it is). The quoted here-document keeps
+# the text as it is for grub.cfg.
+cat <<'EOT'
+echo "sclab: pre platform=${grub_platform} pending=[${smartconfig_pending}] recordfail=[${recordfail}] timeout=[${timeout}] style=[${timeout_style}]"
+EOT

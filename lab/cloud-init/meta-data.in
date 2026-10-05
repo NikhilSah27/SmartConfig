@@ -1,0 +1,4 @@
+# lab/cloud-init/meta-data.in: NoCloud meta-data for "vm.py provision".
+# One instance-id per reference hash: each build is a new instance.
+instance-id: sclab-@H12@
+local-hostname: sclab

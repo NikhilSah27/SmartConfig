@@ -1,0 +1,13 @@
+This boot:     <B2:8> (emergency), root read-write
+Last healthy:  <YYYY-MM-DD HH:MM>, boot <B1:8>
+scd:           not running
+
+Changed since the last healthy boot, worst first:
+<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab
+
+To put /etc/fstab back:
+  sc restore <GOOD>
+  sync
+  systemctl daemon-reload
+  systemctl reboot
+The menu shows once more: the first entry, Ubuntu, is the one.

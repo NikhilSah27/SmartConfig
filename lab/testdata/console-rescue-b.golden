@@ -1,0 +1,15 @@
+This boot:     <B3:8> (rescue), root read-only
+Last healthy:  <YYYY-MM-DD HH:MM>, boot <B1:8>
+Failed since:  <K boots>, last <MM-DD HH:MM>: a mount failed, emergency mode
+scd:           not running
+
+Changed since the last healthy boot, worst first:
+<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab
+
+To put /etc/fstab back:
+  mount -o remount,rw /
+  sc restore <GOOD>
+  sync
+  systemctl daemon-reload
+  systemctl reboot
+The menu shows once more: the first entry, Ubuntu, is the one.

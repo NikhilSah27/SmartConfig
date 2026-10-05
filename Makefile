@@ -1,7 +1,14 @@
 BIN := bin/sc
 export CGO_ENABLED := 0
 
-.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 clean
+.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 clean lab-e2e lab-image lab-test lab-clean
+
+# The QEMU rescue lab (lab/README.md): dev only, stdlib Python, no sudo, no KVM, not in CI.
+LAB = env PYTHONDONTWRITEBYTECODE=1 python3
+LAB_MODES ?= uefi bios
+LAB_TIMEOUT ?= 4500
+LAB_E2E_ARGS ?=
+LAB_IMAGE_FROM ?=
 
 build:
 	go build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/sc
@@ -35,3 +42,29 @@ m1-compat:
 
 clean:
 	rm -rf bin
+
+# The M4 owner scenario in a VM, every mode in LAB_MODES (about 25 min each
+# under TCG); needs make lab-image once. The recipe ends in exit 1 if a mode
+# FAILed (an [M4] check), else 3 if one was INCONCLUSIVE (a [lab] problem,
+# a timeout too); make shows it as "Error 1" or "Error 3" and exits 2. Each
+# mode's summary line is echoed; the last line says boot5=no when boot 5 was
+# left out (--no-boot5), so such a PASS never reads as a whole one.
+lab-e2e: build
+	@rc=0; b5="$(if $(findstring --no-boot5,$(LAB_E2E_ARGS)), boot5=no)"; for m in $(LAB_MODES); do \
+	  line=$$(timeout --foreground $(LAB_TIMEOUT) $(LAB) lab/e2e.py --mode $$m $(LAB_E2E_ARGS)); r=$$?; \
+	  [ -n "$$line" ] && echo "$$line"; case " $$line " in *" boot5=no "*) b5=" boot5=no";; esac; \
+	  [ $$r = 1 ] && rc=1; [ $$r != 0 ] && [ $$rc = 0 ] && rc=3; done; \
+	  case $$rc in 0) echo "lab-e2e: PASS$$b5";; 1) echo "lab-e2e: FAIL$$b5";; *) echo "lab-e2e: INCONCLUSIVE$$b5";; esac; \
+	  exit $$rc
+
+# The pinned cloud image (LAB_IMAGE_FROM=FILE copies it) and the reference
+# image built from it (about 30 min under TCG), in the lab cache.
+lab-image:
+	$(LAB) lab/vm.py image $(if $(LAB_IMAGE_FROM),--from $(LAB_IMAGE_FROM)) && $(LAB) lab/vm.py provision
+
+lab-test:
+	$(LAB) -m unittest discover -s lab
+	@for f in lab/guest/*.sh lab/guest/41_sclab lab/guest/43_sclab; do sh -n "$$f" || exit 1; done
+
+lab-clean:
+	$(LAB) lab/vm.py gc

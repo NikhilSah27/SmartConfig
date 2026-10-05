@@ -1,0 +1,22 @@
+[DEPEND] Dependency failed for local-fs.target - Local File Systems.
+[  OK  ] Listening on ssh.socket - OpenBSD Secure Shell server socket.
+[  OK  ] Listening on uuidd.socket - UUID daemon activation socket.
+[  OK  ] Started emergency.service - Emergency Shell.
+[  OK  ] Reached target getty-pre.target - Preparation for Logins.
+         Starting sysstat.service - Resets System Activity Logs...
+         Starting scd.service - SmartConfig…cd): records config file changes...
+[  OK  ] Started systemd-logind.service - User Login Management.
+sc: interrupted by hangup
+
+Ubuntu 24.04.5 LTS sclab ttyS0
+
+sclab login: You are in emergency mode. After logging in, type "journalctl -xb" to view
+system logs, "systemctl reboot" to reboot, or "exit"
+to continue bootup.
+Press Enter for maintenance
+(or press Control-D to continue): Reloading system manager configuration.
+[  OK  ] Finished apport.service - automatic crash report generation.
+Starting default.target
+[  OK  ] Stopped emergency.service - Emergency Shell.
+[  OK  ] Started systemd-ask-password-wall.…d Requests to Wall Directory Watch.
+         Expecting device dev-disk-by\x2duu…1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c...

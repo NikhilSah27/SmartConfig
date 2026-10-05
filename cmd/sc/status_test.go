@@ -1,16 +1,20 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"smartconfig/internal/boot"
 	"smartconfig/internal/check"
+	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
 )
 
@@ -456,6 +460,162 @@ func TestStatusModeFromSystemd(t *testing.T) {
 		}
 		if reboot := strings.Contains(r.stdout, "  sc restore "+good+"\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n"); reboot != (tc.mode != "normal") {
 			t.Errorf("%q: reboot steps %v:\n%s", tc.states, reboot, r.stdout)
+		}
+	}
+}
+
+// updateGolden rewrites the M4 lab's goldens:
+// go test ./cmd/sc -run TestStatusConsoleLab -update
+var updateGolden = flag.Bool("update", false, "rewrite lab/testdata/console-*.golden (TestStatusConsoleLab)")
+
+// The M4 lab's boots and its fstab (lab/e2e.py): B1 healthy, the edit,
+// B2 broken by it, B3 the rescue boot.
+const (
+	labB1, labB2, labB3 = "1b1b1b1b-0000-4000-8000-000000000001", "2b2b2b2b-0000-4000-8000-000000000002", "3b3b3b3b-0000-4000-8000-000000000003"
+	labGood             = "LABEL=cloudimg-rootfs\t/\t ext4\tdiscard,commit=30,errors=remount-ro\t0 1\n" +
+		"LABEL=BOOT\t/boot\text4\tdefaults\t0 2\nLABEL=UEFI\t/boot/efi\tvfat\tumask=0077\t0 1\n"
+	labBadLine = "UUID=3f6c1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c /mnt/backup ext4 defaults 0 2\n"
+)
+
+// labRecord records data as /etc/fstab's newest version in the store at
+// home, as scd would, without the file itself; it returns the row's id.
+func labRecord(t *testing.T, home, data string) string {
+	t.Helper()
+	s, err := store.Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	res, err := s.Record([]store.Obs{{Path: "/etc/fstab", Origin: store.OriginAuto,
+		State: &fsutil.State{Kind: "file", Data: []byte(data), Meta: fsutil.Meta{Mode: 0o644}, Stable: true}}})
+	if err != nil || !res[0].Recorded {
+		t.Fatalf("record: %v %+v", err, res)
+	}
+	return res[0].Change.ID
+}
+
+// labConsole is sc status --console as the lab's guest prints it from the
+// drop-in: in boot 3's rescue.service after boot 2 ended as outcome a (no
+// verdict), b (bad, in emergency mode) or c (bad, emergency mode over),
+// or, for "emergency", in boot 2's own emergency.service. It returns the
+// report and the ids in it.
+func labConsole(t *testing.T, outcome string) (out string, ids map[string]string) {
+	t.Helper()
+	cur, mode, cmdline, ro := labB3, "inactive\\ninactive\\nactivating\\ninactive\\n",
+		"BOOT_IMAGE=/boot/vmlinuz-6.8.0-142-generic root=LABEL=cloudimg-rootfs no_timer_check console=tty1 console=ttyS0 ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1", true
+	if outcome == "emergency" {
+		cur, mode, cmdline, ro = labB2, "activating\\ninactive\\ninactive\\ninactive\\n",
+			"BOOT_IMAGE=/vmlinuz-6.8.0-142-generic root=LABEL=cloudimg-rootfs ro no_timer_check console=tty1 console=ttyS0", false
+	}
+	_, _, home := statusEnv(t, cmdline, ro)
+	idFile := filepath.Join(t.TempDir(), "boot_id")
+	os.WriteFile(idFile, []byte(cur+"\n"), 0o644)
+	boot.IDPath = idFile // statusEnv puts its own back
+	// The service is activating (bootMode), as in the drop-in.
+	os.WriteFile(filepath.Join(bootRunner.Dirs[0], "systemctl"), []byte("#!/bin/sh\nprintf '"+mode+"'\nexit 3\n"), 0o755)
+	g, err := check.ParseGraph("check fstab /etc/fstab\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Graph = g }
+
+	t0 := time.Now().Add(-time.Hour)
+	good := labRecord(t, home, labGood)
+	boot.Seen(home, labB1, t0)
+	boot.Record(home, labB1, "ok", t0.Add(2*time.Minute), newestRow(t), "local-fs=active emergency=inactive rescue=inactive failed-units=0")
+	bad := labRecord(t, home, labGood+labBadLine)
+	boot.Seen(home, labB2, t0.Add(20*time.Minute))
+	switch outcome {
+	case "b":
+		boot.Record(home, labB2, "bad", t0.Add(25*time.Minute), newestRow(t), "local-fs=inactive emergency=active rescue=inactive failed-units=1")
+	case "c":
+		boot.Record(home, labB2, "bad", t0.Add(25*time.Minute), newestRow(t), "local-fs=inactive emergency=inactive rescue=inactive failed-units=1")
+	}
+	// B3, on a read-only root, writes no line (sc-boot-seen's condition).
+	r := sc(t, "status", "--console")
+	if r.code != 2 || r.stderr != "" {
+		t.Fatalf("%s: %+v", outcome, r)
+	}
+	return r.stdout, map[string]string{shortBoot(labB1): "<B1:8>", shortBoot(labB2): "<B2:8>", shortBoot(labB3): "<B3:8>", good: "<GOOD>", bad: "<BAD>"}
+}
+
+// labNormalise puts the placeholders lab/e2e.py fills in from its run in
+// place of what differs between runs: <B1:8> <B2:8> <B3:8> (a boot id's
+// first 8 hex digits), <GOOD> <BAD> (snapshot ids), <N> (the bad line's
+// number in fstab), <K boots> ("1 boot", "2 boots": the failed boots),
+// and the times <YYYY-MM-DD HH:MM>, <MM-DD HH:MM> and <HH:MM>.
+func labNormalise(t *testing.T, out string, ids map[string]string) string {
+	t.Helper()
+	for id, ph := range ids {
+		out = regexp.MustCompile(`\b`+regexp.QuoteMeta(id)+`\b`).ReplaceAllString(out, ph)
+	}
+	for _, r := range []struct {
+		re, with string
+		need     bool // the line is always there
+	}{
+		{`(?m)^(Last healthy:  )\d{4}-\d\d-\d\d \d\d:\d\d, `, "${1}<YYYY-MM-DD HH:MM>, ", true},
+		{`(?m)^(Failed since:  )1 boot, last \d\d-\d\d \d\d:\d\d: `, "${1}<K boots>, last <MM-DD HH:MM>: ", strings.Contains(out, "\nFailed since:")},
+		{`(?m)^<BAD> \d\d:\d\d  (blocker fstab-source-missing, line )4  `, "<BAD> <HH:MM>  ${1}<N>  ", true},
+	} {
+		re := regexp.MustCompile(r.re)
+		if r.need && !re.MatchString(out) {
+			t.Errorf("no %s in:\n%s", r.re, out)
+		}
+		out = re.ReplaceAllString(out, r.with)
+	}
+	if left := regexp.MustCompile(`\d\d:\d\d|\b[0-9a-f]{6}\b`).FindString(out); left != "" {
+		t.Errorf("%q is left in:\n%s", left, out)
+	}
+	return out
+}
+
+// The M4 lab compares what its guest's console shows with these goldens
+// (lab/testdata/console-*.golden, checks 2.5 and 3.6), rendered here
+// from the code, never copied by hand. Each also says what the lab
+// relies on: the reason the boot failed for each outcome of boot 2, the
+// undo list exactly, the menu promise, 80 columns and 20 rows.
+func TestStatusConsoleLab(t *testing.T) {
+	undo := "\nTo put /etc/fstab back:\n" + "%s  sc restore <GOOD>\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n" +
+		"The menu shows once more: the first entry, Ubuntu, is the one.\n"
+	for _, tc := range []struct{ outcome, golden, head, why, remount string }{
+		{"a", "console-rescue-a.golden", "This boot:     <B3:8> (rescue), root read-only\n", ": never reached multi-user\n", "  mount -o remount,rw /\n"},
+		{"b", "console-rescue-b.golden", "This boot:     <B3:8> (rescue), root read-only\n", ": a mount failed, emergency mode\n", "  mount -o remount,rw /\n"},
+		{"c", "console-rescue-c.golden", "This boot:     <B3:8> (rescue), root read-only\n", ": a mount failed\n", "  mount -o remount,rw /\n"},
+		{"emergency", "console-emergency.golden", "This boot:     <B2:8> (emergency), root read-write\n", "", ""},
+	} {
+		out, ids := labConsole(t, tc.outcome)
+		for _, l := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+			if utf8.RuneCountInString(l) > 80 {
+				t.Errorf("%s: %d columns: %q", tc.outcome, utf8.RuneCountInString(l), l)
+			}
+		}
+		if n := screenRows(out); n > 20 {
+			t.Errorf("%s: %d rows", tc.outcome, n)
+		}
+		got := labNormalise(t, out, ids)
+		for _, want := range []string{tc.head, "Last healthy:  <YYYY-MM-DD HH:MM>, boot <B1:8>\n",
+			"\n<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab\n", fmt.Sprintf(undo, tc.remount)} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: lacks %q:\n%s", tc.outcome, want, got)
+			}
+		}
+		if failed := strings.Contains(got, "\nFailed since:  <K boots>, last <MM-DD HH:MM>"+tc.why); failed != (tc.why != "") {
+			t.Errorf("%s: Failed since, for %q:\n%s", tc.outcome, tc.why, got)
+		}
+		path := filepath.Join("../../lab/testdata", tc.golden)
+		if *updateGolden {
+			if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%v (go test ./cmd/sc -run TestStatusConsoleLab -update writes it)", err)
+		}
+		if got != string(want) {
+			t.Errorf("%s differs from what sc prints now (-update rewrites it):\n--- golden\n%s--- now\n%s", tc.golden, want, got)
 		}
 	}
 }

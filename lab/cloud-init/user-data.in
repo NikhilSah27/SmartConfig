@@ -1,0 +1,52 @@
+#cloud-config
+# lab/cloud-init/user-data.in: how "vm.py provision" turns the pinned cloud
+# image into the lab's reference image (STEP11 design section 5). vm.py fills
+# in the at-sign tokens: the lab's public key, the reference hash, and
+# lab/guest/60-sclab.cfg. The result goes to the guest over http from a
+# server inside vm.py, bound to 127.0.0.1; it is never stored in the repo.
+#
+# The machine is set up as an owner's would be: a sudo user who logs in with
+# a key, root locked, and no password for any account. The rescue shell is
+# Ubuntu's sulogin on a locked root.
+hostname: sclab
+manage_etc_hosts: true
+disable_root: true
+ssh_pwauth: false
+users:
+  - name: owner
+    gecos: Machine owner
+    groups: [adm, sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - @SSH_KEY@
+package_update: false
+package_upgrade: false
+write_files:
+  - path: /etc/default/grub.d/60-sclab.cfg
+    owner: root:root
+    permissions: "0644"
+    content: |
+      @SCLAB_CFG@
+# Quiet, repeatable boots: no snaps, no apt timers, no fwupd refresh, no
+# cloud-init after this boot. scd records every change under /etc, and the
+# rescue report (check 3.6) must list the owner's edit alone: the third bios
+# run's fwupd-refresh.timer fired in boot 2 and fwupd rewrote
+# /etc/fwupd/fwupd.conf. grub.cfg is rebuilt with 60-sclab.cfg; the line on
+# /dev/console lets vm.py check that no_timer_check made it in.
+runcmd:
+  - [systemctl, mask, snapd.service, snapd.socket, snapd.seeded.service]
+  - [systemctl, disable, apt-daily.timer, apt-daily-upgrade.timer, fwupd-refresh.timer]
+  - [systemctl, disable, unattended-upgrades.service]
+  - [update-grub]
+  - |
+    n=$(grep -c no_timer_check /boot/grub/grub.cfg)
+    echo "sclab: grub.cfg no_timer_check lines: $n" >/dev/console
+  - [touch, /etc/cloud/cloud-init.disabled]
+final_message: "SCLAB-PROVISIONED sclab-@H12@ after $UPTIME s"
+power_state:
+  mode: poweroff
+  message: sclab provisioned, powering off
+  timeout: 120
+  condition: true

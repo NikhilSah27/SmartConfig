@@ -1,0 +1,13 @@
+#!/bin/sh
+# 43_sclab: an M4 lab observer (lab/README.md); lab only, never shipped.
+# In the lab's guest it is /etc/grub.d/43_sclab, so update-grub puts its
+# one line into grub.cfg just after 42_smartconfig's part: the timeout
+# and menu style the menu flag left. With 41_sclab's line before it, the
+# console shows each boot's menu decision, also with the menu hidden.
+# Only an echo, outside 42_smartconfig's part: it changes nothing there.
+#
+# Double quotes: GRUB expands no variable inside single quotes (the step
+# 11 spike). The quoted here-document keeps the text as it is.
+cat <<'EOT'
+echo "sclab: post timeout=[${timeout}] style=[${timeout_style}]"
+EOT
