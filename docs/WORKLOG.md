@@ -63,10 +63,13 @@ fixes `683678a`, plan change C5). Step 11, the QEMU lab (`lab/`,
 `make lab-e2e`), is committed (`9f29ea5`, with its one product fix
 `55d2bde`). The step 11 check on `618e4e9`: UEFI passed; BIOS did not in
 three runs, none of them a fault of sc (log, 2026-10-05), and the last
-one needed a lab fix (`bec333b`). **Now: the step 11 check again**,
-`make lab-e2e` on `bec333b`, UEFI then BIOS (over an hour, no sudo,
-nothing on this machine); then the chunk D review. A check-in every
-30 min resumes work after a usage limit (your ask).
+one needed a lab fix (`bec333b`). The second round (on `225e2d6`) gave
+no verdict either: UEFI stalled before GRUB, and this VM went down
+during BIOS (log, 2026-10-05). The lab now retries such a stall
+(`152ecbe`). **Now: the step 11 check, third round**, `make lab-e2e`
+on this commit, UEFI then BIOS (over an hour, no sudo, nothing on this
+machine; the VM has to stay up for it); then the chunk D review. A
+check-in every 30 min resumes work after a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1400,3 +1403,34 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     came through; whether the report or the README should say so is
     open.
   - Checks: `make lab-test` passes (166 tests). No Go file changed.
+- **M4 step 11 check, second round (`225e2d6`): no verdict; the lab now
+  retries a stall (`152ecbe`).**
+  - UEFI: INCONCLUSIVE in 16m59s at 1.1. Boot 0 passed (0.1 to 0.7). In
+    boot 1 the firmware started shim, and the console then stood still
+    for 596 s with no line of GRUB's (it took 0.5 s in the run that
+    passed). A lab stop, not a fault of sc: GRUB never reached its
+    configuration.
+  - BIOS: cut off at 0.3, four minutes in. This VM went down at about
+    17:15 UTC without a shutdown (`last` says crash) and came back at
+    17:18. The same happened at 04:54 (BIOS run 1 of the first round)
+    and at 06:00. A whole `make lab-e2e` needs the VM up for over an
+    hour.
+  - That is the second stall in four whole runs, so it is no longer
+    left alone. Neither run says whether QEMU's CPU spun or the host
+    was paused.
+  - Lab change (`152ecbe`): a stall is a [lab] retry, once per boot,
+    only where sc has no part in the boot yet: before GRUB ran its
+    configuration (no observer line, no menu for a whole
+    `BUDGET_MENU`), or in the kernel before `Run /init` in a boot that
+    should reach a login prompt. Anywhere else it stays INCONCLUSIVE.
+    Each stall leaves `evidence/stall-*.txt` (QEMU's CPU time over
+    5 s, its registers twice, the gaps in the lab's own running), so
+    the next one says what stood still.
+  - Found on the way: x.1 held a retried attempt to `style=[hidden]`.
+    After a reset later than GRUB, Ubuntu's recordfail is still 1 and
+    no style is set, so a retry after a panic would have failed x.1
+    as [M4] on UEFI. It now expects `style=[]` there (sc's flag block
+    must change nothing without the flag).
+  - Checks: `make lab-test` passes (174 tests); the failed run's boot 1,
+    replayed, is a stall retry; the registers command and the CPU time
+    reader were tried against this QEMU. No Go file changed.
