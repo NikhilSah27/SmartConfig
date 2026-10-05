@@ -151,13 +151,36 @@ def cache_dir(env=None):
     return os.path.abspath(d)
 
 
+# The cache is the lab's own directory: ensure_cache chmods it and gc
+# deletes in it. MARKER says a directory is one; a directory from before
+# the marker is taken over only if every name in it is one the lab makes.
+MARKER = ".smartconfig-lab"
+_CACHE_NAME = re.compile(r"^(?:lock|key|key\.pub|key\.part|images|runs|up\.json|"
+                         r"ref-[0-9a-f]{12}\.(?:qcow2|VARS\.fd|json)(?:\.part)?)$")
+_RUN_NAME = re.compile(r"^\d{8}T\d{6}Z-[\w.-]+$")
+_IMAGE_NAME = re.compile(r"^[\w.-]+\.img(?:\.part)?$")
+
+
 def ensure_cache(cache=None):
-    """Create the cache (mode 0700) with images/ and runs/; return its path."""
+    """Create the cache (mode 0700) with images/ and runs/; return its
+    path. A directory that is there already must be a lab cache (MARKER,
+    or nothing but the lab's names in it): SC_LAB_CACHE=~ or =. by
+    mistake is refused before anything in it is touched."""
     cache = cache or cache_dir()
+    marker = os.path.join(cache, MARKER)
+    if os.path.isdir(cache) and not os.path.exists(marker):
+        strange = sorted(f for f in os.listdir(cache) if not _CACHE_NAME.match(f))
+        if strange:
+            raise LabError("%s is not a lab cache: it has no %s and holds %s%s. The lab uses, and cleans, only a "
+                           "directory of its own" % (cache, MARKER, ", ".join(strange[:3]),
+                                                     " and %d more" % (len(strange) - 3) if len(strange) > 3 else ""))
     os.makedirs(cache, mode=0o700, exist_ok=True)
     os.chmod(cache, 0o700)
     for sub in ("images", "runs"):
         os.makedirs(os.path.join(cache, sub), mode=0o700, exist_ok=True)
+    if not os.path.exists(marker):
+        with open(marker, "w") as f:
+            f.write("SmartConfig's QEMU lab cache (lab/README.md). make lab-clean deletes in here.\n")
     return cache
 
 
@@ -294,8 +317,9 @@ def fetch_image(conf, cache, src=None, log=log):
             _need_tool("curl")
             what = image_url(conf)
             log("image: downloading %s" % what)
+            # Under 1 kB/s for two minutes is a download that stopped.
             r = subprocess.run(["curl", "-fL", "--retry", "3", "--connect-timeout", "30",
-                                "-o", part, what])
+                                "--speed-limit", "1024", "--speed-time", "120", "-o", part, what])
             if r.returncode != 0:
                 raise LabError("curl failed (exit %d) for %s" % (r.returncode, what))
             got = sha256_file(part)
@@ -741,21 +765,42 @@ def running_qemu(uid=None):
     return found
 
 
+def user_lock_path(env=None):
+    """A lock that does not depend on the cache: two lab commands with
+    two SC_LAB_CACHEs are still one user's. In XDG_RUNTIME_DIR (a tmpfs of
+    this user's, gone at logout); None where there is none."""
+    d = (os.environ if env is None else env).get("XDG_RUNTIME_DIR")
+    return os.path.join(d, "smartconfig-lab.lock") if d and os.path.isdir(d) else None
+
+
+def _flock(path):
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    except OSError as e:
+        raise LabError("the lab's lock %s: %s" % (path, e.strerror)) from None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        holder = os.pread(fd, 32, 0).decode(errors="replace").strip()
+        os.close(fd)
+        raise LabError("another lab command holds %s (pid %s)" % (path, holder or "?")) from None
+    os.ftruncate(fd, 0)
+    os.pwrite(fd, b"%d\n" % os.getpid(), 0)
+    return fd
+
+
 @contextlib.contextmanager
 def lab_lock(cache, guard=True):
-    """Hold flock on <cache>/lock for the block: one lab command at a time.
+    """Hold flock on <cache>/lock, and on this user's lock outside the
+    cache (user_lock_path), for the block: one lab command at a time.
     With guard, refuse also while any qemu-system-x86 of this uid runs
-    (one VM on this host at a time, ours or not). LabError if either fails."""
+    (one VM on this host at a time, ours or not). LabError if any fails."""
     path = os.path.join(cache, "lock")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+    fds = [_flock(path)]
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            holder = os.pread(fd, 32, 0).decode(errors="replace").strip()
-            raise LabError("another lab command holds %s (pid %s)" % (path, holder or "?")) from None
-        os.ftruncate(fd, 0)
-        os.pwrite(fd, b"%d\n" % os.getpid(), 0)
+        user = user_lock_path()
+        if user:
+            fds.append(_flock(user))
         if guard:
             q = running_qemu()
             if q:
@@ -763,15 +808,26 @@ def lab_lock(cache, guard=True):
                                % "; ".join("pid %d %s" % (p, c[:100]) for p, c in q))
         yield path
     finally:
-        os.close(fd)
+        for fd in fds:
+            os.close(fd)
 
 
 def install_signal_handlers():
-    """SIGTERM and SIGHUP raise SystemExit, so try/finally teardowns run.
-    Call it from the main thread."""
+    """The first SIGINT, SIGTERM or SIGHUP raises KeyboardInterrupt or
+    SystemExit, so try/finally teardowns run; from then on all three are
+    ignored, so nothing cuts the teardown. make lab-e2e delivers every
+    one twice (timeout --foreground passes on what the terminal already
+    sent). A signal inherited as ignored (nohup) stays ignored. Call it
+    from the main thread."""
+    sigs = [s for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP) if signal.getsignal(s) != signal.SIG_IGN]
+
     def handler(signum, frame):
+        for s in sigs:
+            signal.signal(s, signal.SIG_IGN)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
         raise SystemExit(128 + signum)
-    for s in (signal.SIGTERM, signal.SIGHUP):
+    for s in sigs:
         signal.signal(s, handler)
 
 
@@ -1504,7 +1560,8 @@ def wait_ssh(port, key, timeout, interval=5.0, abort=None, user=GUEST_USER):
 def gc(conf, cache=None, keep=None, dry_run=False, log=log):
     """Remove run directories but the newest keep (KEEP_RUNS), reference
     images of other hashes, .part leftovers, images other than the pinned
-    one, and a stale up.json. Takes the lab lock. The removed paths."""
+    one, and a stale up.json. Only names the lab makes: anything else in
+    the cache is left alone. Takes the lab lock. The removed paths."""
     cache = ensure_cache(cache)
     keep = conf.int("KEEP_RUNS") if keep is None else keep
     removed = []
@@ -1521,7 +1578,8 @@ def gc(conf, cache=None, keep=None, dry_run=False, log=log):
 
     with lab_lock(cache):
         runs_dir = os.path.join(cache, "runs")
-        runs = sorted(d for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d)))
+        runs = sorted(d for d in os.listdir(runs_dir)
+                      if _RUN_NAME.match(d) and os.path.isdir(os.path.join(runs_dir, d)))
         for d in runs[:max(0, len(runs) - keep)]:
             rm(os.path.join(runs_dir, d))
         try:
@@ -1531,12 +1589,12 @@ def gc(conf, cache=None, keep=None, dry_run=False, log=log):
         for f in sorted(os.listdir(cache)):
             p = os.path.join(cache, f)
             m = re.match(r"^ref-([0-9a-f]{12})\.(qcow2|VARS\.fd|json)$", f)
-            if f.endswith(".part") or (m and current and m.group(1) != current):
+            if (f.endswith(".part") and _CACHE_NAME.match(f)) or (m and current and m.group(1) != current):
                 rm(p)
         pinned = os.path.basename(image_path(conf, cache))
         img_dir = os.path.join(cache, "images")
         for f in sorted(os.listdir(img_dir)):
-            if f != pinned:
+            if f != pinned and _IMAGE_NAME.match(f) and not os.path.isdir(os.path.join(img_dir, f)):
                 rm(os.path.join(img_dir, f))
         st = _read_up(cache)
         if st is not None and not _is_up_process(st.get("pid")):
@@ -1574,6 +1632,7 @@ def _up_state_or_fail(cache):
 
 
 def cmd_image(conf, a):
+    install_signal_handlers()  # a signal ends curl too (subprocess.run kills it) and removes the .part
     cache = ensure_cache()
     with lab_lock(cache, guard=False):
         fetch_image(conf, cache, a.src)

@@ -50,17 +50,14 @@ clean:
 # mode's summary line is echoed; the last line says boot5=no when boot 5 was
 # left out (--no-boot5), so such a PASS never reads as a whole one.
 lab-e2e: build
-	@rc=0; b5="$(if $(findstring --no-boot5,$(LAB_E2E_ARGS)), boot5=no)"; for m in $(LAB_MODES); do \
+	@rc=0; tags="$(if $(findstring --no-boot5,$(LAB_E2E_ARGS)), boot5=no)"; for m in $(LAB_MODES); do \
 	  line=$$(timeout --foreground $(LAB_TIMEOUT) $(LAB) lab/e2e.py --mode $$m $(LAB_E2E_ARGS)); r=$$?; \
-	  [ -n "$$line" ] && echo "$$line"; case " $$line " in *" boot5=no "*) b5=" boot5=no";; esac; \
-	  [ $$r = 1 ] && rc=1; [ $$r != 0 ] && [ $$rc = 0 ] && rc=3; done; \
-	  case $$rc in 0) echo "lab-e2e: PASS$$b5";; 1) echo "lab-e2e: FAIL$$b5";; *) echo "lab-e2e: INCONCLUSIVE$$b5";; esac; \
+	  [ -n "$$line" ] && echo "$$line"; \
+	  for t in boot5=no dirty=yes "boot2=a(forced)"; do \
+	    case " $$line " in *" $$t "*) case "$$tags " in *" $$t "*) ;; *) tags="$$tags $$t";; esac;; esac; done; \
+	  case "$$r:$$line" in 0:*) ;; 1:FAIL\ *) rc=1;; *) [ $$rc = 0 ] && rc=3;; esac; done; \
+	  case $$rc in 0) echo "lab-e2e: PASS$$tags";; 1) echo "lab-e2e: FAIL$$tags";; *) echo "lab-e2e: INCONCLUSIVE$$tags";; esac; \
 	  exit $$rc
-
-# The pinned cloud image (LAB_IMAGE_FROM=FILE copies it) and the reference
-# image built from it (about 30 min under TCG), in the lab cache.
-lab-image:
-	$(LAB) lab/vm.py image $(if $(LAB_IMAGE_FROM),--from $(LAB_IMAGE_FROM)) && $(LAB) lab/vm.py provision
 
 lab-test:
 	$(LAB) -m unittest discover -s lab

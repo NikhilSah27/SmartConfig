@@ -26,6 +26,7 @@ import hashlib
 import io
 import os
 import re
+import signal
 import socket
 import struct
 import subprocess
@@ -34,6 +35,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import zlib
 from contextlib import redirect_stdout
 
@@ -257,6 +259,30 @@ class TestMux(unittest.TestCase):
         self.assertIn(b"gap: the mux did not run for 596.2 s", self.read("mux.log"))
         time.sleep(0.5)  # the loop's own wakes, five a second, add none
         self.assertEqual(len(mux.gaps), 1)
+
+    def test_the_loop_measures_its_wakes(self):
+        with mock.patch.object(serialmux, "GAP", 0.05):  # every wake (0.2 s with nothing to read) is late then
+            mux = self.start()
+            self.assertTrue(wait_until(lambda: len(mux.gaps) >= 2))
+        self.assertIn(b"gap: the mux did not run for 0.2 s", self.read("mux.log"))
+
+    def test_a_wall_clock_jump_alone_is_logged_not_kept(self):
+        mux = self.start()
+        mux._gap(0.2, 3120.0)  # a 52 minute hole the monotonic clock did not count
+        self.assertEqual(mux.gaps, [])
+        self.assertIn(b"pause: the wall clock jumped 3119.8 s", self.read("mux.log"))
+
+    def test_a_mark_waits_for_what_is_unread(self):
+        # The old boot's last line, and the mark taken right behind it
+        # from another thread: the line belongs before the mark.
+        mux = self.start()
+        sent = 0
+        for i in range(20):
+            line = b"[  %d.0] reboot: Restarting system\n" % i
+            self.qemu.conn.sendall(line)
+            sent += len(line)
+            self.assertEqual(mux.mark("RESET#%d" % i, drain=30.0).txt, sent, i)  # as long as a loaded host needs
+        self.assertEqual(mux.mark("x", drain=0).txt, sent)
 
     def test_logs_and_forwards(self):
         mux = self.start(listen=True)
@@ -1068,7 +1094,6 @@ SHA = "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2"
 
 
 class TestVm(unittest.TestCase):
-    @unittest.skipUnless(has("render_seed"), "vm.render_seed(h12, pub) is not there yet")
     def test_seed_has_no_password(self):
         user_data, meta_data = vm.render_seed("0123456789ab", KEY)
         for key in ("passwd", "chpasswd", "plain_text_passwd", "hashed_passwd"):
@@ -1081,7 +1106,6 @@ class TestVm(unittest.TestCase):
         self.assertIn("SCLAB-PROVISIONED", user_data)
         self.assertRegex(meta_data, r"instance-id:\s*sclab-0123456789ab")
 
-    @unittest.skipUnless(has("render_seed"), "vm.render_seed(h12, pub) is not there yet")
     def test_seed_quiets_writers_of_etc(self):
         """scd records every change under /etc and check 3.6 wants the
         owner's edit alone: the timers that rewrite files there are off
@@ -1093,8 +1117,6 @@ class TestVm(unittest.TestCase):
                      "unattended-upgrades.service", "snapd.service"):
             self.assertIn(unit, units)
 
-    @unittest.skipUnless(has("qemu_args") and has("load_conf"),
-                         "vm.qemu_args(conf, mode, ssh_port, name, disk, vars_path, seed_url) is not there yet")
     def test_qemu_args(self):
         conf = vm.load_conf()
         for mode, seed in (("uefi", None), ("bios", None), ("uefi", "http://10.0.2.2:8642/")):
@@ -1122,8 +1144,6 @@ class TestVm(unittest.TestCase):
                 self.assertEqual(pflash, [])
                 self.assertEqual(args[args.index("-vga") + 1], "std")
 
-    @unittest.skipUnless(has("ref_hash"), "vm.ref_hash(image_sha256, user_data_in, meta_data_in, "
-                         "sclab_cfg, key_pub, provision_rev) is not there yet")
     def test_ref_hash_is_stable(self):
         parts = (SHA, b"#cloud-config\n", b"instance-id: sclab-@H12@\n", b"GRUB_TIMEOUT=0\n", KEY, "1")
         h = vm.ref_hash(*parts)
@@ -1140,6 +1160,147 @@ class TestVm(unittest.TestCase):
         env = dict(os.environ, PYTHONHASHSEED="12345", PYTHONDONTWRITEBYTECODE="1")
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True)
         self.assertEqual(out.stdout.strip(), h)
+
+
+class TestCacheAndLock(unittest.TestCase):
+    """The chunk D review: the lab chmods and cleans only a directory
+    that is its own; one lab command per user, whatever the cache; the
+    first signal is the only one that counts."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.conf = vm.load_conf()
+        os.makedirs(self.path("xdg"))
+        # Never this machine's QEMUs or its real per-user lock.
+        for p in (mock.patch.object(vm, "running_qemu", lambda: []),
+                  mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.path("xdg")})):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def path(self, *parts):
+        return os.path.join(self.tmp.name, *parts)
+
+    def test_a_foreign_directory_is_refused_untouched(self):
+        proj = self.path("proj")
+        os.makedirs(os.path.join(proj, "runs", "experiment-1"))
+        open(os.path.join(proj, "thesis.docx.part"), "w").close()
+        os.chmod(proj, 0o755)
+        for fn in (lambda: vm.ensure_cache(proj), lambda: vm.gc(self.conf, cache=proj, log=lambda m: None)):
+            with self.assertRaises(vm.LabError) as c:
+                fn()
+            self.assertIn("is not a lab cache", str(c.exception))
+        self.assertEqual(os.stat(proj).st_mode & 0o777, 0o755)
+        self.assertEqual(sorted(os.listdir(proj)), ["runs", "thesis.docx.part"])
+        self.assertTrue(os.path.isdir(os.path.join(proj, "runs", "experiment-1")))
+
+    def test_a_cache_is_made_marked_and_taken_over(self):
+        new = vm.ensure_cache(self.path("new"))
+        self.assertEqual(os.stat(new).st_mode & 0o777, 0o700)
+        self.assertEqual(sorted(os.listdir(new)), [vm.MARKER, "images", "runs"])
+        # A cache from before the marker: nothing but the lab's names.
+        old = self.path("old")
+        os.makedirs(os.path.join(old, "runs"))
+        for f in ("lock", "key", "key.pub", "ref-0123456789ab.qcow2", "ref-0123456789ab.VARS.fd.part"):
+            open(os.path.join(old, f), "w").close()
+        vm.ensure_cache(old)
+        self.assertTrue(os.path.exists(os.path.join(old, vm.MARKER)))
+        # Marked, it stays the lab's whatever else lands in it.
+        open(os.path.join(old, "notes.txt"), "w").close()
+        vm.ensure_cache(old)
+
+    def test_gc_removes_only_what_the_lab_makes(self):
+        cache = vm.ensure_cache(self.path("c"))
+        runs = ["20261005T1%05dZ-uefi-abc1234" % i for i in range(4)]
+        for d in runs + ["experiment-1"]:
+            os.makedirs(os.path.join(cache, "runs", d))
+        pinned = os.path.basename(vm.image_path(self.conf, cache))
+        for f in ("key.part", "ref-0123456789ab.qcow2.part", "thesis.docx.part", "notes.txt"):
+            open(os.path.join(cache, f), "w").close()
+        for f in (pinned, "old-release.img", "old-release.img.part", "holiday.jpg"):
+            open(os.path.join(cache, "images", f), "w").close()
+        os.makedirs(os.path.join(cache, "images", "raw.img"))
+        would = vm.gc(self.conf, cache=cache, keep=2, dry_run=True, log=lambda m: None)
+        self.assertEqual(sorted(os.listdir(os.path.join(cache, "runs"))), sorted(runs + ["experiment-1"]))  # a dry run
+        removed = vm.gc(self.conf, cache=cache, keep=2, log=lambda m: None)
+        self.assertEqual(removed, would)
+        self.assertEqual(sorted(os.path.relpath(p, cache) for p in removed), sorted(
+            ["runs/" + runs[0], "runs/" + runs[1], "key.part", "ref-0123456789ab.qcow2.part",
+             "images/old-release.img", "images/old-release.img.part"]))
+        self.assertEqual(sorted(os.listdir(os.path.join(cache, "runs"))), sorted(runs[2:] + ["experiment-1"]))  # the newest stay
+        self.assertEqual(sorted(os.listdir(os.path.join(cache, "images"))), sorted([pinned, "holiday.jpg", "raw.img"]))
+        for f in ("thesis.docx.part", "notes.txt"):
+            self.assertTrue(os.path.exists(os.path.join(cache, f)), f)
+
+    def test_one_command_per_user_whatever_the_cache(self):
+        a, b = vm.ensure_cache(self.path("a")), vm.ensure_cache(self.path("b"))
+        rt = self.path("run")
+        os.makedirs(rt)
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": rt}):
+            self.assertEqual(vm.user_lock_path(), os.path.join(rt, "smartconfig-lab.lock"))
+            with vm.lab_lock(a):
+                with self.assertRaises(vm.LabError) as c:
+                    with vm.lab_lock(b):
+                        pass
+                self.assertIn("smartconfig-lab.lock", str(c.exception))
+                with self.assertRaises(vm.LabError):  # and one per cache, as before
+                    with vm.lab_lock(a):
+                        pass
+            with vm.lab_lock(b):  # released
+                pass
+            os.chmod(os.path.join(rt, "smartconfig-lab.lock"), 0)
+            if os.geteuid() != 0:  # another user's file in the way: said, not a traceback
+                with self.assertRaises(vm.LabError):
+                    with vm.lab_lock(b):
+                        pass
+        self.assertIsNone(vm.user_lock_path({"XDG_RUNTIME_DIR": self.path("none")}))
+        self.assertIsNone(vm.user_lock_path({}))
+
+    def test_the_guard_refuses_while_a_qemu_runs(self):
+        cache = vm.ensure_cache(self.path("c"))
+        with mock.patch.object(vm, "running_qemu", lambda: [(4242, "qemu-system-x86_64 -name other")]):
+            with self.assertRaises(vm.LabError) as c:
+                with vm.lab_lock(cache):
+                    pass
+            self.assertIn("pid 4242", str(c.exception))
+            with vm.lab_lock(cache, guard=False):
+                pass
+
+    SIGNALS = r"""
+import os, signal, sys, time
+sys.path.insert(0, %r)
+import vm
+vm.install_signal_handlers()
+print("hup", "ignored" if signal.getsignal(signal.SIGHUP) == signal.SIG_IGN else "handled", flush=True)
+try:
+    try:
+        os.kill(os.getpid(), getattr(signal, sys.argv[1]))
+        time.sleep(5)
+    finally:
+        # The teardown: the same signal again (timeout --foreground passes
+        # it on a second time) and the others must not cut it.
+        for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            os.kill(os.getpid(), s)
+        time.sleep(0.2)
+        print("teardown done", flush=True)
+except BaseException as e:
+    print("ended by", type(e).__name__, getattr(e, "code", ""), flush=True)
+"""
+
+    def signals(self, sig, pre=None):
+        r = subprocess.run([sys.executable, "-c", self.SIGNALS % HERE, sig], capture_output=True, text=True,
+                           timeout=60, preexec_fn=pre)
+        return r.returncode, r.stdout.split("\n")[:-1]
+
+    def test_the_first_signal_is_the_only_one(self):
+        for sig, end in (("SIGINT", "ended by KeyboardInterrupt "), ("SIGTERM", "ended by SystemExit 143"),
+                         ("SIGHUP", "ended by SystemExit 129")):
+            self.assertEqual(self.signals(sig), (0, ["hup handled", "teardown done", end]), sig)
+
+    def test_an_ignored_hangup_stays_ignored(self):
+        # nohup: SIGHUP is inherited as ignored, and the lab leaves it so.
+        rc, out = self.signals("SIGTERM", pre=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN))
+        self.assertEqual((rc, out), (0, ["hup ignored", "teardown done", "ended by SystemExit 143"]))
 
 
 if __name__ == "__main__":

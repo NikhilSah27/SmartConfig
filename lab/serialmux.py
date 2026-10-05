@@ -212,6 +212,7 @@ class Mux:
         self.why = None  # why the mux stopped
         self.marks = []
         self.gaps = []  # (seconds since t0, how long): see GAP
+        self._idle = 0  # the loop's wakes with nothing to read from the guest
         self._cv = threading.Condition()
         self._wlock = threading.Lock()
         self._stop = threading.Event()
@@ -365,13 +366,16 @@ class Mux:
             self._txt += txt
             self._cv.notify_all()
 
-    def _gap(self, waited):
-        """Keeps a wake of the loop that came over GAP s late."""
-        if waited <= GAP:
-            return
-        with self._cv:
-            self.gaps.append((round(self.clock() - self.t0, 2), round(waited, 1)))
-        self._log("gap: the mux did not run for %.1f s" % waited)
+    def _gap(self, waited, wall=0.0):
+        """Keeps a wake of the loop that came over GAP s late. A wall clock
+        that jumped alone (the machine was paused, and its monotonic clock
+        with it) took no time from any budget: logged, not kept."""
+        if waited > GAP:
+            with self._cv:
+                self.gaps.append((round(self.clock() - self.t0, 2), round(waited, 1)))
+            self._log("gap: the mux did not run for %.1f s" % waited)
+        elif wall - waited > GAP:
+            self._log("pause: the wall clock jumped %.1f s; the monotonic clock did not" % (wall - waited))
 
     def _loop(self):
         sel = selectors.DefaultSelector()
@@ -381,9 +385,13 @@ class Mux:
             if self._lst is not None:
                 sel.register(self._lst, selectors.EVENT_READ, "lst")
             while not self._stop.is_set():
-                t = time.monotonic()
+                t, w = time.monotonic(), time.time()
                 ready = sel.select(0.2)
-                self._gap(time.monotonic() - t)
+                self._gap(time.monotonic() - t, time.time() - w)
+                if not any(key.data == "ser" for key, _ in ready):
+                    with self._cv:
+                        self._idle += 1
+                        self._cv.notify_all()
                 for key, _ in ready:
                     if key.data == "ser":
                         try:
@@ -505,9 +513,18 @@ class Mux:
                 self._cv.wait(timeout)
             return len(self._txt)
 
-    def mark(self, label):
-        """Records where the logs are now (a boot starts at a QMP RESET)."""
+    def mark(self, label, drain=1.0):
+        """Records where the logs are now (a boot starts at a QMP RESET).
+        The caller is another thread (QMP's reader): what the guest wrote
+        before the event may still be unread here, and would land after
+        the mark, in the next boot's text. So it waits, at most drain s,
+        for the loop to find nothing more to read."""
         with self._cv:
+            if drain and self._thread is not None and self._thread.is_alive() \
+                    and threading.current_thread() is not self._thread:
+                idle, deadline = self._idle, time.monotonic() + drain
+                while self._idle == idle and not self.closed and time.monotonic() < deadline:
+                    self._cv.wait(deadline - time.monotonic())
             m = Mark(label, round(self.clock() - self.t0, 2), len(self._raw),
                      len(self._txt), len(self._inputs))
             self.marks.append(m)

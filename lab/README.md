@@ -11,7 +11,9 @@ below are the step 11 design's (docs/WORKLOG.md links it).
 Dev only: Python 3 standard library and POSIX sh, never shipped, not in
 CI. No sudo, no KVM, no host networking changes: QEMU runs under TCG as
 you, with user networking and ssh forwarded from 127.0.0.1 only. Nothing
-outside the lab cache and `bin/` is touched.
+outside the lab cache and `bin/` is touched, but for one empty lock file,
+`$XDG_RUNTIME_DIR/smartconfig-lab.lock` (a tmpfs of yours, gone at
+logout): it keeps the lab to one command per user whatever the cache.
 
 ## What one run proves
 
@@ -31,11 +33,17 @@ Every check has a class and a strength. **[M4]** checks SmartConfig;
 **[lab]** checks the lab itself (tools, QEMU, the VGA channel, keys). **H**
 stops the mode, **F** fails it and goes on, **W** only warns. A known lab
 flake is retried, the whole boot after a reset, at most `RETRIES_MODE`
-times a mode: a TCG panic, a healthy boot that TCG starved into emergency
-mode (slow udev on `LABEL=BOOT`, `LABEL=UEFI` or ttyS0), a missed menu or a
-`grub>` prompt, on bios a gap of over 2 s in the VGA polling before the
-menu's first screen (its countdown cannot be held to 30 s then), a login
-prompt without ssh, a stall (below). Nothing else is ever retried. A reboot over ssh that
+times a mode: TCG's own panic ("IO-APIC + timer doesn't work"; any other
+panic is not retried, and in the rescue boot it fails the check: that
+kernel runs with the arguments 42_smartconfig wrote), a healthy boot that
+TCG starved into emergency mode (slow udev on `LABEL=BOOT`, `LABEL=UEFI`
+or ttyS0), a missed menu or a `grub>` prompt, on bios a gap of over 2 s in
+the VGA polling before the menu's first screen (its countdown cannot be
+held to 30 s then), a login prompt without ssh, a stall (below). Nothing
+else is ever retried. On bios a menu counts as missed only while the
+screen does not say that GRUB drew none: observer lines still on it with
+`timeout=[0]` or `style=[hidden]` are GRUB's decision, and with the flag
+set that fails x.1. A reboot over ssh that
 ssh lost (exit 255) is sent once more only when the guest answers from the
 same boot with no reboot queued; otherwise its RESET decides. A guest RESET within 2 s
 of the one before it (on bios every guest reboot gives two, about 15 ms
@@ -48,11 +56,22 @@ failure, never a pass.
 Verdicts: **PASS** (exit 0), **FAIL** (1: an [M4] check failed),
 **INCONCLUSIVE** (3: a [lab] check failed, the retries or the time ran
 out). `make lab-e2e` runs both modes, echoes each mode's summary line, and
-ends with `lab-e2e: PASS`, `FAIL` (a mode FAILed) or `INCONCLUSIVE`; make
-shows the last two as `Error 1` and `Error 3` and exits 2. Without boot 5
-(`--no-boot5`) the summary lines and make's last line say `boot5=no`: such
-a PASS is not a whole one. A run on a dirty tree says `dirty=yes` and does
-not count for sign-off; `LAB_REQUIRE_CLEAN=1` refuses one. Preflight (P.2)
+ends with `lab-e2e: PASS`, `FAIL` (a mode FAILed and said so in its
+summary line) or `INCONCLUSIVE`; make shows the last two as `Error 1` and
+`Error 3` and exits 2. What makes a PASS not a whole one is in the summary
+lines and in make's last line: `boot5=no` (`--no-boot5`), `dirty=yes` (a
+run on a dirty tree; `LAB_REQUIRE_CLEAN=1` refuses one) and
+`boot2=a(forced)` (`--boot2 reset-at-timeout`, which leaves 2.5 and 2.6
+out). None of them counts for sign-off.
+
+What the lab could not read is never taken for the guest's answer: an ssh
+call that fails by itself (exit 255), or runs out of time while the host
+stood still, is a [lab] error, and a poll gets back the time the host
+stood still. The other way round, a wait that runs out in the rescue boot
+with userspace up and no gap in the lab's own running fails its check
+(3.5, 3.7) as [M4]: sc's report runs before the shell, and one that hangs
+must not be a run to repeat. 1.1 and 5.1 must have been checked in some
+attempt; if every attempt had a flake first, the mode is INCONCLUSIVE. Preflight (P.2)
 rebuilds the tree with the Makefile's recipe into the run directory and
 refuses a `bin/sc` that is not byte for byte that build (`make build`;
 `make lab-e2e` builds first). Go stamps the commit into `sc`, so do not
@@ -119,9 +138,13 @@ which means the host was paused or starved, not the guest; `mux.log` has
 them for every run.
 
 After a reset that came later than GRUB (a stall in the kernel, a panic),
-Ubuntu's `recordfail` is still 1 in the next attempt and `00_header` sets
-no `timeout_style`. Without the flag, 42_smartconfig must leave it so:
-x.1 then expects `style=[]`, not `style=[hidden]`.
+Ubuntu's `recordfail` is still 1 in the next attempt of that boot and
+`00_header` sets no `timeout_style`. Without the flag, 42_smartconfig must
+leave it so: x.1 then expects `recordfail=[1]` and `style=[]`. In every
+other attempt x.1 holds the observers to `recordfail=[]` and
+`style=[hidden]`, and 1.6 and 4.4 hold grubenv to no `recordfail=1`: a
+healthy boot unsets it, and one left set is a write to grubenv that sc's
+units lost (the chunk C review).
 
 ## Cost
 
@@ -134,6 +157,7 @@ at a time; the budgets in `lab.conf` are wall clock and generous for that.
 `${SC_LAB_CACHE:-${XDG_CACHE_HOME:-~/.cache}/smartconfig-lab}`, mode 0700:
 
 ```
+.smartconfig-lab                 says the directory is the lab's (see below)
 lock, key, key.pub               the flock; the lab's ssh key (no passphrase)
 images/<release>-<name>.img      the pinned cloud image (0444, sha256 = lab.conf)
 ref-<h12>.qcow2 .VARS.fd .json   the reference image (0444); <h12> hashes the
@@ -141,6 +165,15 @@ ref-<h12>.qcow2 .VARS.fd .json   the reference image (0444); <h12> hashes the
                                  the key and PROVISION_REV
 runs/<UTC>-<mode>-<git7>/        one e2e run (also -provision-<h12>, -up-<mode>-<git7>)
 ```
+
+The lab chmods this directory and `make lab-clean` deletes in it, so it
+must be the lab's own: one it made, one with `.smartconfig-lab` in it, or
+an older cache that holds nothing but the names above. Any other
+directory in `SC_LAB_CACHE` is refused before anything in it is touched,
+and `lab-clean` removes only names the lab makes (runs named by their UTC
+time, `ref-*`, `*.img`, its own `.part` files). The reference image
+remembers the sha256 of the `OVMF_CODE` it was made under; P.5 refuses a
+uefi run after the firmware package changed (`make lab-image` again).
 
 A run directory holds:
 
@@ -171,7 +204,14 @@ failing rows, the last 40 serial lines and `facts.sh dump` from the guest
 4. INCONCLUSIVE with no FAIL row: `e2e.log` has the lab error.
 
 A FAIL is a SmartConfig bug until shown otherwise: it gets its own product
-commit and a test, never a lab change that makes it pass.
+commit and a test, never a lab change that makes it pass. An INCONCLUSIVE
+is read before it is run again: `e2e.log`'s lab error, `mux.log` for gaps
+(the host stood still), `evidence/stall-*.txt`.
+
+Stopping a run: one Ctrl-C, SIGTERM or SIGHUP. The first one starts the
+teardown (QEMU quit, T.1, `result.txt`, the ledger) and the lab ignores
+the rest, so a second Ctrl-C cannot cut it. To keep a run going when the
+terminal goes away, start it with `setsid nohup make lab-e2e`.
 
 ## Files
 

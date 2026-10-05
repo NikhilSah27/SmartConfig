@@ -104,6 +104,9 @@ HELPERS = (("install.sh", "lab/guest/install.sh"), ("facts.sh", "lab/guest/facts
 LINUX_RX = r"Linux version (\S+)"
 CMDLINE_RX = r"Command line: ([^\n]*)\n"
 PANIC_RX = r"Kernel panic - not syncing|IO-APIC \+ timer doesn't work"
+# The one panic that is TCG's (plan A, lab/testdata/q3c-panic-tcg.raw). Any
+# other is not a known flake of the lab.
+TCG_PANIC_RX = r"IO-APIC \+ timer doesn't work"
 GRUB_PROMPT_RX = r"(?:^|\s)grub> "
 COUNTDOWN_RX = r"The highlighted entry will be executed automatically in (\d+)s\."
 BAD_TIME_RX = r"Timed out waiting for device [^\n]*" + re.escape(BAD_TAIL)
@@ -277,6 +280,11 @@ class Retry(Exception):
         self.detail = detail
 
 
+class SshLost(LabError):
+    """ssh itself failed (exit 255), or its command ran out of time while
+    the host stood still: nothing the guest said. Never an [M4] result."""
+
+
 # Retries per boot by signature; the mode allows RETRIES_MODE in all.
 MENU_SIGS = ("grub-prompt", "menu-missed")
 # bios: the VGA screen is polled; a gap longer than this between two polls
@@ -293,6 +301,32 @@ PER_BOOT = {"menu": 1, "no-ssh": 1, "vga-gap": 2, "stall": 1}  # and RETRIES_PAN
 RESET_CHAIN = 2.0
 # stall_dump samples QEMU twice, this many seconds apart.
 STALL_SAMPLE = 5.0
+# 2.5 waits this long for what ends boot 2's report on the console.
+REPORT_WAIT = 30
+
+
+def ovmf_problems(ref_json, ovmf_code):
+    """P.5 (uefi): the reference image's VARS.fd was made under one
+    OVMF_CODE; the json beside it has that file's sha256. A package update
+    since then means another firmware under the old variables."""
+    try:
+        with open(ref_json) as f:
+            want = json.load(f).get("ovmf_code_sha256")
+    except (OSError, ValueError) as e:
+        return ["%s: %s" % (ref_json, e)]
+    got = labvm.sha256_file(ovmf_code)
+    if want and got != want:
+        return ["%s is %s, and the reference image was made under %s: make lab-image" % (ovmf_code, got[:12], want[:12])]
+    return []
+
+
+def stale_recordfail(env):
+    """1.6, 4.4: grubenv's lines after a healthy boot may not have
+    recordfail=1. Ubuntu's grub-common.service unsets it; sc's units write
+    grubenv too, and a write of theirs that loses that unset (the chunk C
+    review) leaves a menu at every boot on a machine with a recordfail
+    timeout."""
+    return ["grubenv: %s after a healthy boot (a lost unset)" % x for x in env if x.strip() == "recordfail=1"]
 
 
 def last_line(text):
@@ -316,12 +350,16 @@ def chained_reset(cur, nxt, window=RESET_CHAIN):
             and 0 <= qmp_time(nxt) - qmp_time(cur) <= window)
 
 
-def flag_after_retry(flag, sig):
+def flag_after_retry(flag, sig, userspace=False):
     """The menu flag a boot can expect after a reset that ended an attempt
     with sig: True, False, or None (not known). sc-boot-seen sets it early
     in every boot and an ok verdict unsets it, so a boot that reached
     userspace (slow-udev, no-ssh) may have changed it; a panic, a stall,
-    a grub> prompt, a missed menu or a VGA poll gap came before userspace."""
+    a grub> prompt, a missed menu or a VGA poll gap came before userspace.
+    userspace: the attempt's console had the kernel's "Run /init"; a panic
+    after that may have come after sc-boot-seen."""
+    if sig == "panic" and userspace:
+        return None
     if sig in ("panic", "stall", "vga-gap") + MENU_SIGS:
         return flag
     if sig == "slow-udev" and flag is True:
@@ -549,16 +587,22 @@ def last_console(tokens):
     return cons[-1] if cons else None
 
 
-def observer_problems(obs, platform, pending, post_timeout, style):
+def observer_problems(obs, platform, pending, post_timeout, style, recordfail=None):
     """What is wrong with the last pre and post observer lines of a boot.
-    style "hidden" is what 00_header sets after a clean boot. After a
-    reset (a retry) recordfail is still 1 and 00_header sets no style;
-    the flag block changes none without the flag, so none is right then."""
+    recordfail: what the pre line must show, "" after a clean boot (a
+    healthy boot unsets it; one left set is a lost write to grubenv) or
+    "1" where an earlier attempt of this boot was reset after GRUB had
+    started its kernel; None: not checked (with the flag set). With "1",
+    00_header sets no style, and without the flag the flag block must
+    not either: style "hidden" then means none."""
     pre = [o for o in obs if o.get("phase") == "pre"]
     post = [o for o in obs if o.get("phase") == "post"]
     p = []
-    if style == "hidden" and pre and pre[-1].get("recordfail") == "1":
-        style = ""
+    if recordfail is not None:
+        if pre and pre[-1].get("recordfail") != recordfail:
+            p.append("pre recordfail=[%s], not [%s]" % (pre[-1].get("recordfail"), recordfail))
+        if recordfail == "1" and style == "hidden":
+            style = ""
     if not pre:
         p.append("no 'sclab: pre' line")
     else:
@@ -746,26 +790,37 @@ def getty_hangup(text):
 GETTY_BANNER_RX = re.compile(r"^\S.* %s tty\S+$" % re.escape(HOST))
 
 
-def report_before_login(text):
-    """2.5 where the hang-up came between the report and the shell's own
-    lines (a bios run of 618e4e9): the shell ended before it printed, so
-    boot 2 has no "You are in emergency mode" at all, only the report and
-    then the getty's banner and login prompt. The report block that ends
-    at that prompt, without the banner. None if boot 2 has the shell's
-    line, or no report above a login prompt."""
-    if "You are in emergency mode" in text:
-        return None
-    blk = console.report_block(text, end=LOGIN_RX)
-    if blk is None:
-        return None
-    lines = list(blk.lines)
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if lines and GETTY_BANNER_RX.match(lines[-1]):
-        lines.pop()
-        while lines and not lines[-1].strip():
-            lines.pop()
-    return blk._replace(lines=lines)
+GETTY_BANNER_M = re.compile(GETTY_BANNER_RX.pattern, re.M)
+SHELL_LINE = "You are in emergency mode"
+
+
+def emergency_report(text, final=False):
+    """2.5: boot 2's report and how it ended: (console.Block, kind), or
+    (None, None). It starts at the last "This boot:" above the emergency
+    shell's first line (the first one, where the shell has none) and ends
+    at the earliest of what can follow it on the console: that line
+    ("shell"), the getty's banner ("banner") or its login prompt
+    ("login"). The getty starts when it likes (plan A2): before the
+    report, after it, or between it and the shell's line. With none of
+    them after the report yet there is no block, unless final (the wait
+    for one is over): then it ends with the text ("end")."""
+    shell = text.find(SHELL_LINE)
+    s = text.rfind("This boot:", 0, shell) if shell >= 0 else text.find("This boot:")
+    if s < 0:
+        return None, None
+    ends = [(m.start(), kind) for kind, m in (("shell", re.compile(SHELL_LINE).search(text, s)),
+                                              ("banner", GETTY_BANNER_M.search(text, s)),
+                                              ("login", re.compile(LOGIN_RX).search(text, s))) if m]
+    if not ends and not final:
+        return None, None
+    e, kind = min(ends) if ends else (len(text), "end")
+    kept, stripped = [], []
+    for line in text[s:e].split("\n"):
+        (stripped if console.STATUS_LINE.match(line) else kept).append(line)
+    if kind != "shell":
+        while kept and not kept[-1].strip():
+            kept.pop()
+    return console.Block(kept, stripped, s, e, None), kind
 
 
 # 3.8: the files facts.sh hashes that must be there (their -journal and
@@ -824,11 +879,14 @@ def build_problems(bin_sha, fresh):
     return []
 
 
-def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5):
-    """The one line on stdout; make lab-e2e reads boot5= from it."""
+def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False):
+    """The one line on stdout; make lab-e2e reads boot5=no, dirty=yes and
+    boot2=a(forced) from it (forced: --boot2 reset-at-timeout, which
+    leaves 2.5 and 2.6 out)."""
     goal3 = {"a": "early-only", "b": "multi-user", "c": "multi-user"}.get(outcome, "-")
-    return "%s %s %s boot2=%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s" % (
-        v, mode, took, outcome or "-", goal3, boot5, retries, head, dirty, sc or "-")
+    return "%s %s %s boot2=%s%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s" % (
+        v, mode, took, outcome or "-", "(forced)" if forced and outcome else "", goal3, boot5, retries, head, dirty,
+        sc or "-")
 
 
 def undo_commands(lines):
@@ -1005,6 +1063,7 @@ class Attempt:
         self.event = event
         self.since = (event["seq"] + 1) if event else 0  # QMP events after the one that began it
         self.flag = flag  # the menu flag expected at its start: True, False, None (not known)
+        self.late = False  # an earlier attempt of this boot was reset after its kernel began (recordfail=1)
         self.vga = None
         self.vga2 = None
         self.boot_id = None
@@ -1089,10 +1148,11 @@ class E2E:
         self.ctx = cid
 
     def record(self, cid, problems=(), warnings=(), seen="", expected="", source="", evidence="",
-               strength=None, status=None, stop=True):
+               strength=None, status=None, stop=True, notes=()):
         """Records a check's result and logs it. An H check that fails
         raises Stop (unless stop is false: the run is ending anyway); a W
-        check that fails is a WARN."""
+        check that fails is a WARN. notes: what a healthy run shows too;
+        they go into the row's NOTES and make no WARN."""
         spec = REGISTRY[cid]
         strength = strength or spec.strength
         problems, warnings = list(problems), list(warnings)
@@ -1103,7 +1163,7 @@ class E2E:
                 status = "WARN"
             else:
                 status = "PASS"
-        notes = "; ".join(problems + warnings)
+        notes = "; ".join(problems + warnings + list(notes))
         row = Row(cid, status, strength, spec.cls, evidence, expected, source, seen, notes)
         self.history.append(row.json())
         self.rows[cid] = merge(self.rows.get(cid), row)
@@ -1166,7 +1226,12 @@ class E2E:
 
     # -- the guest over ssh ---------------------------------------------------
 
-    def ssh(self, command, timeout, input=None):
+    def ssh(self, command, timeout, input=None, lost=False):
+        """command in the guest; a vm.Result. ssh failing by itself (exit
+        255), or a timeout while the host stood still (a mux gap), is an
+        SshLost unless lost is true (the caller reads rc itself): a check
+        must never take it for the guest's answer."""
+        gaps = len(self.mux.gaps)
         r = labvm.ssh(self.machine.ssh_port, self.key, command, self.left(timeout), input=input)
         with open(os.path.join(self.run, "ssh.log"), "a", encoding="utf-8", errors="replace") as f:
             f.write("== %s rc=%s %.1fs $ %s\n" % (duration(time.monotonic() - self.t_start), r.rc, r.secs, command))
@@ -1174,10 +1239,13 @@ class E2E:
                 f.write(r.out[-6000:] + ("" if r.out.endswith("\n") else "\n"))
             if r.err:
                 f.write("-- stderr\n" + r.err[-3000:] + ("" if r.err.endswith("\n") else "\n"))
+        if not lost and (r.rc == 255 or (r.timed_out and len(self.mux.gaps) > gaps)):
+            raise SshLost("ssh %s: %s: %s" % ("failed (exit 255)" if r.rc == 255 else "ran out of time while the host stood still",
+                                             _cell(command, 80), _cell(r.err, 200)))
         return r
 
-    def sudo(self, command, timeout=None):
-        return self.ssh("sudo -n sh -c %s" % sh_quote(command), timeout or self.b("BUDGET_CMD"))
+    def sudo(self, command, timeout=None, lost=False):
+        return self.ssh("sudo -n sh -c %s" % sh_quote(command), timeout or self.b("BUDGET_CMD"), lost=lost)
 
     def facts(self, tag):
         """sudo facts.sh normal, saved as evidence/facts-<tag>.txt."""
@@ -1189,18 +1257,30 @@ class E2E:
         return Facts(r.out, ev)
 
     def poll(self, fn, budget, every=5.0):
-        """fn() until it gives something true or budget s pass; its last value."""
+        """fn() until it gives something true or budget s pass; its last
+        value. A lost ssh call is "not yet"; if the last one was lost, its
+        SshLost. Time the host stood still (the mux's gaps) is given back."""
         deadline = time.monotonic() + self.left(budget)
+        gaps = len(self.mux.gaps)
         while True:
-            v = fn()
+            lost = None
+            try:
+                v = fn()
+            except SshLost as e:
+                v, lost = None, e
+            new = self.mux.gaps[gaps:]
+            gaps += len(new)
+            deadline = min(deadline + sum(g[1] for g in new), self.deadline)
             if v or time.monotonic() + every > deadline:
+                if lost is not None:
+                    raise lost
                 return v
             time.sleep(every)
 
     def boots_text(self, strict=False):
         """The boots file over ssh; "" if it cannot be read. strict: ssh
         failing (255) is a LabError, never an empty file."""
-        r = self.sudo("cat /var/lib/smartconfig/boots")
+        r = self.sudo("cat /var/lib/smartconfig/boots", lost=True)
         if strict and r.rc == 255:
             raise LabError("ssh failed reading the boots file: %s" % r.err.strip()[-200:])
         return r.out if r.rc == 0 else ""
@@ -1244,7 +1324,7 @@ class E2E:
                 raise LabError("%s, while waiting for %s" % (self.unexpected(a), what))
             return None
         if hit.index == len(pats) - 1:
-            raise Retry("panic", hit.text)
+            self.panicked(a, hit.text)
         return hit
 
     def text(self, a, end=None):
@@ -1305,14 +1385,14 @@ class E2E:
         since = self.qmp.mark()
         bid = self.boot_id()
         cmd = "sudo -n sync; sudo -n systemd-run --unit=%s --on-active=3 systemctl %s" % (REBOOT_UNIT, how)
-        r = self.ssh(cmd, self.b("BUDGET_CMD"))
+        r = self.ssh(cmd, self.b("BUDGET_CMD"), lost=True)
         if r.rc == 255:
             q = self.ssh("cat /proc/sys/kernel/random/boot_id; systemctl is-active %s.timer %s.service"
-                         % (REBOOT_UNIT, REBOOT_UNIT), self.b("BUDGET_CMD"))
+                         % (REBOOT_UNIT, REBOOT_UNIT), self.b("BUDGET_CMD"), lost=True)
             got = q.out.split() if q.rc != 255 else []
             if got == [bid, "inactive", "inactive"]:
                 self.log("%s: ssh lost the guest (exit 255) before the %s was queued: sent again" % (cid, how))
-                r = self.ssh(cmd, self.b("BUDGET_CMD"))
+                r = self.ssh(cmd, self.b("BUDGET_CMD"), lost=True)
             else:
                 self.log("%s: ssh lost the guest (exit 255); it says %s: waiting for its reset"
                          % (cid, " ".join(got) or "nothing"))
@@ -1343,10 +1423,12 @@ class E2E:
         [lab] flake, a reset and the whole boot again. The last attempt."""
         sigs = collections.Counter()
         n = 0
+        late = False
         while True:
             n += 1
             mark, ev = self.cur
             a = Attempt(label, n, mark, ev, self.flag)
+            a.late = late
             a.vga = None if self.uefi else self.cur_vga
             self.attempts.append(a)
             self.log("boot %s%s (menu flag expected: %s)" % (label, "" if n == 1 else ", attempt %d" % n,
@@ -1368,7 +1450,9 @@ class E2E:
                     raise LabError("boot %s: %s (%s); no retry left (%d in this mode)"
                                    % (label, r.sig, _cell(r.detail, 160), self.retries))
                 self.retries += 1
-                self.flag = flag_after_retry(self.flag, r.sig)
+                text = self.text(a)
+                late = late or re.search(LINUX_RX, text) is not None
+                self.flag = flag_after_retry(self.flag, r.sig, re.search(INIT_RX, text) is not None)
                 self.log("boot %s: [lab] %s: %s; retry %d of %d" % (label, r.sig, _cell(r.detail, 160),
                                                                    self.retries, self.b("RETRIES_MODE")))
                 self.stop_vga(a)
@@ -1381,6 +1465,36 @@ class E2E:
         for w in (a.vga, a.vga2):
             if w is not None:
                 w.stop()
+
+    def panicked(self, a, line):
+        """The kernel panicked. TCG's own panic (IO-APIC + timer) is the
+        lab's flake: a Retry. Any other in the rescue boot is the kernel
+        42_smartconfig's entry started with the arguments it wrote (a
+        wrong root= ends in "VFS: Unable to mount root fs"): the current
+        check failed, H. Anywhere else nothing says whose it is: a
+        LabError, never retried."""
+        text = self.text(a)
+        if re.search(TCG_PANIC_RX, text):
+            raise Retry("panic", line)
+        m = re.search(r"Kernel panic - not syncing[^\n]*", text)
+        what = "a kernel panic that is not TCG's: %s" % _cell(m.group(0) if m else line, 160)
+        if a.label.startswith("3"):
+            self.record(self.ctx, problems=["the rescue entry's kernel: " + what], source="scripts/42_smartconfig",
+                        evidence=self.sev(a.mark.txt, self.con.size()), strength="H")
+        raise LabError(what)
+
+    def ran_out(self, cid, a, gaps, what):
+        """A wait in the rescue boot ran out. With userspace up (the
+        kernel's "Run /init") and no gap in the lab's own running since
+        gaps (the mux's count before the wait), nothing says the lab held
+        it up: sc's report runs in the unit's ExecStartPre, and one that
+        never returns leaves no prompt. That is cid failed (H), not a
+        LabError to run again."""
+        if re.search(INIT_RX, self.text(a)) and len(self.mux.gaps) == gaps:
+            self.record(cid, problems=[what], expected="within the budget; the host did not stand still",
+                        source="scripts/smartconfig-rescue.conf", evidence=self.sev(a.mark.txt, self.con.size()),
+                        strength="H")
+        raise LabError(what)
 
     # A stall (README "Stalls"): the guest's console stops for a whole
     # budget where SmartConfig has no part in the boot yet. Either before
@@ -1441,6 +1555,10 @@ class E2E:
                 hit = self.wait_for(a, [COUNTDOWN_RX, LINUX_RX, GRUB_PROMPT_RX], budget, what="the GRUB menu")
                 if hit is None:
                     self.grub_stall(a, budget)
+                    if "GNU GRUB" in self.text(a):
+                        self.record(cid, problems=["GRUB shows a menu with no countdown: it waits for a key for ever"],
+                                    expected="a 30 s menu (smartconfig_pending=1)", source="42_smartconfig's flag block",
+                                    evidence=self.sev(a.mark.txt, self.con.size()), strength="H")
                     raise LabError("no GRUB menu and no kernel %d s after the reset" % budget)
                 if hit.index == 2:
                     raise Retry("grub-prompt", hit.text)
@@ -1455,8 +1573,10 @@ class E2E:
                     # The serial text is whole, a polled screen is not: the
                     # menu counts as missing only if the observers, which a
                     # hidden menu leaves on the screen, say so.
+                    # hidden, or a timeout of 0 with any style (recordfail
+                    # after a reset leaves the style empty): GRUB drew none.
                     post = [o for o in console.observer_lines(a.vga.all_rows() if a.vga else []) if o["phase"] == "post"]
-                    if not post or post[-1].get("style") != "hidden":
+                    if not post or not (post[-1].get("style") == "hidden" or post[-1].get("timeout") == "0"):
                         raise Retry("menu-missed", "no menu on the VGA screen; observers: %s" % observers_seen(post))
             if g["menu"] is None:
                 self.record(cid, problems=["no GRUB menu: the kernel started without one"],
@@ -1470,6 +1590,14 @@ class E2E:
         if hit is None:
             if not pick:
                 self.grub_stall(a, budget)
+            else:
+                after = self.text(a)[max(0, start - a.mark.txt):] if self.uefi else \
+                    "\n".join(a.vga2.all_rows() if a.vga2 is not None else [])
+                err = re.search(r"^\s*error: [^\n]*", after, re.M)
+                if err:
+                    self.record("3.2", problems=["the entry did not boot: %s" % err.group(0).strip()],
+                                expected="the kernel of %s" % pick, source="scripts/42_smartconfig",
+                                evidence=self.sev(start, self.con.size()) if self.uefi else a.vga2.files(), strength="H")
             raise LabError("no kernel %d s after the %s" % (budget, "Enter" if pick else "reset"))
         if hit.index == 1:
             raise Retry("grub-prompt", hit.text)
@@ -1507,7 +1635,7 @@ class E2E:
                 g["menu_ev"] = a.vga.files() if a.vga is not None else ""
                 return
             if re.search(PANIC_RX, text):
-                raise Retry("panic", "before the menu")
+                self.panicked(a, "before the menu")
             if re.search(GRUB_PROMPT_RX, "\n".join(rows or [])):
                 raise Retry("grub-prompt", "on the VGA screen")
             why = self.unexpected(a) or (a.vga.error if a.vga is not None else "no VGA watch")
@@ -1599,7 +1727,7 @@ class E2E:
                     expected=expected, source="0.5 grub.cfg", evidence=self.sev(hit.start, hit.end))
         return hit
 
-    def check_decision(self, cid, a, g, flag, extra_problems=(), extra_warnings=(), seen_extra=""):
+    def check_decision(self, cid, a, g, flag, extra_problems=(), extra_warnings=(), seen_extra="", stop=True):
         """x.1: what GRUB decided. The observers' lines (H on uefi, W on
         bios, where a menu wipes them), and a 30 s menu with *Ubuntu
         (flag set) or no menu at all (flag unset). On bios the VGA screens
@@ -1613,10 +1741,13 @@ class E2E:
             if lp:
                 raise LabError("%s: the VGA screen cannot tell what GRUB did: %s (%s)"
                                % (cid, "; ".join(lp), w.files() if w is not None else "no VGA screen"))
-        problems, warnings = list(extra_problems), list(extra_warnings)
+        problems, warnings, notes = list(extra_problems), list(extra_warnings), []
         obs = observer_problems(g["obs"], "efi" if self.uefi else "pc", "1" if flag else "",
-                                "30" if flag else "0", "menu" if flag else "hidden")
-        (problems if self.uefi else warnings).extend(("observers: " + o) for o in obs)
+                                "30" if flag else "0", "menu" if flag else "hidden",
+                                None if flag else "1" if a.late else "")
+        # bios: a menu that showed wiped the observers' lines, as it must.
+        wiped = not self.uefi and flag and g["menu"] is not None and not g["obs"]
+        (problems if self.uefi else notes if wiped else warnings).extend(("observers: " + o) for o in obs)
         if flag:
             mp, notes = menu_problems(g["menu"], g["menu_lines"], g.get("countdowns", (30,)))
             problems += mp
@@ -1630,15 +1761,26 @@ class E2E:
             if g["menu_seen"]:
                 problems.append("GNU GRUB (a menu) showed before the kernel")
             menu_seen = "no menu" if not g["menu_seen"] else "a menu"
-        self.record(cid, problems=problems, warnings=warnings,
-                    seen="%s; %s%s" % (observers_seen(g["obs"]), menu_seen, seen_extra),
-                    expected=("pending=[1] -> timeout=[30] style=[menu]; a 30 s menu, *Ubuntu, one %s" % RESCUE_TITLE)
-                    if flag else "pending=[] timeout=[0] -> style=[hidden]; no GNU GRUB before the kernel",
-                    source="41_sclab/43_sclab, 42_smartconfig", evidence="%s %s" % (g["obs_ev"], g["menu_ev"]))
+        return self.record(
+            cid, problems=problems, warnings=warnings, notes=notes, stop=stop,
+            seen="%s; %s%s" % (observers_seen(g["obs"]), menu_seen, seen_extra),
+            expected=("pending=[1] -> timeout=[30] style=[menu]; a 30 s menu, *Ubuntu, one %s" % RESCUE_TITLE)
+            if flag else "pending=[] recordfail=[%s] timeout=[0] -> style=[%s]; no GNU GRUB before the kernel"
+            % (("1", "") if a.late else ("", "hidden")),
+            source="41_sclab/43_sclab, 42_smartconfig", evidence="%s %s" % (g["obs_ev"], g["menu_ev"]))
 
     def boff(self, a, text, pos):
         """A str offset in this boot's text as a byte offset in serial.txt."""
         return a.mark.txt + len(text[:pos].encode("utf-8", "surrogateescape"))
+
+    def boot_end(self, a):
+        """This boot's text and how it ended (console.classify_boot), read
+        from the kernel's first line: what the boot before it still
+        printed after this one's mark (its "reboot: Restarting system") is
+        no end of this boot. The offsets are the text's own."""
+        text = self.text(a)
+        k = re.search(LINUX_RX, text)
+        return text, console.classify_boot(" " * k.start() + text[k.start():] if k else text, host=HOST, bad=BAD_TAIL)
 
     def wait_healthy_end(self, a, cid):
         """The boot from the kernel to its login prompt. A known [lab] flake
@@ -1646,11 +1788,12 @@ class E2E:
         deadline = time.monotonic() + self.left(self.b("BUDGET_KERNEL_LOGIN"))
         while True:
             size = self.mux.size()
-            text = self.text(a)
-            end = console.classify_boot(text, host=HOST, bad=BAD_TAIL)
+            text, end = self.boot_end(a)
             if end is not None:
                 if end.kind == "login":
                     return end
+                if end.retry == "panic":
+                    self.panicked(a, end.line.strip())
                 if end.retry:
                     raise Retry(end.retry, end.line.strip())
                 self.record(cid, problems=["the boot ended in %s: %s" % (end.kind, end.line.strip())],
@@ -1732,6 +1875,7 @@ class E2E:
                 mode = os.stat(self.ref[k]).st_mode & 0o777
                 if mode != 0o444:
                     problems.append("%s is %o, not 444" % (self.ref[k], mode))
+            problems += ovmf_problems(self.ref["json"], self.conf["OVMF_CODE"]) if self.uefi else []
         except LabError as e:
             problems.append(str(e))
         self.record("P.5", problems=problems, seen="image %s; ref-%s" % (self.conf["IMAGE_SHA256"][:12],
@@ -1973,6 +2117,11 @@ class E2E:
                 rr = [t for t in toks if t.startswith("root=")]
                 if rd != rr:
                     p.append("root= differs: %s, default %s" % (rr, rd))
+                # What the default entry passes on (GRUB_CMDLINE_LINUX, the
+                # consoles) the rescue entry keeps.
+                lost = [t for t in exp_default.split() if t not in toks and t not in ("ro", "rw", "quiet", "splash")]
+                if lost:
+                    p.append("the rescue entry drops %s of the default entry" % " ".join(lost))
         rf = RECORDFAIL_BLOCK.search(cfg)
         flag = cfg.find(FLAG_BLOCK)
         if rf is None:
@@ -2141,7 +2290,8 @@ class E2E:
         env = f.lines("grubenv")
         p = f.need("grubenv")
         p += ["grubenv: %s" % x for x in env if x.startswith("smartconfig_pending=")]
-        self.record("1.6", problems=p, seen=" ".join(env) or "empty", expected="no smartconfig_pending",
+        p += stale_recordfail(env)
+        self.record("1.6", problems=p, seen=" ".join(env) or "empty", expected="no smartconfig_pending, no recordfail=1",
                     source="sc boot verdict (ok unsets it)", evidence=f.ev("grubenv"))
 
     def check_18(self, f):
@@ -2165,6 +2315,7 @@ class E2E:
         p = f.need("grubenv", "fstab", "fstab-sha256")
         p += ["grubenv: %s" % x for x in env if x.startswith("smartconfig_pending=")
               or (x.startswith("next_entry=") and x.split("=", 1)[1])]
+        p += stale_recordfail(env)
         sha = f.text("fstab-sha256").strip()
         if sha != self.v["FSTAB_SHA"]:
             p.append("/etc/fstab hashes to %s" % sha)
@@ -2320,8 +2471,7 @@ class E2E:
             size = self.mux.size()
             if t_seen is None and re.search(SEEN_DONE_RX, self.text(a)):
                 t_seen = time.monotonic()
-            text = self.text(a)
-            end = console.classify_boot(text, host=HOST, bad=BAD_TAIL)
+            text, end = self.boot_end(a)
             if end is not None:
                 break
             why = self.unexpected(a)
@@ -2329,7 +2479,7 @@ class E2E:
                 raise LabError(why + ", in boot 2")
             self.mux.wait(size, 1.0)
         if end is not None and end.kind == "panic":
-            raise Retry("panic", end.line)
+            self.panicked(a, end.line)
         if end is not None and end.kind in ("grub", "shutdown"):
             raise LabError("boot 2 ended in %s: %s" % (end.kind, end.line.strip()))
         end_ev = self.sev(self.boff(a, text, end.pos)) if end is not None else "serial.txt"
@@ -2342,6 +2492,8 @@ class E2E:
         self.record("2.4", seen="%s: end %s %r; ssh %s; emergency.target %s, multi-user.target %s" % (
             outcome, end.kind if end else "none in %d s" % self.b("BUDGET_BOOT2_END"),
             (end.line.strip() if end else ""), "yes (%d probes)" % ssh_seen if ssh_seen else "no", state, mu),
+            problems=[] if end is not None else ["boot 2 came to no prompt and no login in %d s"
+                                                 % self.b("BUDGET_BOOT2_END")],
             warnings=["ssh answered, but multi-user.target never became active in %d s: no verdict for B2 (a)"
                       % self.b("BUDGET_BOOT2_SSH")] if outcome == "a" and ssh_seen else [],
             expected="a (no multi-user.target), b or c (ssh, multi-user.target active)", source="design 2.4",
@@ -2364,8 +2516,8 @@ class E2E:
         seen_rx, bad_rx = seen_line_rx(b2), bad_line_rx(b2)
         boots = self.poll(lambda: (lambda t: t if bad_rx.search(t) else "")(self.boots_text()),
                           self.b("BUDGET_POLL")) or self.boots_text(strict=True)
-        envr = self.sudo("grub-editenv /boot/grub/grubenv list")
-        sync = self.sudo("sync")
+        envr = self.sudo("grub-editenv /boot/grub/grubenv list", lost=True)
+        sync = self.sudo("sync", lost=True)
         if 255 in (envr.rc, sync.rc):
             raise LabError("ssh failed in 2.6 (grub-editenv %s, sync %s): %s"
                            % (envr.rc, sync.rc, (envr.err or sync.err).strip()[-200:]))
@@ -2395,7 +2547,7 @@ class E2E:
         ssh_seen = 0
         probe_end = time.monotonic() + self.left(self.b("BUDGET_BOOT2_SSH"))
         while True:
-            r = self.ssh(PROBE_CMD, 20)
+            r = self.ssh(PROBE_CMD, 20, lost=True)
             pr = parse_probe(r.rc, r.out)
             if pr is not None:
                 b2, state, mu = pr
@@ -2409,32 +2561,46 @@ class E2E:
         return outcome or "a", b2, state, mu, ssh_seen
 
     def check_emergency_report(self, a, outcome, b2):
-        """2.5: F, but W in c and wherever the console getty hung up the
-        emergency shell (getty_hangup): plan A7 found the report lost then;
-        design 2.5 makes it W in c for that race. sc itself ended by the
-        hang-up is F in any case (SC_HUNGUP_RX). Where the hang-up ended
-        the shell before its first line, the report is the block above the
-        getty's login prompt (report_before_login), held to the golden as
-        strictly as above the shell's line, with a note."""
-        text = self.text(a)
+        """2.5 (F in every outcome): the report above the emergency
+        shell, held to the golden. Plan A7 found it lost when the console
+        getty hung up the shell, and design 2.5 made it a W in outcome c
+        for that; since cmd/sc/main.go's ignoreHangup sc must outlive the
+        hang-up, so a report lost or cut is sc's wherever it happens. sc
+        ended by the hang-up says so itself (SC_HUNGUP_RX). Where the
+        getty's banner or login prompt comes before the shell's line, or
+        the shell never prints one, the report ends there
+        (emergency_report), held as strictly, with a note."""
+        deadline = time.monotonic() + self.left(REPORT_WAIT)
+        while True:
+            size = self.mux.size()
+            text = self.text(a)
+            blk, kind = emergency_report(text)
+            if blk is not None or time.monotonic() > deadline:
+                break
+            self.mux.wait(size, 1.0)
+        if blk is None:
+            blk, kind = emergency_report(text, final=True)
         hung = getty_hangup(text)
         died = ["sc status --console ended by a hangup; it must outlive one (cmd/sc/main.go ignoreHangup)"] \
             if SC_HUNGUP_RX.search(text) else []
-        strength = "F" if died else "W" if outcome == "c" or hung else "F"
         why = ["the console getty hung up the emergency shell (plan A2, A7): %s" % " | ".join(hung)] if hung else []
-        blk = console.report_block(text, end=r"You are in emergency mode")
+        if kind in ("banner", "login") and SHELL_LINE not in text:
+            why.append("the console getty's hang-up ended the emergency shell before its first line (plan A2, A7): "
+                       "no 'You are in emergency mode'; the report is the block above the login prompt")
+        elif kind in ("banner", "login"):
+            why.append("the getty's banner came between the report and the shell's first line; the report ends at it")
+        elif kind == "end":
+            why.append("nothing came after the report in %d s; it ends with the console's text" % REPORT_WAIT)
         if blk is None:
-            blk = report_before_login(text)
-            if blk is not None:
-                why.append("the console getty's hang-up ended the emergency shell before its first line (plan A2, A7): "
-                           "no 'You are in emergency mode'; the report is the block above the login prompt")
-        if blk is None:
-            self.record("2.5", problems=died + ["no report above 'You are in emergency mode'"] + why, strength=strength,
+            self.record("2.5", problems=died + ["no report above 'You are in emergency mode'"], notes=why,
                         expected="console-emergency.golden", source="cmd/sc/status.go via TestStatusConsoleLab",
                         evidence=self.sev(a.mark.txt, self.con.size()))
             return
         lines, notes = tolerate_report(blk.lines)
-        notes += why
+        # A boot that went on to multi-user has scd up when the report is
+        # made again; every healthy run of outcome b shows it.
+        why += [n for n in notes if n.startswith("scd was already running")]
+        notes = [n for n in notes if not n.startswith("scd was already running")]
         if blk.stripped:
             notes.append("%d status lines taken out" % len(blk.stripped))
         bind = {"GOOD": self.v["GOOD"], "BAD": self.v["BAD"], "B1": self.v["B1"], "N": self.v["N"]}
@@ -2446,7 +2612,7 @@ class E2E:
         self.save("report-emergency.txt", "\n".join(blk.lines))
         s = a.mark.txt + len(text[:blk.start].encode("utf-8", "surrogateescape"))
         e = a.mark.txt + len(text[:blk.end].encode("utf-8", "surrogateescape"))
-        self.record("2.5", problems=died + res.problems, warnings=notes, strength=strength,
+        self.record("2.5", problems=died + res.problems, warnings=notes, notes=why,
                     seen=" | ".join(lines[:2]), expected="console-emergency.golden with %s" % bind,
                     source="lab/testdata/console-emergency.golden", evidence=self.sev(s, e))
 
@@ -2491,10 +2657,12 @@ class E2E:
         self.check_cmdline("3.4", a, g, self.v["EXP_RESCUE"], hit)
 
         self.at("3.5")
+        gaps = len(self.mux.gaps)
         p = self.wait_for(a, [PROMPT_RX, LOGIN_RX], self.b("BUDGET_KERNEL_RESCUE"), start=g["kernel"].start,
                           what="the rescue prompt")
         if p is None:
-            raise LabError("no 'Press Enter for maintenance' %d s after the kernel" % self.b("BUDGET_KERNEL_RESCUE"))
+            self.ran_out("3.5", a, gaps, "no 'Press Enter for maintenance' %d s after the kernel"
+                         % self.b("BUDGET_KERNEL_RESCUE"))
         if p.index == 1:
             self.record("3.5", problems=["a login prompt instead of the rescue prompt"], evidence=self.sev(p.start))
         pe = self.wait_for(a, [PROMPT_END_RX], 60, start=p.start, what="the prompt's second line")
@@ -2511,12 +2679,13 @@ class E2E:
 
         self.at("3.7")
         start = self.con.size()
+        gaps = len(self.mux.gaps)
         if not self.con.send("\r", 0):
             raise LabError("could not send Enter on serial")
         h = self.wait_for(a, [SHELL_RX, r"Password:", r"Login incorrect|Cannot open access to console"],
                           self.b("BUDGET_CMD"), start=start, what="the root shell")
         if h is None:
-            raise LabError("no shell prompt %d s after Enter" % self.b("BUDGET_CMD"))
+            self.ran_out("3.7", a, gaps, "no shell prompt %d s after Enter" % self.b("BUDGET_CMD"))
         self.at_prompt = False
         self.record("3.7", problems=[] if h.index == 0 else ["%r instead of a # prompt" % h.text], seen=h.text,
                     expected="root@sclab:~# , no Password:", source="Ubuntu sulogin (locked root)",
@@ -2708,8 +2877,11 @@ class E2E:
         p, seen = [], []
         for c in cmds[:-1]:
             sc_cmd = c.startswith("sc ")
+            gaps = len(self.mux.gaps)
             r = self.con.cmd(c, self.b("BUDGET_CMD_SC") if sc_cmd else self.b("BUDGET_CMD"))
             seen.append("%s: %s" % (c, r.rc))
+            if r.rc is None and len(self.mux.gaps) > gaps:
+                raise LabError("3.9: %r got no answer in time while the host stood still" % c)
             if r.rc is None:
                 # Never typed again: a restore half done is evidence too.
                 self.record("3.9", problems=p + ["%r: no answer in time" % c], seen="; ".join(seen),
@@ -2864,6 +3036,9 @@ class E2E:
     def boot5(self, a):
         g = self.grub_phase(a, "5.1", menu=a.flag)
         self.at("5.1")
+        # Before anything in this boot can be retried: a flake later in it
+        # must not leave 5.1 unchecked.
+        first = [] if a.flag is None else [self.check_decision("5.1", a, g, False, stop=False)]
         self.wait_healthy_end(a, "5.1")
         b5 = self.wait_ssh(a)
         self.v["B5"] = b5
@@ -2886,9 +3061,7 @@ class E2E:
         self.at("5.1")
         if a.flag is None:
             self.skip("5.1", "a retried attempt: the menu flag is not known (5b repeats it)")
-        else:
-            self.check_decision("5.1", a, g, False)
-        self.stop_on(held)
+        self.stop_on(first + held)
         self.flag = False
 
     # -- the whole mode -------------------------------------------------------
@@ -2901,6 +3074,7 @@ class E2E:
             self.log("1b: the menu flag was not known at boot 1's start; a clean reboot repeats 1.1-1.9")
             self.reboot_ssh("1.1")
             self.boot("1b", self.boot1)
+        self.decided("1.1")
         self.edit()
         self.boot("2", self.boot2)
         self.reset_settled()
@@ -2916,6 +3090,7 @@ class E2E:
             self.log("5b: the menu flag was not known at boot 5's start; a clean reboot repeats 5.1")
             self.reboot_ssh("5.1")
             self.boot("5b", self.boot5)
+        self.decided("5.1")
         self.at("5.2")
         ev = self.reboot_ssh("5.2", "poweroff")
         rc = self.machine.wait_exit(60)
@@ -2924,9 +3099,25 @@ class E2E:
                     seen="SHUTDOWN %s; QEMU exit %s" % (json.dumps(ev["data"]), rc), expected="a guest SHUTDOWN, QEMU exits 0",
                     evidence="qmp.log")
 
+    def decided(self, cid):
+        """1.1 and 5.1 must have been checked in some attempt. Where
+        every one had a flake before it (the flag not known, then the
+        same in 1b or 5b), a SKIP would let the mode pass with GRUB's
+        decision never looked at: a LabError, so INCONCLUSIVE."""
+        row = self.rows.get(cid)
+        if row is None or row.status == "SKIP":
+            self.at(cid)
+            raise LabError("%s was never checked: the menu flag was not known in any attempt" % cid)
+
     def failure_dump(self):
         """What a failed run shows: facts.sh dump from the guest, if any way in."""
         out = None
+        # Not past the mode's time: make's timeout would cut the teardown
+        # (T.1, result.txt). 45 s of BUDGET_MODE stay for that.
+        end = self.t_start + self.b("BUDGET_MODE") - 45
+
+        def left(want):
+            return max(1.0, min(want, end - time.monotonic()))
         try:
             if self.machine is None or not self.machine.alive() or not self.staged:
                 return None
@@ -2934,13 +3125,13 @@ class E2E:
                 # Stopped at boot 3's prompt (3.6): Enter, as 3.7 would have.
                 start = self.con.size()
                 self.con.send("\r", 0)
-                self.shell = self.con.expect([SHELL_RX], 60, start=start, advance=False) is not None
+                self.shell = self.con.expect([SHELL_RX], left(60), start=start, advance=False) is not None
             if self.shell:
-                r = self.con.cmd("sh %s/facts.sh dump" % GUEST_DIR, 300)
+                r = self.con.cmd("sh %s/facts.sh dump" % GUEST_DIR, left(300))
                 out = r.out
             elif labvm.port_open(self.machine.ssh_port) and labvm.ssh(
-                    self.machine.ssh_port, self.key, "true", 20).ok:
-                r = labvm.ssh(self.machine.ssh_port, self.key, "sudo -n sh %s/facts.sh dump" % GUEST_DIR, 300)
+                    self.machine.ssh_port, self.key, "true", left(20)).ok:
+                r = labvm.ssh(self.machine.ssh_port, self.key, "sudo -n sh %s/facts.sh dump" % GUEST_DIR, left(300))
                 out = r.out + r.err
         except Exception as e:  # the run failed already: say so, go on
             out = "facts.sh dump failed: %r" % (e,)
@@ -2993,6 +3184,7 @@ class E2E:
                 self.lab_error = "a retry outside a boot: %s" % r
                 self.fail_lab(self.ctx, self.lab_error)
             except (KeyboardInterrupt, SystemExit) as e:
+                self.interrupted = True  # stop now: no dump from the guest first
                 self.lab_error = "interrupted (%s)" % (e.__class__.__name__ if isinstance(e, KeyboardInterrupt)
                                                        else "signal, exit %s" % e.code)
                 self.fail_lab(self.ctx, self.lab_error)
@@ -3005,7 +3197,7 @@ class E2E:
                     self.rows[cid] = Row(cid, "NOTRUN", REGISTRY[cid].strength, seen="not reached")
             v = verdict(self.rows.values(), self.lab_error)
             dump = None
-            if v != "PASS":
+            if v != "PASS" and not getattr(self, "interrupted", False):
                 dump = self.failure_dump()
             try:
                 self.check_k1()
@@ -3039,7 +3231,7 @@ class E2E:
         self.save_ledger(v)
         line = summary_line(v, self.mode, took, self.v.get("outcome"), self.retries, self.head,
                             "yes" if self.dirty else "no", self.sha.get("sc", "")[:12],
-                            "no" if self.args.no_boot5 else "yes")
+                            "no" if self.args.no_boot5 else "yes", self.args.boot2 == "reset-at-timeout")
         if v != "PASS":
             failing = [r for r in rows if r.status == "FAIL"] or [r for r in rows if r.status == "NOTRUN"][:1]
             sys.stderr.write("\n%s: %s\nrun directory: %s\n" % (self.mode, v, self.run))
