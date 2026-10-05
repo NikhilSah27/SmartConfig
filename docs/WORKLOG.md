@@ -61,10 +61,12 @@ fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built and reviewed
 ([reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md),
 fixes `683678a`, plan change C5). Step 11, the QEMU lab (`lab/`,
 `make lab-e2e`), is committed (`9f29ea5`, with its one product fix
-`55d2bde`). **Now: the step 11 check**, `make lab-e2e` on the committed
-tree, UEFI then BIOS (about an hour, no sudo, nothing on this machine);
-then the chunk D review. A check-in every 30 min resumes work after
-a usage limit (your ask).
+`55d2bde`). The step 11 check on `618e4e9`: UEFI passed; BIOS did not in
+three runs, none of them a fault of sc (log, 2026-10-05), and the last
+one needed a lab fix (`bec333b`). **Now: the step 11 check again**,
+`make lab-e2e` on `bec333b`, UEFI then BIOS (over an hour, no sudo,
+nothing on this machine); then the chunk D review. A check-in every
+30 min resumes work after a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1365,3 +1367,36 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     text (`grep -a`); both commits were scanned again and are clean.
   - Checks: tests pass as a user, as root and under race; `make
     lab-test` passes.
+- **M4 step 11 check, first round (`618e4e9`): UEFI PASS, BIOS not yet.**
+  - `618e4e9` came first, from a BIOS run that ended INCONCLUSIVE at
+    1.0: ssh lost the reboot command (exit 255) and the lab gave up. It
+    now asks the guest and sends the command once more only when no
+    reboot is queued.
+  - UEFI on `618e4e9`: PASS in 30m51s, no retries, clean tree, with
+    boot 5; boot 2 ended as outcome a.
+  - BIOS run 1: cut off at 1.5 by a signal when the session ended.
+    Nothing to read from it.
+  - BIOS run 2: INCONCLUSIVE in 40m22s. Every check up to 4.6 passed,
+    with boot 2 as outcome b (`goal3=multi-user`, which sign-off needs
+    once). In boot 5 the guest kernel stopped at `smpboot: x86: Booting
+    SMP configuration:` for 18 minutes, before any userspace; the lab
+    gave up after 900 s (5.1, [lab]). The same step took 0.1 s in the
+    boots before it. A TCG stall, seen once; the lab does not retry it,
+    and that is left so unless it comes back.
+  - BIOS run 3: FAIL in 36m05s, at 2.5 alone ("no report above 'You are
+    in emergency mode'"); boot 5 passed. The report was on the console,
+    whole and right. About 5 s later the serial getty's hang-up ended
+    the emergency shell before its first line: the console had the
+    report, then a login prompt, and no shell. The lab looked for the
+    report only above the shell's line.
+  - Lab fix (`bec333b`): with no shell line in boot 2, 2.5 takes the
+    block above the login prompt and holds it to the golden as
+    strictly; a wrong report or none is still an [M4] failure. Three
+    tests from that run's console text; that run's whole boot 2,
+    replayed, now gives 2.5 a note and no failure.
+  - For the chunk D review: in that ending the owner sees the report
+    and a login prompt, not a root shell, so its commands need a login
+    and `sudo` first. It is Ubuntu's race (plan A2), and sc's report
+    came through; whether the report or the README should say so is
+    open.
+  - Checks: `make lab-test` passes (166 tests). No Go file changed.
