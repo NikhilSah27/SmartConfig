@@ -59,14 +59,11 @@ fixes `49a0a5b`). Done: steps 4-6, chunk B built and reviewed
 ([reviews/2026-10-04-m4-chunk-b.md](reviews/2026-10-04-m4-chunk-b.md),
 fixes `40288d8`, plan change C4). Done: steps 7-10, chunk C built and reviewed
 ([reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md),
-fixes `683678a`, plan change C5). **Now: step 11**, the QEMU lab in
-the repo (`make lab-e2e`), built from the design workflow's spec
-(`~/smartconfig-work/m4lab/STEP11_DESIGN.md`). A workflow spikes
-S1-S4 in QEMU, then agents build `lab/` in the git worktree
-`~/code/sc-step11` (branch `m4-step11`; nothing is committed until
-Claude reviews it). Then the end-to-end runs (UEFI and BIOS), the
-commit, and the chunk D review. The QEMU lab is in
-`~/smartconfig-work/m4lab`. A check-in every 30 min resumes work after
+fixes `683678a`, plan change C5). Step 11, the QEMU lab (`lab/`,
+`make lab-e2e`), is committed (`9f29ea5`, with its one product fix
+`55d2bde`). **Now: the step 11 check**, `make lab-e2e` on the committed
+tree, UEFI then BIOS (about an hour, no sudo, nothing on this machine);
+then the chunk D review. A check-in every 30 min resumes work after
 a usage limit (your ask).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
@@ -1343,3 +1340,28 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Deferred: multipath `root=`, a whole-boot ordering test.
   - Checks: tests pass as a user, as root and under race; sc builds for
     six architectures.
+
+### 2026-10-05
+
+- **M4 step 11, the QEMU rescue lab** (`9f29ea5`). `lab/` runs the M4
+  owner scenario in a VM under TCG, for UEFI and BIOS: a healthy boot,
+  an fstab edit, the broken boot, GRUB's menu and the rescue entry, `sc
+  status --console` and `sc restore` in the rescue shell, the healthy
+  boot after. Dev only: no sudo, no KVM, not in CI. `make lab-image`
+  once, then `make lab-e2e`; `make lab-test` runs its 157 unit tests.
+  - Built from the design workflow's spec by agents in a worktree, then
+    hardened against false PASSes by an ultracode workflow (9 risks, each
+    fix checked by undoing it).
+  - Runs on the uncommitted tree (not sign-off): UEFI PASS twice (40m,
+    32m), BIOS PASS (30m) after four lab fixes its earlier runs found.
+  - Product finding, fixed first (`55d2bde`): on BIOS the console getty
+    can start next to `emergency.service` and hang up the console; `sc
+    status --console` then died by SIGHUP and the report was lost. It now
+    drops SIGHUP in sc's own handler (not SIG_IGN, which the commands
+    it runs would inherit; that leak failed `TestWatchSIGHUPRescans`
+    first). The lab now fails 2.5 if `sc: interrupted by hangup` shows.
+  - The local secret-scan hook read the lab's raw serial captures as
+    binary and skipped the commit's added lines. It now reads them as
+    text (`grep -a`); both commits were scanned again and are clean.
+  - Checks: tests pass as a user, as root and under race; `make
+    lab-test` passes.
