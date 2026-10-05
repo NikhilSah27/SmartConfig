@@ -80,8 +80,8 @@ byte lost on serial for the kernel command line). Next, in this order
 (details: `~/smartconfig-work/review-m4d/HANDOFF.md`):
 1. Integrate the mutation-survivor tests. Scenario: done, `fcb1b6d`
    (283 lab tests; the one test that failed against `64911f4` fixed,
-   see the log). Machinery: uncommitted in
-   `~/smartconfig-work/review-m4d/clone-b`, unfinished.
+   see the log). Machinery: done, `a371738` (325 lab tests; all 123
+   Python and 23 shell mutations killed, see the log). Item 1 is done.
 2. `make lab-e2e` on a quiet machine (nothing else running beside it).
 3. The write-up in `docs/reviews/`, plan change C6 (the 60 s limit and
    the console writer's turn), the worklog.
@@ -1517,3 +1517,37 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     "check_cmdline ignored", no longer applies: `64911f4` rewrote that
     text.
   - Still to do: the machinery tests (clone-b), then `make lab-e2e`.
+- **M4 chunk D review: the machinery tests are in (`a371738`).**
+  - The review's mutations of `lab/vm.py`, `lab/console.py`,
+    `lab/serialmux.py` and the guest scripts (`clone-b/.rv/mut.py`:
+    123 Python, 23 shell, of which 68 and 13 had survived) all have a
+    test now: 123 of 123 and 23 of 23 killed on `a371738`. The one
+    shell mutant that still passed, "hashes-after cached", added a bare
+    `:` and changed nothing; it is replaced by the block dropped.
+  - Covered with stand-ins (never a QEMU, a download or the real cache;
+    `SC_LAB_CACHE` and `XDG_RUNTIME_DIR` point at temp dirs): the pinned
+    image, the key, the reference image (three 0444 files, the qcow2
+    last, a failed `qemu-img check`, the kernel pin, panics retried),
+    QEMU as a child (own session, `PR_SET_PDEATHSIG`, quit then
+    SIGKILL) with a stand-in script, Qmp on a fake unix-socket server,
+    `SSH_OPTIONS`, `SeedServer` on 127.0.0.1, `running_qemu`'s uid,
+    `render_seed`, `fill_template`, `classify_boot`, `parse_menu`,
+    `pick`, `report_block`, `expect`, the mux's send timeout and wait;
+    `install.sh`'s step rcs and not-root refusal, `facts.sh`'s timeout
+    per part (the mode's limit), a part's stdin, a failing `sc cat`.
+    `lab/test_lab.py` and `cmd/sc/unit_test.go` only, +998 lines;
+    `make lab-test` 283 -> 325, three runs in a row, 15 s each;
+    `go test ./cmd/sc/` ok; gofmt and vet clean.
+  - Seen on the way, not of this step: `test_the_first_signal_is_the_
+    only_one` (from `9d3df9e`) is load-bound. With four CPU burners
+    beside it, 3 of 20 runs had the child hang past the 60 s limit
+    (SIGHUP twice, SIGTERM once); once, with `go test` beside
+    `make lab-test`, the SIGINT case ended "SystemExit 143" with no
+    teardown. The same child script run directly under the same load:
+    0 hangs in 120. Not understood yet; `make lab-test` alone passes.
+    Also `test_the_loop_measures_its_wakes` (from `152ecbe`) failed
+    once in the repo, right after a `go test` loop: it expects the
+    late wake to measure exactly "0.2 s". One `go test ./cmd/sc/` of
+    14 failed right after three `lab-test` runs; its output was not
+    kept, and 13 later runs passed. In the repo after the merge:
+    `make lab-test` three runs in a row ok (22 s), `go test ./cmd/sc/` ok.
