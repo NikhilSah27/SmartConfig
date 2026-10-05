@@ -103,6 +103,8 @@ HELPERS = (("install.sh", "lab/guest/install.sh"), ("facts.sh", "lab/guest/facts
 # ends in \n, so a line still arriving is not taken half.
 LINUX_RX = r"Linux version (\S+)"
 CMDLINE_RX = r"Command line: ([^\n]*)\n"
+# The kernel says it once more, a moment later.
+KCMDLINE_RX = r"Kernel command line: ([^\n]*)\n"
 PANIC_RX = r"Kernel panic - not syncing|IO-APIC \+ timer doesn't work"
 # The one panic that is TCG's (plan A, lab/testdata/q3c-panic-tcg.raw). Any
 # other is not a known flake of the lab.
@@ -1720,10 +1722,28 @@ class E2E:
             raise LabError("no 'Command line:' from the kernel")
         return hit
 
+    def cmdline_seen(self, a, hit, expected):
+        """The command line the kernel booted with, and notes. Serial can
+        lose a byte: the kernel's early console waits only so long for
+        the UART, and a starved host leaves QEMU's side full (a bios run
+        of 85e9f59 read "oot=UUID=" in the first line, with a 379 s gap
+        of the host before it). The kernel prints the line twice. Where
+        the first differs from expected and the second is expected whole,
+        the channel lost it, not GRUB; both wrong is the command line."""
+        seen = norm_cmdline(hit.group(1))
+        if seen == expected:
+            return seen, []
+        again = self.wait_for(a, [KCMDLINE_RX], self.b("BUDGET_POLL"), start=hit.end,
+                              what="the kernel's second 'Kernel command line:'")
+        if again is not None and norm_cmdline(again.group(1)) == expected:
+            return expected, ["serial lost part of the first 'Command line:' (%r); 'Kernel command line:' has it whole"
+                              % _cell(seen, 200)]
+        return seen, []
+
     def check_cmdline(self, cid, a, g, expected, hit=None):
         hit = hit or self.kernel_cmdline(a, g, cid)
-        seen = norm_cmdline(hit.group(1))
-        self.record(cid, problems=[] if seen == expected else ["Command line differs"], seen=seen,
+        seen, notes = self.cmdline_seen(a, hit, expected)
+        self.record(cid, problems=[] if seen == expected else ["Command line differs"], notes=notes, seen=seen,
                     expected=expected, source="0.5 grub.cfg", evidence=self.sev(hit.start, hit.end))
         return hit
 
@@ -1749,9 +1769,9 @@ class E2E:
         wiped = not self.uefi and flag and g["menu"] is not None and not g["obs"]
         (problems if self.uefi else notes if wiped else warnings).extend(("observers: " + o) for o in obs)
         if flag:
-            mp, notes = menu_problems(g["menu"], g["menu_lines"], g.get("countdowns", (30,)))
+            mp, mnotes = menu_problems(g["menu"], g["menu_lines"], g.get("countdowns", (30,)))
             problems += mp
-            warnings += notes
+            warnings += mnotes
             m = g["menu"]
             if m is not None and m.entries != MENU_ENTRIES[self.mode]:
                 warnings.append("entries %s, expected %s" % (m.entries, MENU_ENTRIES[self.mode]))
@@ -2922,12 +2942,12 @@ class E2E:
         g = self.grub_phase(a, "4.1", menu=a.flag)
         self.at("4.1.cmdline")
         hit = self.kernel_cmdline(a, g, "4.1")
-        line = norm_cmdline(hit.group(1))
+        line, lost = self.cmdline_seen(a, hit, self.v["EXP_DEFAULT"])
         keys = self.mux.inputs(a.mark.inp)
         # Every attempt, whether the flag is known or not (4.1 is skipped
         # then): recorded first, an H failure stops the mode after 4.1.
         held = [self.record("4.1.cmdline", problems=[] if line == self.v["EXP_DEFAULT"] else ["Command line differs"],
-                            seen=line, expected=self.v["EXP_DEFAULT"], source="0.5 grub.cfg",
+                            notes=lost, seen=line, expected=self.v["EXP_DEFAULT"], source="0.5 grub.cfg",
                             evidence=self.sev(hit.start, hit.end), stop=False),
                 self.record("4.1.nokey", problems=["%d inputs: %s" % (len(keys), ", ".join(
                     "%s %s" % (e.kind, e.data) for e in keys[:5]))] if keys else [],

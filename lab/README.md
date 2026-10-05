@@ -146,6 +146,15 @@ other attempt x.1 holds the observers to `recordfail=[]` and
 healthy boot unsets it, and one left set is a write to grubenv that sc's
 units lost (the chunk C review).
 
+Serial can lose a byte when the host is starved: the kernel's early
+console waits only so long for the UART. The kernel prints its command
+line twice, so x.2, 3.4 and 4.1.cmdline take the second line where the
+first differs and the second is right, with a note. The reports (2.5,
+3.6) have no second copy on serial: a report that differs by a missing
+character, in a run with gaps in `mux.log`, is read before it is called
+a bug. Run `make lab-e2e` on a quiet machine: no test runs, builds or
+agents beside it.
+
 ## Cost
 
 A mode takes about 25 minutes on this host (75 at most: `BUDGET_MODE`),

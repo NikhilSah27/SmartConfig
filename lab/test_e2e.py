@@ -12,6 +12,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -600,6 +601,22 @@ class FakeRun(e2e.E2E):
 
     def log(self, msg):
         self.logged.append(msg)
+
+    def wait_for(self, a, patterns, budget, start=None, what="it"):
+        """The first of patterns in the FakeCon's text from start, as it
+        stands (nothing more comes); None if none is there."""
+        text = self.con.text(a.mark.txt if start is None else start)
+        best = None
+        for i, pat in enumerate(patterns):
+            m = re.search(pat, text)
+            if m and (best is None or m.start() < best[1].start()):
+                best = (i, m)
+        if best is None:
+            return None
+        off = a.mark.txt if start is None else start
+        hit = argparse.Namespace(index=best[0], match=best[1], group=best[1].group, text=best[1].group(0),
+                                 start=off + best[1].start(), end=off + best[1].end(), t=1.0)
+        return hit
 
     def screendump(self, name):
         pass
@@ -1503,6 +1520,57 @@ class TestVerdictClasses(unittest.TestCase):
         with self.assertRaises(e2e.LabError):
             r.ran_out("3.5", attempt("3", True), 0, "no prompt")
         self.assertNotIn("3.5", r.rows)
+
+    def test_a_byte_lost_on_serial_is_not_the_command_line(self):
+        # A bios run of 85e9f59, boot 3: the kernel's first line reached
+        # serial as "oot=UUID=" (the host had just stood still for 379 s);
+        # its second line, 0.1 s of guest time later, was whole.
+        exp = ("BOOT_IMAGE=/vmlinuz-6.8.0-142-generic root=UUID=1bfefdfb-34c9-46c7-854f-399d0a1dea04 no_timer_check "
+               "console=tty1 console=ttyS0 ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1")
+        lossy = exp.replace(" root=", " oot=")
+        first = "[    0.000000] Command line: %s\n"
+        second = "[    0.098611] Kernel command line: %s\n"
+
+        def run(text, expected=exp):
+            r = fake_run(self, con=FakeCon(text))
+            a = attempt("3", True)
+            hit = r.wait_for(a, [e2e.CMDLINE_RX], 0)
+            s = stops(r.check_cmdline, "3.4", a, {}, expected, hit)
+            return r.rows["3.4"], s
+
+        row, s = run(first % exp + second % exp)
+        self.assertEqual((row.status, row.notes), ("PASS", ""))
+        row, s = run(first % lossy + "[    0.000000] BIOS-provided physical RAM map:\n" + second % exp)
+        self.assertEqual((row.status, row.seen), ("PASS", exp))
+        self.assertIn("serial lost part of the first", row.notes)
+        self.assertIn("oot=UUID=", row.notes)
+        # Both lines wrong: that is the command line (42_smartconfig wrote it).
+        row, s = run(first % lossy + second % lossy)
+        self.assertEqual((row.status, row.cause, row.seen), ("FAIL", "M4", lossy))
+        self.assertIsNotNone(s)
+        # The second line whole but not what grub.cfg says: no help.
+        row, s = run(first % exp + second % exp, expected=exp + " quiet")
+        self.assertEqual(row.status, "FAIL")
+        # No second line (yet): the first stands.
+        row, s = run(first % lossy)
+        self.assertEqual((row.status, row.seen), ("FAIL", lossy))
+
+    def test_bios_wiped_observers_are_a_note(self):
+        # bios, the flag set, a menu shown: the menu wipes the observers'
+        # lines, as it must. That is a note in the row (a healthy run has
+        # it in every 3.1 and 4.1), not a WARN, and not lost either: the
+        # menu's own notes once overwrote it (the test agent found that).
+        rows = console.vgatext(fixture("vga-bios-menu.bin"))
+        menu = console.parse_menu(rows)
+        r = fake_run(self, "bios")
+        a = attempt("3", True, vga=FakeWatch(rows))
+        g = grubenv_g([], menu=menu, seen=True)
+        g["menu_lines"] = rows
+        g["countdowns"] = (30, 29)
+        stops(r.check_decision, "3.1", a, g, True)
+        row = r.rows["3.1"]
+        self.assertEqual(row.status, "PASS", row.notes)
+        self.assertIn("observers: no 'sclab: pre' line", row.notes)
 
     def test_summary_says_forced(self):
         line = e2e.summary_line("PASS", "bios", "20m00s", "a", 0, "h", "no", "s", "yes", True)
