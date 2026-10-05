@@ -65,8 +65,12 @@ up without that: when the console getty hangs up the emergency shell,
 systemd starts `default.target` again, waits for the device once more and
 drops back into emergency mode (plan A2). The report can be lost in that
 race (plan A7), so 2.5 is a W wherever the serial text shows the shell
-returning, as in c. `sc status --console` itself must outlive the hang-up:
-`sc: interrupted by hangup` (as in two runs before it did) fails 2.5.
+returning, as in c. The hang-up can also end the shell before its first
+line: the console then has the report, the getty's login prompt and no
+"You are in emergency mode". 2.5 then holds the block above the login
+prompt to the golden, as strictly, and notes it. `sc status --console`
+itself must outlive the hang-up: `sc: interrupted by hangup` (as in two
+runs before it did) fails 2.5.
 
 ## Prerequisites
 

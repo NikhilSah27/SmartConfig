@@ -1,0 +1,27 @@
+[DEPEND] Dependency failed for local-fs.target - Local File Systems.
+[  OK  ] Listening on ssh.socket - OpenBSD Secure Shell server socket.
+[  OK  ] Listening on uuidd.socket - UUID daemon activation socket.
+[  OK  ] Started emergency.service - Emergency Shell.
+[  OK  ] Reached target getty-pre.target - Preparation for Logins.
+         Starting scd.service - SmartConfig…cd): records config file changes...
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+         Starting plymouth-quit-wait.servic…d until boot process finishes up...
+         Starting plymouth-quit.service - Terminate Plymouth Boot Screen...
+[  OK  ] Started scd.service - SmartConfig …(scd): records config file changes.
+This boot:     80744ff3 (emergency), root read-write
+Last healthy:  2026-10-05 16:32, boot 5dfd9262
+scd:           running (pid 629)
+
+Changed since the last healthy boot, worst first:
+6e6b92 16:33  blocker fstab-source-missing, line 4  /etc/fstab
+
+To put /etc/fstab back:
+  sc restore 7228aa
+  sync
+  systemctl daemon-reload
+  systemctl reboot
+The menu shows once more: the first entry, Ubuntu, is the one.
+
+Ubuntu 24.04.5 LTS sclab ttyS0
+
+sclab login: 

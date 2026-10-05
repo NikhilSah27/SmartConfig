@@ -1456,6 +1456,49 @@ class TestBoot2Probe(unittest.TestCase):
         self.assertEqual((row.status, row.strength, row.cause), ("FAIL", "F", "M4"))
         self.assertEqual(self.report_row(text, "c").strength, "W")
 
+    # A bios run of 618e4e9: the report whole, then the getty's banner and
+    # login prompt, and no line of the emergency shell.
+    BEFORE_SHELL = dict(GOOD="7228aa", BAD="6e6b92", B1="5dfd9262-0c0f-4d36-acc1-b2bd414fdcd6", N=4)
+    BEFORE_SHELL_B2 = "80744ff3-f62e-4f08-a040-6ff6baaa9561"
+
+    def before_shell_row(self, text, outcome="b"):
+        r = fake_run(self, "bios", con=FakeCon(text), **self.BEFORE_SHELL)
+        r.check_emergency_report(attempt("2"), outcome, self.BEFORE_SHELL_B2)
+        return r.rows["2.5"]
+
+    def test_25_report_above_the_login_prompt(self):
+        text = fixture("bios-getty-before-shell.txt").decode()
+        blk = e2e.report_before_login(text)
+        self.assertEqual(blk.lines[0], "This boot:     80744ff3 (emergency), root read-write")
+        self.assertEqual(blk.lines[-1], "The menu shows once more: the first entry, Ubuntu, is the one.")
+        row = self.before_shell_row(text)
+        self.assertEqual((row.status, row.strength), ("WARN", "F"))
+        self.assertIn("before its first line", row.notes)
+        self.assertIn("scd was already running", row.notes)
+        # The shell's line anywhere in boot 2: the block above it is the report, as before.
+        self.assertIsNone(e2e.report_before_login(text + "You are in emergency mode. After logging in\n"))
+        self.assertIsNone(e2e.report_before_login(fixture("bios-getty-hangup.txt").decode()))
+
+    def test_25_wrong_report_above_the_login_prompt_is_f(self):
+        text = fixture("bios-getty-before-shell.txt").decode()
+        for wrong in (text.replace("  sc restore 7228aa", "  sc restore 6e6b92"),
+                      text.replace("  systemctl daemon-reload\n", ""),
+                      text.replace("The menu shows once more", "sc: store: database is locked\nThe menu shows once more")):
+            self.assertNotEqual(wrong, text)
+            row = self.before_shell_row(wrong)
+            self.assertEqual((row.status, row.strength, row.cause), ("FAIL", "F", "M4"))
+
+    def test_25_login_prompt_without_report_is_f(self):
+        text = fixture("bios-getty-before-shell.txt").decode()
+        cut = text[:text.index("This boot:")] + text[text.index("\nUbuntu 24.04.5"):]
+        self.assertIsNone(e2e.report_before_login(cut))
+        row = self.before_shell_row(cut)
+        self.assertEqual((row.status, row.strength, row.cause), ("FAIL", "F", "M4"))
+        self.assertIn("no report above", row.notes)
+        # A report only after the prompt is not above it.
+        late = cut + "\n" + text[text.index("This boot:"):text.index("\nUbuntu 24.04.5")] + "\n"
+        self.assertIsNone(e2e.report_before_login(late))
+
     def test_26_reads_through_ssh_only(self):
         r = fake_run(self)
         r.sudo = lambda command, timeout=None: ssh_result(255, err="kex_exchange_identification: Connection reset by peer")

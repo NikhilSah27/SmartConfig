@@ -728,6 +728,32 @@ def getty_hangup(text):
     return [m.group(0) for m in HANGUP_RX.finditer(text) if m.start() > first]
 
 
+# The getty's banner (/etc/issue) above its login prompt.
+GETTY_BANNER_RX = re.compile(r"^\S.* %s tty\S+$" % re.escape(HOST))
+
+
+def report_before_login(text):
+    """2.5 where the hang-up came between the report and the shell's own
+    lines (a bios run of 618e4e9): the shell ended before it printed, so
+    boot 2 has no "You are in emergency mode" at all, only the report and
+    then the getty's banner and login prompt. The report block that ends
+    at that prompt, without the banner. None if boot 2 has the shell's
+    line, or no report above a login prompt."""
+    if "You are in emergency mode" in text:
+        return None
+    blk = console.report_block(text, end=LOGIN_RX)
+    if blk is None:
+        return None
+    lines = list(blk.lines)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and GETTY_BANNER_RX.match(lines[-1]):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    return blk._replace(lines=lines)
+
+
 # 3.8: the files facts.sh hashes that must be there (their -journal and
 # -wal files may not be, then "-" both times).
 HASHED = ("/var/lib/smartconfig/changes.db", "/var/lib/smartconfig/boots", "/etc/fstab")
@@ -2320,7 +2346,10 @@ class E2E:
         """2.5: F, but W in c and wherever the console getty hung up the
         emergency shell (getty_hangup): plan A7 found the report lost then;
         design 2.5 makes it W in c for that race. sc itself ended by the
-        hang-up is F in any case (SC_HUNGUP_RX)."""
+        hang-up is F in any case (SC_HUNGUP_RX). Where the hang-up ended
+        the shell before its first line, the report is the block above the
+        getty's login prompt (report_before_login), held to the golden as
+        strictly as above the shell's line, with a note."""
         text = self.text(a)
         hung = getty_hangup(text)
         died = ["sc status --console ended by a hangup; it must outlive one (cmd/sc/main.go ignoreHangup)"] \
@@ -2328,6 +2357,11 @@ class E2E:
         strength = "F" if died else "W" if outcome == "c" or hung else "F"
         why = ["the console getty hung up the emergency shell (plan A2, A7): %s" % " | ".join(hung)] if hung else []
         blk = console.report_block(text, end=r"You are in emergency mode")
+        if blk is None:
+            blk = report_before_login(text)
+            if blk is not None:
+                why.append("the console getty's hang-up ended the emergency shell before its first line (plan A2, A7): "
+                           "no 'You are in emergency mode'; the report is the block above the login prompt")
         if blk is None:
             self.record("2.5", problems=died + ["no report above 'You are in emergency mode'"] + why, strength=strength,
                         expected="console-emergency.golden", source="cmd/sc/status.go via TestStatusConsoleLab",
