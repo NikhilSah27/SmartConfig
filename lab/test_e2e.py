@@ -1298,6 +1298,73 @@ def ssh_result(rc, out="", err=""):
     return argparse.Namespace(rc=rc, out=out, err=err, secs=0.0, ok=rc == 0)
 
 
+class TestRebootSsh(unittest.TestCase):
+    """A bios run of 9f29ea5: ssh lost the guest (exit 255 after 20 s, no
+    answer to its keepalives) on 1.0's reboot, which never happened. A
+    lost command is sent again only when the guest answers from the same
+    boot with no reboot queued; otherwise the guest's RESET decides."""
+
+    RESET = qmp_event(1, "RESET", True, 100.0)
+
+    def reboot(self, answers, events):
+        r = fake_run(self)
+        r.qmp, r.machine = FakeQmp(events), FakeMachine()
+        r.qmp.mark = lambda: 0
+        r.new_boot = lambda ev: ev
+        calls = []
+
+        def ssh(command, timeout=None):
+            calls.append(command)
+            return answers.pop(0)
+        r.ssh = ssh
+        try:
+            return r.reboot_ssh("1.0"), calls, r.logged
+        except e2e.LabError as e:
+            return e, calls, r.logged
+
+    def sent(self, calls):
+        return [c for c in calls if "systemd-run" in c]
+
+    def test_reboot(self):
+        got, calls, _ = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(0)], [self.RESET])
+        self.assertIs(got, self.RESET)
+        self.assertEqual(self.sent(calls), ["sudo -n sync; sudo -n systemd-run --unit=sclab-reboot --on-active=3 "
+                                            "systemctl reboot"])
+
+    def test_lost_before_queued_is_sent_again(self):
+        got, calls, logged = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(255),
+                                          ssh_result(3, "%s\ninactive\ninactive\n" % B1), ssh_result(0)], [self.RESET])
+        self.assertIs(got, self.RESET)
+        self.assertEqual(len(self.sent(calls)), 2)
+        self.assertIn("sclab-reboot.timer sclab-reboot.service", calls[2])
+        self.assertTrue(any("sent again" in x for x in logged))
+
+    def test_lost_after_queued_waits(self):
+        for answer in (ssh_result(0, "%s\nactive\ninactive\n" % B1), ssh_result(0, "%s\ninactive\nactivating\n" % B1),
+                       ssh_result(0, "%s\ninactive\ninactive\n" % B2), ssh_result(255)):
+            got, calls, _ = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(255), answer], [self.RESET])
+            self.assertIs(got, self.RESET, answer)
+            self.assertEqual(len(self.sent(calls)), 1, answer)
+
+    def test_lost_and_no_reset_is_lab(self):
+        got, _, _ = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(255), ssh_result(255)], [])
+        self.assertIsInstance(got, e2e.LabError)
+        self.assertIn("no RESET after reboot", str(got))
+
+    def test_lost_twice_is_lab(self):
+        got, calls, _ = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(255),
+                                     ssh_result(3, "%s\ninactive\ninactive\n" % B1), ssh_result(255)], [self.RESET])
+        self.assertIsInstance(got, e2e.LabError)
+        self.assertIn("exit 255", str(got))
+        self.assertEqual(len(self.sent(calls)), 2)
+
+    def test_refused_is_lab(self):
+        got, calls, _ = self.reboot([ssh_result(0, B1 + "\n"), ssh_result(1, err="sudo: a password is required")],
+                                    [self.RESET])
+        self.assertIsInstance(got, e2e.LabError)
+        self.assertEqual(len(calls), 2)
+
+
 class TestBoot2Probe(unittest.TestCase):
     """The second bios run: the console getty hung up boot 2's emergency
     shell, systemd started default.target again, ssh answered while the

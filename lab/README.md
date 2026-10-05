@@ -35,7 +35,9 @@ times a mode: a TCG panic, a healthy boot that TCG starved into emergency
 mode (slow udev on `LABEL=BOOT`, `LABEL=UEFI` or ttyS0), a missed menu or a
 `grub>` prompt, on bios a gap of over 2 s in the VGA polling before the
 menu's first screen (its countdown cannot be held to 30 s then), a login
-prompt without ssh. Nothing else is ever retried. A guest RESET within 2 s
+prompt without ssh. Nothing else is ever retried. A reboot over ssh that
+ssh lost (exit 255) is sent once more only when the guest answers from the
+same boot with no reboot queued; otherwise its RESET decides. A guest RESET within 2 s
 of the one before it (on bios every guest reboot gives two, about 15 ms
 apart: the firmware resets once more) is the same boot's start, not a
 reset of its own; `e2e.log` and `ledger.json` (`chained_resets`) list each.
@@ -53,7 +55,8 @@ a PASS is not a whole one. A run on a dirty tree says `dirty=yes` and does
 not count for sign-off; `LAB_REQUIRE_CLEAN=1` refuses one. Preflight (P.2)
 rebuilds the tree with the Makefile's recipe into the run directory and
 refuses a `bin/sc` that is not byte for byte that build (`make build`;
-`make lab-e2e` builds first). Sign-off also needs at least one run with
+`make lab-e2e` builds first). Go stamps the commit into `sc`, so do not
+commit while `make lab-e2e` runs: the next mode's P.2 refuses the build. Sign-off also needs at least one run with
 `goal3=multi-user` (boot 2 outcome b or c).
 
 Boot 2's outcome is b or c only once ssh answers with `multi-user.target`

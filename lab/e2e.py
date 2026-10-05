@@ -704,6 +704,9 @@ def probe_outcome(probe):
     return "b" if probe[1] == "active" else "c"
 
 
+# The transient unit reboot_ssh's reboot is queued in, to ask about.
+REBOOT_UNIT = "sclab-reboot"
+
 # The console getty hung up boot 2's emergency shell (plan A2, A7):
 # sulogin returned with nothing typed (3.0 holds boot 2 to no input) and
 # systemd-sulogin-shell went on to default.target.
@@ -1253,11 +1256,28 @@ class E2E:
 
     def reboot_ssh(self, cid, how="reboot"):
         """sync, then a reboot (or poweroff) in 3 s, over ssh; waits for the
-        guest's RESET (SHUTDOWN). The event."""
+        guest's RESET (SHUTDOWN). The event. Under TCG ssh can lose the
+        guest, the command run or not (no answer to its keepalives, exit
+        255: a bios run of 9f29ea5, after facts.sh). The guest is asked
+        then, and the command sent once more only when it answers from the
+        same boot with no reboot queued; else its RESET tells."""
         self.at(cid)
         since = self.qmp.mark()
-        r = self.ssh("sudo -n sync; sudo -n systemd-run --on-active=3 systemctl %s" % how, self.b("BUDGET_CMD"))
-        if r.rc != 0:
+        bid = self.boot_id()
+        cmd = "sudo -n sync; sudo -n systemd-run --unit=%s --on-active=3 systemctl %s" % (REBOOT_UNIT, how)
+        r = self.ssh(cmd, self.b("BUDGET_CMD"))
+        if r.rc == 255:
+            q = self.ssh("cat /proc/sys/kernel/random/boot_id; systemctl is-active %s.timer %s.service"
+                         % (REBOOT_UNIT, REBOOT_UNIT), self.b("BUDGET_CMD"))
+            got = q.out.split() if q.rc != 255 else []
+            if got == [bid, "inactive", "inactive"]:
+                self.log("%s: ssh lost the guest (exit 255) before the %s was queued: sent again" % (cid, how))
+                r = self.ssh(cmd, self.b("BUDGET_CMD"))
+            else:
+                self.log("%s: ssh lost the guest (exit 255); it says %s: waiting for its reset"
+                         % (cid, " ".join(got) or "nothing"))
+                r = None
+        if r is not None and r.rc != 0:
             raise LabError("systemd-run systemctl %s: exit %s %s" % (how, r.rc, r.err.strip()))
         if how == "poweroff":
             return self.wait_reset(since, self.b("BUDGET_SHUTDOWN"), ("SHUTDOWN",), "SHUTDOWN after poweroff")
