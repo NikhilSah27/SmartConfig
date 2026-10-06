@@ -82,11 +82,12 @@ command line, a SHUTDOWN not lost); the mutation tests `fcb1b6d` and
 PASS (45m14s, 2 lab retries, both the host's pauses); both with boot 5
 and `dirty=no`. Open items are in the write-up; the host's pauses are
 yours (below). A check-in every 30 min resumes work after a usage
-limit (your ask); no VM is up. **Next: step 12** of the plan, chunk E,
-`scripts: accept-m4.sh`. It is not built yet: building it in the repo,
-with its checks, is the next step; running it as root on this VM is
-part of sign-off S1 and needs your OK. Then step 13 (the docs) and the
-chunk E review.
+limit (your ask); no VM is up. **Step 12 is in** (`3e72281`):
+`scripts/accept-m4.sh` (`make accept-m4`), the non-boot parts as root,
+nothing real written; checked as a user, not run as root yet. Its run
+is part of sign-off S1 (with all checks and `make lab-e2e`) and needs
+your OK. **Next: step 13**, the docs (README "When the machine does not
+boot", PROJECT_LOG, MILESTONES), then the chunk E review.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -117,7 +118,8 @@ step is built (your call, 2026-09-30).
   (BIOS, which cost that run its verdict), and 250, 364, 400, 400 and
   265 s back to back (the BIOS rerun: about 24 minutes in which the VM
   barely ran, `signoff/lab-e2e-22383a0/bios-stall-5-1.txt`). On
-  2026-10-05 it also went down without a shutdown three times. Sleep
+  2026-10-05 it also went down without a shutdown three times, and once
+  more on 2026-10-06 at about 11:30 UTC, idle (`last -x`: crash). Sleep
   or power saving on the host is the first thing to look at.
 - [ ] A VirtualBox snapshot of this state (after the VM settings, if you
   change them), so a restore by mistake no longer undoes M2.
@@ -1637,3 +1639,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   does; `make lab-test` 326 ok three runs, `go test ./cmd/sc/` ok).
   This worklog's "Now" corrected: step 12 is not built yet, and the
   30-minute check-in does run.
+- **M4 step 12: `scripts/accept-m4.sh`** (`3e72281`), `make accept-m4`:
+  the parts of M4 that need no reboot, as root on this VM, bin/sc on a
+  throwaway `SC_HOME`, nothing real written. The two boot units as
+  runtime units with a copy of grubenv bound over the real one (seen and
+  the flag, then this boot's verdict, which must be ok, and no flag);
+  `sc status` and `--console` on a made-up fstab with a missing disk,
+  recorded from a private mount namespace; restore's chattr +i/+a
+  refusals; a read-only store on a tmpfs and a copy with a hot journal;
+  `grub-mkconfig` on copies of `/etc/grub.d` with and without
+  `42_smartconfig`, in private mount namespaces; `sc status` on the real
+  store; the real files' checksums. Checked as a user: `bash -n`, the
+  status, read-only and hot-journal sections against bin/sc (boots lines
+  written by hand, the fstab row made in a test database: unprivileged
+  user namespaces are off on Ubuntu 24.04), the grub.cfg checks on this
+  machine's kernel and root, both runtime units through `systemd-analyze
+  verify`, `make build fmt vet test`. Not run as root: that is S1 and
+  needs the user's OK. This VM had gone down again before this session
+  (about 11:30 UTC, idle, `last -x`: crash); the check-in was recreated.
