@@ -102,13 +102,18 @@ PASS in both modes on `2c58f8b`, one `sc` build (`cafca1512050`):
 BIOS 44m18s and UEFI 37m19s, no retries, boot 5, clean tree. On the
 way: an ovmf update made the lab's reference image stale, and `make
 lab-image` was found gone since `9d3df9e` (back in `b9761a9`).
-**Next: S2, which needs your OK and a fresh VirtualBox snapshot of this
-VM taken by you.** S2 installs the M4 build, the two boot units, the
-drop-ins and `42_smartconfig`, runs `update-grub`, and reboots once
-normally: the verdict must be ok, the boot no slower
-(`systemd-analyze`), and the menu hidden. Then S3 (the owner scenario on
-this VM: a bad fstab line, a failed boot, the rescue entry) and S4
-(final review, docs, tag `m4`), each with your OK.
+**S2 runs** (your OK and your snapshot, 2026-10-06 19:45 UTC, "took
+the snapshot"). The M4 build (`cafca1512050`, the one S1 tested), the
+two boot units, the drop-ins and `42_smartconfig` are installed on this
+VM and `update-grub` has run (19:49-19:50 UTC; log). **Next: the one
+normal reboot**, then, at the next session: the verdict in
+`/var/lib/smartconfig/boots` must be ok and `grub-editenv
+/boot/grub/grubenv list` must show no `smartconfig_pending=1`; the boot
+no slower (`systemd-analyze` against the 12.4-33.7 s of the seven boots
+before, and the sc units off `critical-chain`); the menu hidden (you
+watch the screen); scd running, `sudo sc status` healthy, exit 0. Then
+S3 (the owner scenario on this VM: a bad fstab line, a failed boot, the
+rescue entry) and S4 (final review, docs, tag `m4`), each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1771,3 +1776,27 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     ovmf update, in P.5's advice and the lab README; checked by running
     it and `make lab-test`.
   - Next: S2, with your OK and your fresh VirtualBox snapshot.
+- **M4 sign-off S2: installed; the reboot is next** (your OK and your
+  snapshot, 19:45 UTC, "took the snapshot").
+  - Before (`~/smartconfig-work/signoff/pre-s2-20261006T194841Z.txt`):
+    boot `2c1e65ee`, up since 19:37 UTC; the boot before it ended at
+    17:38 UTC without a shutdown (`last -x`: crash), whether your
+    power-off for the snapshot or the host is yours to say. BIOS, GPT.
+    Boot times of the last seven boots 12.4 to 33.7 s (this one 28.8 s).
+    grubenv empty, `GRUB_DEFAULT=0`, hidden menu, timeout 0; no failed
+    units. New in `/var/backups/smartconfig`: `sc-m3` (`cf5ba078`, the
+    build scd ran since M3), `manifest-pre-m4s2.txt` and
+    `sha256-pre-m4s2.txt` (`/etc` and `/boot/grub`).
+  - Installed with the README's commands: `bin/sc` as built for S1
+    (`cafca1512050`, `2c58f8b`, clean; no code or script change since),
+    scd restarted on it (baseline 0/0/0); both units enabled,
+    `systemd-analyze verify` clean; both drop-ins; `42_smartconfig`,
+    `update-grub` exit 0, `grub-script-check` ok. grub.cfg: the default
+    is still entry 0, Ubuntu; "SmartConfig rescue" last, on
+    7.0.0-38 with `ro fstab=no systemd.unit=rescue.target
+    SYSTEMD_SULOGIN_FORCE=1`; the menu block only under
+    `smartconfig_pending=1`.
+  - After: `/etc` and `/boot/grub` against the manifest differ by
+    exactly grub.cfg, `42_smartconfig`, the two units, their two links
+    and the two drop-ins with their directories; scd recorded each.
+    `sudo sc status`: no healthy boot recorded yet, exit 0.
