@@ -1023,17 +1023,29 @@ class Qmp:
             evs = [e for e in evs if e["event"] in names]
         return evs
 
-    def wait_event(self, names, since=0, timeout=None, abort=None):
+    def _find(self, names, since):
+        for ev in self.events[since:]:
+            if ev["event"] in names:
+                return ev
+        return None
+
+    def wait_event(self, names, since=0, timeout=None, abort=None, settle=5.0):
         """The first event named in names with seq >= since, waiting up to
         timeout seconds (None: no limit). None on timeout, abort() true, or
-        a closed QMP without such an event."""
+        a closed QMP without such an event.
+
+        An event QEMU sent before it exited is not lost to abort: the reader
+        runs the listeners before an event is in events (e2e's serial mark
+        takes up to 1 s), and QEMU is gone the moment it sends SHUTDOWN. So
+        when abort() says it is gone, the wait goes on until the reader has
+        reached EOF, settle s at most, and looks at the events once more."""
         names = (names,) if isinstance(names, str) else tuple(names)
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._cv:
             while True:
-                for ev in self.events[since:]:
-                    if ev["event"] in names:
-                        return ev
+                ev = self._find(names, since)
+                if ev is not None:
+                    return ev
                 if self.closed:
                     return None
                 left = 1.0 if deadline is None else min(1.0, deadline - time.monotonic())
@@ -1041,7 +1053,10 @@ class Qmp:
                     return None
                 self._cv.wait(left)
                 if abort is not None and abort():
-                    return None
+                    end = time.monotonic() + settle
+                    while not self.closed and self._find(names, since) is None and time.monotonic() < end:
+                        self._cv.wait(end - time.monotonic())
+                    return self._find(names, since)
 
     def close(self):
         s = self._sock

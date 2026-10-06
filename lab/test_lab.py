@@ -2116,6 +2116,25 @@ class TestQmp(unittest.TestCase):
         self.qmp.close()
         self.assertFalse(self.qmp._thread.is_alive())
 
+    def test_an_event_sent_before_qemu_exits_is_not_lost_to_abort(self):
+        # 5.2 of the fc47ea3 runs, both modes: the guest powered off, QEMU
+        # sent SHUTDOWN and exited 0. e2e's listener marked the serial log
+        # (mux.mark drains for 1 s while the serial loop reconnects), and
+        # wait_event's abort (QEMU not alive) said None before the reader had
+        # the event in events: "no SHUTDOWN after poweroff (QEMU exited)".
+        self.qmp.listeners.append(lambda ev: time.sleep(1.5))
+        self.qemu.event("SHUTDOWN", guest=True, reason="guest-shutdown")
+        self.qemu.close()  # QEMU is gone the moment it has sent it
+        t = time.monotonic()
+        ev = self.qmp.wait_event("SHUTDOWN", timeout=20, abort=lambda: True)
+        self.assertIsNotNone(ev, "the SHUTDOWN QEMU sent before exiting was lost")
+        self.assertEqual((ev["seq"], ev["data"]["reason"]), (0, "guest-shutdown"))
+        self.assertLess(time.monotonic() - t, 10)
+        self.assertTrue(self.qmp.closed)
+        # Gone with nothing in flight: None, as soon as the reader is at EOF.
+        self.assertIsNone(self.qmp.wait_event("RESET", timeout=20, abort=lambda: True))
+        self.assertLess(time.monotonic() - t, 10)
+
 
 # A stand-in for QEMU: serial.sock and qmp.sock in its working directory, a
 # QMP that says yes to every command, and "quit" ends it. With
