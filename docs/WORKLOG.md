@@ -105,15 +105,13 @@ lab-image` was found gone since `9d3df9e` (back in `b9761a9`).
 **S2 runs** (your OK and your snapshot, 2026-10-06 19:45 UTC, "took
 the snapshot"). The M4 build (`cafca1512050`, the one S1 tested), the
 two boot units, the drop-ins and `42_smartconfig` are installed on this
-VM and `update-grub` has run (19:49-19:50 UTC; log). The reboot (19:54
-UTC) and its checks are done (log): verdict ok, flag clear, 23.5 s, sc
-off the critical chain, `sc status` healthy. Two boots after it ended
-without a shutdown, the second with the black-desktop symptom of M2's
-S4 (DING started 24 times in 90 s). **Waiting for you:** did the GRUB
-menu stay hidden on all three boots, and did you reset the VM those two
-times? With a hidden menu, S2 passes. Then S3 (the owner scenario on
-this VM: a bad fstab line, a failed boot, the rescue entry) and S4
-(final review, docs, tag `m4`), each with your OK.
+VM and `update-grub` has run (19:49-19:50 UTC; log). **Sign-off S2
+passed** (log): the reboot's verdict ok, flag clear, 23.5 s, sc off
+the critical chain, the menu hidden, `sc status` healthy. You reset the
+two boots after it (a black desktop; your answer, 20:4x UTC). **Next:
+S3** (the owner scenario on this VM: a bad fstab line, a failed boot,
+the rescue entry), with your OK and a fresh snapshot taken before the
+bad line goes in. Then S4 (final review, docs, tag `m4`), with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1833,5 +1831,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     files only, and `cups/subscriptions.conf{,.O}` (cupsd; out of
     scope, as in M2's S4). scd running, 0 restarts; `sc status`: last
     healthy this boot, nothing changed since, exit 0. No failed units.
-  - Waiting for you: the menu (hidden on each boot?) and the two resets
-    (yours?).
+  - The two resets were yours (your answer: "yes"), after a black
+    screen. The menu was hidden on every boot by the config: sc's flag
+    cleared by each ok verdict, and Ubuntu's recordfail cleared by
+    `grub-common.service` at 10.2, 15.3 and 14.7 s, before each reset
+    (as in the lab, A6); you reported no menu.
+  - **S2 passed.**
