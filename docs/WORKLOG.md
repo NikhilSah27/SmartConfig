@@ -1719,3 +1719,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     old code; the script's new parts replayed as a user.
   - Not run: `accept-m4.sh` as root, and `make lab-e2e` on the fixed
     build: both are S1, which needs the user's OK.
+- **CI was red** on most pushes since `c70d886` (2026-10-06 00:15 UTC),
+  unnoticed: every red run failed only
+  `test_an_event_sent_before_qemu_exits_is_not_lost_to_abort` (lab,
+  from `0ccba27`), in CI's root pass. The test asked whether QMP had
+  closed right after `wait_event` returned the SHUTDOWN, which can be
+  before the reader reads EOF: a race in the test, not in the lab.
+  Reproduced here 1 in 25 beside four CPU burners; `0a1b71f` asks after
+  the reader's EOF: 0 in 25 under the same load, `make lab-test` 326 ok,
+  CI green on `0a1b71f`. Lesson: check `gh run list` after each push.
