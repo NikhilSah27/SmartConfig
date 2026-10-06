@@ -88,8 +88,11 @@ nothing real written; checked as a user, not run as root yet. Its run
 is part of sign-off S1 (with all checks and `make lab-e2e`) and needs
 your OK. **Step 13 is in** (`b722bf4`): the docs (README "When the
 machine does not boot", MILESTONES, PROJECT_LOG, CLAUDE.md; see the
-log). All 13 steps are built. **Next: the chunk E review** (steps 12
-and 13), then the sign-off runs S1 to S4, each with your OK.
+log). All 13 steps are built. **Now: the chunk E review** (steps 12
+and 13, `6ce3263..6efc382`), started 2026-10-06 13:00 UTC: reviewer A
+on `accept-m4.sh`, reviewer B on the docs, both read-only, reports in
+`~/smartconfig-work/review-m4e/`. Then its fixes and write-up, then the
+sign-off runs S1 to S4, each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
