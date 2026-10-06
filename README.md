@@ -27,7 +27,7 @@ problems in a config file that stop a boot or lock you out, `sc edit`
 checks an edit before it replaces the file, scd checks every change it
 records, and `sc scope` explains what SmartConfig does with a path.
 
-**Milestone 4 is built; its sign-off runs are next** (plan
+**Milestone 4 is built and reviewed; its sign-off runs are next** (plan
 [docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
 **SmartConfig rescue**, opens a root shell however broken `/etc/fstab`
 is, `sc status` says above its prompt what changed since the last
@@ -197,7 +197,7 @@ Over SSH the machine is gone. At the console, M4 gives you:
   --console` says which boot was the last healthy one, what changed
   since, worst first, and the commands that put the file back.
 - **A verdict for every boot** in `$SC_HOME/boots`: ok, bad, or never
-  reached multi-user.
+  reached multi-user. The read-only rescue boot itself gets none.
 
 This is the rescue boot in the QEMU lab (`make lab-e2e`), after a bad
 fstab line and one failed boot:
@@ -246,8 +246,10 @@ sudo systemctl daemon-reload && sudo systemctl enable sc-boot-seen sc-boot-ok
 sudo install -m 0755 scripts/42_smartconfig /etc/grub.d/ && sudo update-grub
 ```
 
-On a running system, `sudo sc status` gives the same report as a table
-with every change since the last healthy boot. It only reads, and exits
+On a running system, `sudo sc status` gives the report as a table: one
+row per file changed since the last healthy boot, newest first, judged
+with the validators too (the console uses sc's own rules only). It only
+reads, and exits
 0 when healthy, 2 when a boot failed since the last healthy one or a
 change since then added a blocker or an error, and 1 when sc itself
 failed.
@@ -266,7 +268,10 @@ LUKS and multipath roots are not supported (M4 plan, non-goals). With
 `GRUB_DISABLE_RECOVERY=true` there is no rescue entry either. The menu
 flag needs GRUB's 1024-byte `grubenv`; on a separate `/boot` that failed
 to mount, the menu after a failed boot depends on Ubuntu's own
-`recordfail`.
+`recordfail`. The rescue boot mounts only `/`: with `/var` or
+`/usr/local` on a filesystem of its own, run `mount /var` (or `mount
+/usr/local`) and then `sc status`; with a separate `/boot`, run `mount
+/boot` before restoring a file under `/boot/grub`.
 
 **The rescue entry is a root shell without a password, from a menu
 item.** On Ubuntu 24.04 that adds no new way in: emergency mode already
@@ -276,25 +281,46 @@ the same effect, as Ubuntu sets no GRUB password. Full-disk encryption
 still asks for its passphrase in the rescue boot (not tested here).
 
 To close the menu paths, give GRUB a superuser password. Every entry
-then asks for it unless it is marked `--unrestricted`, so mark the
-default entry, or every boot stops at the password prompt. This is not
-tested in SmartConfig's lab yet: try it on a VM snapshot first.
+then asks for it unless it is marked `--unrestricted`. The recipe below
+marks the first entry, Ubuntu, so that must be the entry that boots:
+use it only when this prints `GRUB_DEFAULT=0` and nothing else.
+
+```sh
+grep -hE '^GRUB_(DEFAULT|SAVEDEFAULT|DISABLE_SUBMENU)=' /etc/default/grub /etc/default/grub.d/*.cfg
+```
+
+With a saved default, a default under "Advanced options",
+`GRUB_SAVEDEFAULT`, `GRUB_DISABLE_SUBMENU` or a ZFS root, every boot
+would stop at GRUB's password prompt. The recipe is not tested in
+SmartConfig's lab yet (BIOS or UEFI): try it on a VM snapshot first.
 
 ```sh
 grub-mkpasswd-pbkdf2                     # prints grub.pbkdf2.sha512.10000.…
-sudoedit /etc/grub.d/40_custom           # add two lines at the end:
+sudoedit /etc/grub.d/40_custom           # add three lines at the end:
                                          #   set superusers="admin"
+                                         #   export superusers
                                          #   password_pbkdf2 admin grub.pbkdf2.sha512.10000.…
 grep -n gnulinux-simple /etc/grub.d/10_linux
 sudoedit /etc/grub.d/10_linux            # on that menuentry line: ${CLASS} --unrestricted
 sudo update-grub
-sudo grep -c -- --unrestricted /boot/grub/grub.cfg   # 1: the default entry only
+sudo grep -n -- --unrestricted /boot/grub/grub.cfg   # exactly one line: menuentry 'Ubuntu'
 ```
 
-The rescue entry, the recovery entries and editing any entry then need
-the password. Emergency mode after a failed boot does not: that is
-sulogin, not GRUB. A GRUB package update asks whether to keep your
-`10_linux`.
+If it is not exactly that one line, do not reboot: take the three lines
+out of `40_custom` and run `sudo update-grub` again. A boot that stops
+at "Enter username:" goes on with `admin` and the password; GRUB reads
+it with a US keyboard layout.
+
+The rescue entry, the recovery entries, older kernels and every other
+entry, editing any entry, GRUB's command line, and a `grub-reboot` to
+any entry but Ubuntu then need the password. Emergency mode after a
+failed boot does not: that is sulogin, not GRUB.
+
+`10_linux` is a configuration file of grub-common. When an update
+changes it, apt asks whether to keep yours: keep it (N, the default).
+If the new one is taken, every boot stops at the password prompt until
+you redo the edit and run `sudo update-grub`. unattended-upgrades skips
+such an update, so install it by hand.
 
 To remove the rescue path:
 
@@ -303,9 +329,13 @@ sudo systemctl disable sc-boot-seen sc-boot-ok
 sudo rm /etc/systemd/system/sc-boot-seen.service /etc/systemd/system/sc-boot-ok.service \
   /etc/systemd/system/rescue.service.d/50-smartconfig.conf \
   /etc/systemd/system/emergency.service.d/50-smartconfig.conf /etc/grub.d/42_smartconfig
+sudo rmdir --ignore-fail-on-non-empty /etc/systemd/system/rescue.service.d \
+  /etc/systemd/system/emergency.service.d
 sudo grub-editenv /boot/grub/grubenv unset smartconfig_pending
 sudo systemctl daemon-reload && sudo update-grub
 ```
+
+The boot verdicts, `/var/lib/smartconfig/boots`, stay with the store.
 
 ## Layout
 

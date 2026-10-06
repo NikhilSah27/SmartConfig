@@ -4,7 +4,7 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-06, M4 built (its review and sign-off are next).
+Last updated: 2026-10-06, M4 built and reviewed (its sign-off is next).
 Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 
 ---
@@ -24,8 +24,8 @@ Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 | QEMU rescue lab cache | `~/.cache/smartconfig-lab` (images, runs; [lab/README.md](../lab/README.md)) |
 | Scratch outside the repo | `~/smartconfig-work` (plans as drafted, raw review output, lab evidence in `signoff/`) |
 
-Status (2026-10-06): **M4, the rescue path, is built**; the chunk E
-review and the sign-off runs S1 to S4 are next ([M4_PLAN.md](M4_PLAN.md)).
+Status (2026-10-06): **M4, the rescue path, is built and reviewed**; the
+sign-off runs S1 to S4 are next ([M4_PLAN.md](M4_PLAN.md)).
 Nothing of M4 is installed on the dev VM yet (S2 does that). **M3 is done**
 (tag `m3`), and its build runs as `scd`. Before that: **M2** (tag `m2`) and
 **M1** (tag `m1`, store + CLI, hardened by four review rounds and five
@@ -182,7 +182,7 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-SC=/usr/local/sbin/sc               # if it is gone: /var/backups/smartconfig/sc-m2, else sc-m1 (file rows only)
+SC=/usr/local/sbin/sc               # if it is gone: in /var/backups/smartconfig, sc-m3pre, sc-b6ab3cc, sc-m2, else sc-m1 (file rows only)
 sudo $SC log /etc/fstab             # find the last good id
 sudo $SC diff <id>                  # confirm what changed
 sudo $SC restore <id>               # put it back; the broken state is saved too
@@ -202,11 +202,14 @@ original file of this VM.
    **SmartConfig rescue**.
 2. Above "Press Enter for maintenance", `sc status` says what changed
    since the last healthy boot, worst first, and gives the commands for
-   the newest blocker. Press Enter and type them: `mount -o remount,rw /`,
+   the newest blocker (with none, the newest error). With `/var` on a
+   filesystem of its own there is no report until `mount /var`; then run
+   `sc status`. Press Enter and type them: `mount -o remount,rw /`,
    `sc restore <id>`, `sync`, `systemctl daemon-reload`,
    `systemctl reboot`.
-3. The next boot shows the menu once more (the rescue boot cannot clear
-   its flag): pick the first entry, Ubuntu. Its verdict is ok, and
+3. After a failed boot, the next boot shows the menu once more (the
+   rescue boot cannot clear its flag): pick the first entry, Ubuntu. Its
+   verdict is ok, and
    `sudo sc status` says so.
 
 A boot that stops in emergency mode prints the same report, with root

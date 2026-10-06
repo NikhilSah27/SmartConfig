@@ -88,11 +88,19 @@ nothing real written; checked as a user, not run as root yet. Its run
 is part of sign-off S1 (with all checks and `make lab-e2e`) and needs
 your OK. **Step 13 is in** (`b722bf4`): the docs (README "When the
 machine does not boot", MILESTONES, PROJECT_LOG, CLAUDE.md; see the
-log). All 13 steps are built. **Now: the chunk E review** (steps 12
-and 13, `6ce3263..6efc382`), started 2026-10-06 13:00 UTC: reviewer A
-on `accept-m4.sh`, reviewer B on the docs, both read-only, reports in
-`~/smartconfig-work/review-m4e/`. Then its fixes and write-up, then the
-sign-off runs S1 to S4, each with your OK.
+log). All 13 steps are built. **The chunk E review is closed**
+([reviews/2026-10-06-m4-chunk-e.md](reviews/2026-10-06-m4-chunk-e.md),
+plan change C7): 1 high (the README's GRUB password recipe), 4 medium,
+12 low, 6 cleanups, all fixed. Fixes `654ee7f` (sc status: the undo is
+the newest blocker before a newer error; the menu promise only while
+its flag is set) and `4b91d97` (accept-m4.sh: the runtime units stay
+loaded, so step 2 can read their journal; the real store read-only; a
+bad verdict; more). **M4 is built and reviewed. Next: the sign-off
+runs, each with your OK.** S1: all checks, `make lab-e2e` again (the
+product changed after its PASS on `22383a0`), and `make accept-m4` as
+root, never run yet. Then S2 (a fresh snapshot, install, one normal
+reboot), S3 (the owner scenario on this VM) and S4 (final review, docs,
+tag `m4`).
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -106,7 +114,7 @@ of 24; log). It passed on what it saw. Next: your VM settings and snapshot, then
 for your approval. The soak check, once scd has run about 24 h on this
 build: uptime, restarts, memory, log volume,
 unexplained rows, and `/etc` against `manifest-post-s5apt.txt` in
-`/var/backups/smartconfig`. Kernel 7.0.0-38 boots at your next restart.
+`/var/backups/smartconfig`. (Kernel 7.0.0-38 has run since 2026-10-05.)
 To remove the watcher: README "Watch every change"; keep the
 store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
 drop every M2 row). One thing at a time: no review runs while the next
@@ -1680,3 +1688,34 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     beside the one without it, the resume prompt.
   - CLAUDE.md: `internal/boot` and the scripts in the layout.
   - Docs only: links checked, no test reads these files.
+- **M4 chunk E review closed** (steps 12-13; started by the 30-minute
+  check-in, `6ce3263..8f071ed`). Two read-only reviewer agents, no root,
+  no QEMU: A on `accept-m4.sh`, B on the docs. Reports in
+  `~/smartconfig-work/review-m4e/` (their harness refused the file
+  writes; the session saved the returned text unchanged). Write-up
+  [reviews/2026-10-06-m4-chunk-e.md](reviews/2026-10-06-m4-chunk-e.md).
+  - 1 high: the README's GRUB password recipe would stop every boot at
+    the password prompt with a saved or "Advanced options" default,
+    `GRUB_SAVEDEFAULT`, `GRUB_DISABLE_SUBMENU` or ZFS, and its check did
+    not show which entry boots. Now: use it only with `GRUB_DEFAULT=0`
+    alone, check the one marked line, do not reboot otherwise, how to
+    undo; the conffile prompt; what the password closes.
+  - A product bug (B4, medium): with an older fstab blocker and a newer
+    error, `sc status` gave the undo for the error's file. `654ee7f`:
+    the newest blocker, else the newest error (plan 3.1), and the menu
+    promise only while its flag is set (B8); "60 s" for "1m0s".
+  - The script (A1, medium): the runtime oneshots are unloaded once they
+    finish, so step 2 would have failed on an empty journal read on the
+    real run. `4b91d97`: `RemainAfterExit=yes`, plus the real store read
+    read-only in a namespace (A2), grubenv compared byte for byte, the
+    made units checked, os-prober off through `/etc/default/grub.d`, a
+    sturdier cleanup, exact initrd, wider checksums, a bad verdict with
+    a fake systemctl (2b).
+  - Docs: what the rescue boot does not mount, S2/S3 on this VM, the
+    5-file count (C7), the menu "after a failed boot", the removal's
+    directories, stale lines.
+  - Plan change C7. Checks: gofmt, vet, `go test ./...` as a user and as
+    root, `make race`, `make lab-test` (326); the new tests fail on the
+    old code; the script's new parts replayed as a user.
+  - Not run: `accept-m4.sh` as root, and `make lab-e2e` on the fixed
+    build: both are S1, which needs the user's OK.
