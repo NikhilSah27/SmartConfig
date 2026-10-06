@@ -86,8 +86,10 @@ limit (your ask); no VM is up. **Step 12 is in** (`3e72281`):
 `scripts/accept-m4.sh` (`make accept-m4`), the non-boot parts as root,
 nothing real written; checked as a user, not run as root yet. Its run
 is part of sign-off S1 (with all checks and `make lab-e2e`) and needs
-your OK. **Next: step 13**, the docs (README "When the machine does not
-boot", PROJECT_LOG, MILESTONES), then the chunk E review.
+your OK. **Step 13 is in** (`b722bf4`): the docs (README "When the
+machine does not boot", MILESTONES, PROJECT_LOG, CLAUDE.md; see the
+log). All 13 steps are built. **Next: the chunk E review** (steps 12
+and 13), then the sign-off runs S1 to S4, each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
