@@ -81,10 +81,12 @@ command line, a SHUTDOWN not lost); the mutation tests `fcb1b6d` and
 (24m29s, 0 retries) and, in a bios-only rerun of the same tree, BIOS
 PASS (45m14s, 2 lab retries, both the host's pauses); both with boot 5
 and `dirty=no`. Open items are in the write-up; the host's pauses are
-yours (below). No check-in job runs and no VM is up. **Next: step 12**
-of the plan, chunk E, `scripts: accept-m4.sh`. It is built in the
-repo; running it as root on this VM is part of sign-off S1 and needs
-your OK. Then step 13 (the docs) and the chunk E review.
+yours (below). A check-in every 30 min resumes work after a usage
+limit (your ask); no VM is up. **Next: step 12** of the plan, chunk E,
+`scripts: accept-m4.sh`. It is not built yet: building it in the repo,
+with its checks, is the next step; running it as root on this VM is
+part of sign-off S1 and needs your OK. Then step 13 (the docs) and the
+chunk E review.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1625,6 +1627,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     10 s at most, a host pause one slice), the login line in the
     emergency report, the hangup flag from `main`; replaces C4's "no
     time cap" and chunk C's 2 s write.
-  - Docs only, no code; no check-in job, no VM. Next: step 12,
-    `scripts: accept-m4.sh` (built; its run as root needs the user's
-    OK, sign-off S1).
+  - Docs only, no code; a check-in every 30 min resumes work after a
+    usage limit; no VM. Next: step 12, `scripts: accept-m4.sh`, not
+    built yet (build it in the repo with its checks; its run as root
+    needs the user's OK, sign-off S1).
+- Follow-up to the chunk D write-up: its open item on the stale 2.5
+  text is fixed (`4ce59a3`: `lab/README.md` and the registry text in
+  `lab/e2e.py` say F in every outcome, as `check_emergency_report`
+  does; `make lab-test` 326 ok three runs, `go test ./cmd/sc/` ok).
+  This worklog's "Now" corrected: step 12 is not built yet, and the
+  30-minute check-in does run.
