@@ -83,6 +83,13 @@ byte lost on serial for the kernel command line). Next, in this order
    see the log). Machinery: done, `a371738` (325 lab tests; all 123
    Python and 23 shell mutations killed, see the log). Item 1 is done.
 2. `make lab-e2e` on a quiet machine (nothing else running beside it).
+   The first run, on `fc47ea3`, FAILed (log, 2026-10-06): 5.2 in both
+   modes, a lab bug (the QMP reader ran the serial mark's 1 s drain
+   before the SHUTDOWN was visible, and the abort for a gone QEMU said
+   None first), fixed `0ccba27`; and bios 2.5, no rescue report on
+   ttyS0, sc's: a 10 s host pause as emergency.service started read as
+   a 10 s console stall, fixed `c70d886`. Everything else passed. The
+   run is still to do, on the fixed build.
 3. The write-up in `docs/reviews/`, plan change C6 (the 60 s limit and
    the console writer's turn), the worklog.
 
@@ -1551,3 +1558,41 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     14 failed right after three `lab-test` runs; its output was not
     kept, and 13 later runs passed. In the repo after the merge:
     `make lab-test` three runs in a row ok (22 s), `go test ./cmd/sc/` ok.
+- **M4 chunk D review: `make lab-e2e` on `fc47ea3` FAILed; two fixes.**
+  (Log: `~/smartconfig-work/signoff/lab-e2e-20261005T233510Z-fc47ea3.log`;
+  runs `20261005T233511Z-uefi-fc47ea3`, `20261006T001025Z-bios-fc47ea3`.)
+  UEFI INCONCLUSIVE at 5.2 only; BIOS 5.2 the same and 2.5 FAIL. Every
+  other row passed, boot 2 outcome b, no retries.
+  - 5.2, both modes, the lab (`0ccba27`): the guest powered off, QEMU
+    sent SHUTDOWN (qmp.log +2110.886) and exited 0, the lab said "no
+    SHUTDOWN after poweroff (QEMU exited)" at once. The QMP reader runs
+    the listeners before an event is in `events`; e2e's listener is
+    `mux.mark`, which since `9d3df9e` drains up to 1 s, and the serial
+    loop was reconnecting (marks.log: SHUTDOWN#24 at +2111.96). In that
+    second `wait_event`'s abort (QEMU not alive) returned None. Now an
+    abort waits for the reader's EOF (5 s at most) and looks once more.
+    Test: a fake QMP sends SHUTDOWN and closes under a slow listener with
+    abort true; it failed on the old code. `make lab-test` 326, three
+    runs; `go test ./cmd/sc/` ok.
+  - bios 2.5, sc (`c70d886`): no line of the report on ttyS0 in boot 2.
+    Boot 2's journal (the kept disk booted once through an overlay,
+    TCG, deleted after) shows the host pause: no entry between
+    monotonic 107.868 and 118.201, both guest clocks jumped 10.3 s
+    (mux.log "+545.63 gap 10.0 s"), and emergency.service's job began
+    at 107.825, so `sc status --console` ran across it. `writeConsole`
+    measured the stall in wall-clock time; the slice over the pause,
+    with ttyS0's queue busy with systemd's flood, counted as a 10 s
+    stall and ttyS0 was given up with nothing written (tty1 took the
+    report, so no stdout fallback). Ruled out on a pty: Write gives
+    `ErrDeadlineExceeded`, not EAGAIN, and the old writer waited the
+    whole 5 s. Now each slice counts at most `consoleStep` (500 ms)
+    towards stall and turn: one pause is one slice. Test
+    `TestWriteConsoleHostPause` failed on the old writer (0 of 1260
+    bytes). `make build fmt vet test race`, the root pass, `make
+    lab-test` ok. Not changed: the report text, the goldens.
+  - Seen on the way: a Type=idle unit is active (start-pre) from its
+    first moment, so "Started emergency.service" on serial dates the
+    unit's start, not the ExecStartPre's end (probe with a transient
+    user unit). systemd's own status lines after 126.9 (guest) are in
+    the journal but not on ttyS0 in that boot; not understood, not
+    needed for the fix. Next: step 2 again, `make lab-e2e` on `c70d886`.
