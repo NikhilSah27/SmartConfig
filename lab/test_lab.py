@@ -2130,9 +2130,13 @@ class TestQmp(unittest.TestCase):
         self.assertIsNotNone(ev, "the SHUTDOWN QEMU sent before exiting was lost")
         self.assertEqual((ev["seq"], ev["data"]["reason"]), (0, "guest-shutdown"))
         self.assertLess(time.monotonic() - t, 10)
-        self.assertTrue(self.qmp.closed)
         # Gone with nothing in flight: None, as soon as the reader is at EOF.
+        # (wait_event returns the SHUTDOWN once it is in events, which can be
+        # before the reader reads EOF: closed is asked only after this wait.
+        # Asked before it, CI failed one run in two, and one in 25 here
+        # under load.)
         self.assertIsNone(self.qmp.wait_event("RESET", timeout=20, abort=lambda: True))
+        self.assertTrue(self.qmp.closed)
         self.assertLess(time.monotonic() - t, 10)
 
 
