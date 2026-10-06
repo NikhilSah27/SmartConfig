@@ -68,30 +68,23 @@ no verdict either: UEFI stalled before GRUB, and this VM went down
 during BIOS (log, 2026-10-05). The lab now retries such a stall
 (`152ecbe`). **The step 11 check passed** on `56f5359`: `make lab-e2e`
 PASS, UEFI and BIOS, clean tree, with boot 5, no retries (log,
-2026-10-05). **Now: the chunk D review** (step 11, the lab),
-**paused at your word** (2026-10-05, 20:40 UTC; no check-in runs, no
-VM). Two reviewers reported (raw: `~/smartconfig-work/review-m4d/
-findings-a.md`, `findings-b.md`): 1 high (narrow), 10 medium, 13 low,
-5 cleanups, none of which changes the PASS. Fixes: `3115b71` (sc),
-`9d3df9e` (lab). Their check, `make lab-e2e` on `85e9f59`, FAILed both
-modes on two more faults, now fixed: `1d25037` (sc cut the rescue
-report short on a slow serial console) and `64911f4` (the lab took a
-byte lost on serial for the kernel command line). Next, in this order
-(details: `~/smartconfig-work/review-m4d/HANDOFF.md`):
-1. Integrate the mutation-survivor tests. Scenario: done, `fcb1b6d`
-   (283 lab tests; the one test that failed against `64911f4` fixed,
-   see the log). Machinery: done, `a371738` (325 lab tests; all 123
-   Python and 23 shell mutations killed, see the log). Item 1 is done.
-2. `make lab-e2e` on a quiet machine (nothing else running beside it).
-   The first run, on `fc47ea3`, FAILed (log, 2026-10-06): 5.2 in both
-   modes, a lab bug (the QMP reader ran the serial mark's 1 s drain
-   before the SHUTDOWN was visible, and the abort for a gone QEMU said
-   None first), fixed `0ccba27`; and bios 2.5, no rescue report on
-   ttyS0, sc's: a 10 s host pause as emergency.service started read as
-   a 10 s console stall, fixed `c70d886`. Everything else passed. The
-   run is still to do, on the fixed build.
-3. The write-up in `docs/reviews/`, plan change C6 (the 60 s limit and
-   the console writer's turn), the worklog.
+2026-10-05). **The chunk D review is closed** (2026-10-06;
+[reviews/2026-10-05-m4-chunk-d.md](reviews/2026-10-05-m4-chunk-d.md),
+plan change C6). Two reviewers: 1 high (narrow), 10 medium, 13 low,
+5 cleanups, none of which changed the PASS on `56f5359`. Fixes
+`3115b71` (sc: the 60 s limit, the hangup flag, the login hint),
+`9d3df9e` (lab: verdict classes, teardown, the cache); from the runs
+of the fixes `1d25037` and `c70d886` (sc: the console writer's turn,
+a host pause as one slice), `64911f4` and `0ccba27` (lab: the second
+command line, a SHUTDOWN not lost); the mutation tests `fcb1b6d` and
+`a371738` (326 lab tests). `make lab-e2e` on `22383a0`: UEFI PASS
+(24m29s, 0 retries) and, in a bios-only rerun of the same tree, BIOS
+PASS (45m14s, 2 lab retries, both the host's pauses); both with boot 5
+and `dirty=no`. Open items are in the write-up; the host's pauses are
+yours (below). No check-in job runs and no VM is up. **Next: step 12**
+of the plan, chunk E, `scripts: accept-m4.sh`. It is built in the
+repo; running it as root on this VM is part of sign-off S1 and needs
+your OK. Then step 13 (the docs) and the chunk E review.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -117,10 +110,13 @@ step is built (your call, 2026-09-30).
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
   controller (black screens after login, log 2026-10-03).
-- [ ] On the host: why this VM stands still for minutes at a time (it
-  did for 233 s and 126 s in the last lab run, and went down without a
-  shutdown three times on 2026-10-05). Sleep or power saving on the
-  host is the first thing to look at.
+- [ ] On the host: why this VM stands still for minutes at a time. In
+  the lab runs of 2026-10-06 it did for 167 and 318 s (UEFI), 384 s
+  (BIOS, which cost that run its verdict), and 250, 364, 400, 400 and
+  265 s back to back (the BIOS rerun: about 24 minutes in which the VM
+  barely ran, `signoff/lab-e2e-22383a0/bios-stall-5-1.txt`). On
+  2026-10-05 it also went down without a shutdown three times. Sleep
+  or power saving on the host is the first thing to look at.
 - [ ] A VirtualBox snapshot of this state (after the VM settings, if you
   change them), so a restore by mistake no longer undoes M2.
 
@@ -1596,3 +1592,39 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     user unit). systemd's own status lines after 126.9 (guest) are in
     the journal but not on ttyS0 in that boot; not understood, not
     needed for the fix. Next: step 2 again, `make lab-e2e` on `c70d886`.
+
+### 2026-10-06
+
+- **M4 chunk D review closed: `make lab-e2e` PASS on `22383a0`, both
+  modes; write-up and plan change C6.**
+  - Run 1 (log `~/smartconfig-work/signoff/lab-e2e-20261006T011750Z-22383a0.log`):
+    UEFI PASS in 24m29s, 0 retries, `boot2=b goal3=multi-user`, boot 5,
+    `dirty=no`, through host pauses of 167 and 318 s. BIOS INCONCLUSIVE
+    at 5.2 only: the lab's `cat boot_id` over ssh timed out (180 s)
+    across a 384 s host pause; every [M4] row passed.
+  - Run 2, `LAB_MODES=bios` on the same tree (log `...T020514Z-22383a0-bios.log`):
+    BIOS PASS in 45m14s, 2 lab retries, `boot2=b goal3=multi-user`,
+    boot 5, `dirty=no`. Boot 3: a menu-missed retry. Boot 5: the first
+    real stall retry, the kernel at `smpboot` for 900 s;
+    `evidence/stall-5-1.txt` shows mux gaps of 250, 364, 400, 400 and
+    265 s and a 5 s CPU sample spanning 265 s: the host stopped this
+    VM for most of 24 minutes. Neither retry is sc's. Both runs on the
+    same commit and the same `sc` (`a0502d6461db`); evidence in
+    `~/smartconfig-work/signoff/lab-e2e-22383a0/`.
+  - Write-up `docs/reviews/2026-10-05-m4-chunk-d.md`: the 29 findings
+    and item 6 with their fix commits, the three verification runs,
+    the mutation work (261 of 261 scenario, 123 of 123 and 23 of 23
+    machinery, the `check_decision` notes bug), and the open items:
+    the host's pauses, an ssh retry across a pause, systemd's lines
+    missing on ttyS0, the mux's 1 s drain, two load-bound tests, one
+    unkept `go test` failure, `facts.sh` pipe statuses (B14), the
+    hangup window before `signal.Notify` (B5), and the README's and
+    the registry's stale "2.5 is a W in c".
+  - Plan change C6 (`docs/M4_PLAN.md`): the 60 s limit of
+    `sc status --console`, the console writer's turn (5 s stalled,
+    10 s at most, a host pause one slice), the login line in the
+    emergency report, the hangup flag from `main`; replaces C4's "no
+    time cap" and chunk C's 2 s write.
+  - Docs only, no code; no check-in job, no VM. Next: step 12,
+    `scripts: accept-m4.sh` (built; its run as root needs the user's
+    OK, sign-off S1).
