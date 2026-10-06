@@ -105,15 +105,15 @@ lab-image` was found gone since `9d3df9e` (back in `b9761a9`).
 **S2 runs** (your OK and your snapshot, 2026-10-06 19:45 UTC, "took
 the snapshot"). The M4 build (`cafca1512050`, the one S1 tested), the
 two boot units, the drop-ins and `42_smartconfig` are installed on this
-VM and `update-grub` has run (19:49-19:50 UTC; log). **Next: the one
-normal reboot**, then, at the next session: the verdict in
-`/var/lib/smartconfig/boots` must be ok and `grub-editenv
-/boot/grub/grubenv list` must show no `smartconfig_pending=1`; the boot
-no slower (`systemd-analyze` against the 12.4-33.7 s of the seven boots
-before, and the sc units off `critical-chain`); the menu hidden (you
-watch the screen); scd running, `sudo sc status` healthy, exit 0. Then
-S3 (the owner scenario on this VM: a bad fstab line, a failed boot, the
-rescue entry) and S4 (final review, docs, tag `m4`), each with your OK.
+VM and `update-grub` has run (19:49-19:50 UTC; log). The reboot (19:54
+UTC) and its checks are done (log): verdict ok, flag clear, 23.5 s, sc
+off the critical chain, `sc status` healthy. Two boots after it ended
+without a shutdown, the second with the black-desktop symptom of M2's
+S4 (DING started 24 times in 90 s). **Waiting for you:** did the GRUB
+menu stay hidden on all three boots, and did you reset the VM those two
+times? With a hidden menu, S2 passes. Then S3 (the owner scenario on
+this VM: a bad fstab line, a failed boot, the rescue entry) and S4
+(final review, docs, tag `m4`), each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1800,3 +1800,38 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     exactly grub.cfg, `42_smartconfig`, the two units, their two links
     and the two drop-ins with their directories; scd recorded each.
     `sudo sc status`: no healthy boot recorded yet, exit 0.
+- **M4 sign-off S2: the reboot and its checks** (evidence
+  `~/smartconfig-work/signoff/post-s2-20261006T203734Z.txt`).
+  - The reboot: `systemd-run --on-active=120 systemctl reboot`, clean
+    shutdown at 19:54:39 UTC (boot `2c1e65ee`).
+  - **The S2 boot (`276489a3`): ok.** Verdict ok (local-fs active, no
+    emergency or rescue, 0 failed units), grubenv empty after it.
+    23.5 s to "Startup finished" (graphical.target at 22.6 s
+    monotonic), inside the 12.4-33.7 s of the seven boots before.
+    `sc-boot-seen` done at 5.2 s; `sc-boot-ok` starts after
+    multi-user.target, 0.6 s.
+  - **It ended without a shutdown:** its journal ends 7 s after gdm's
+    greeter came up (19:55:02), nobody logged in (`last -x`). The next
+    boot (`75d27954`): verdict ok, 38.1 s; you logged in at 19:57:44 and
+    DING (desktop icons) started 24 times in 90 s (2 on a normal boot),
+    the black-desktop symptom of M2's S4; the journal ends 19:59:23, no
+    shutdown (`last -x`: crash). The boot after it (`94783975`, now):
+    verdict ok, 37.6 s, DING 2, you logged in at 20:30.
+  - Not sc, as far as the evidence goes: both ends came after their
+    boot's ok verdict, and the DING loop happened before M4 (M2 S4,
+    2026-10-02). Neither left the menu flag: `grub-editenv` fsyncs
+    grubenv (strace on a copy: `O_TRUNC`, write 1024, `fsync`), so each
+    ok verdict was on disk before the reset.
+  - Boot time on this boot: sysinit.target's critical chain is
+    apparmor and snapd.apparmor, not sc; `sc-boot-seen` 847 ms,
+    `sc-boot-ok` 521 ms, scd 107 ms in `blame`. graphical.target came
+    at 22.6, 37.4 and 36.7 s monotonic on the three boots (12.1 to
+    33.6 s on the six before); the extra in the last two is
+    plymouth-quit-wait (13.7 s) and NetworkManager, after an unclean
+    end each.
+  - `/etc` and `/boot/grub` against `manifest-pre-m4s2.txt`: the S2
+    files only, and `cups/subscriptions.conf{,.O}` (cupsd; out of
+    scope, as in M2's S4). scd running, 0 restarts; `sc status`: last
+    healthy this boot, nothing changed since, exit 0. No failed units.
+  - Waiting for you: the menu (hidden on each boot?) and the two resets
+    (yours?).
