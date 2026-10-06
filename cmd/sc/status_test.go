@@ -720,6 +720,45 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 	}
 }
 
+// A host pause freezes the whole machine; under TCG sc's own clock jumps
+// forward by the length of the pause (the M4 lab records gaps of 10 to
+// 380 s). A pause while a console is briefly busy must not be read as a
+// console that moved nothing for consoleStall: bios 2.5 of fc47ea3 lost
+// the whole rescue report on ttyS0 that way (a 10 s host pause, guest
+// journal boot 2 monotonic 107.9->118.2, coincided with sc's writeConsole
+// as emergency.service started). One pause counts as one slice, so the
+// report still reaches a console that then takes it.
+func TestWriteConsoleHostPause(t *testing.T) {
+	oldStall, oldTurn := consoleStall, consoleTurn
+	t.Cleanup(func() { consoleStall, consoleTurn = oldStall, oldTurn })
+	consoleStall, consoleTurn = 2*time.Second, time.Minute
+	report := bytes.Repeat([]byte("600940 19:37  blocker fstab-source-missing, line 4  /etc/fstab\n"), 20)
+	none := func() int { return -1 }
+
+	// The queue is full (systemd's boot flood), so the first slice takes
+	// nothing; then the host pauses for longer than consoleStall, sc's
+	// clock jumping with it; then the console drains and takes the report.
+	calls := 0
+	paused := &fakeConsole{
+		take: func() int {
+			calls++
+			switch calls {
+			case 1:
+				return 0
+			case 2:
+				time.Sleep(3 * time.Second) // the host pause: one long slice
+				return 0
+			default:
+				return 1 << 20
+			}
+		},
+		queue: none,
+	}
+	if !writeConsole(paused, report) || !bytes.Equal(paused.got, report) {
+		t.Errorf("a host pause lost the report: got %d of %d bytes", len(paused.got), len(report))
+	}
+}
+
 // ttyFile on real devices: a terminal says how much it has queued, and
 // asking leaves the file non-blocking (os.File.Fd would not).
 func TestTTYFileQueued(t *testing.T) {

@@ -116,10 +116,19 @@ func writeConsoles(out io.Writer, report []byte) {
 // keeps its turn while it takes bytes or its queue drains, for
 // consoleTurn at most: two consoles at their worst, after a report that
 // took all of consoleLimit, still end inside systemd's 90 s.
+//
+// stall and turn add up elapsed time, but each slice is capped at
+// consoleStep: a host pause freezes the whole machine, and under TCG sc's
+// clock jumps forward by the length of the pause (the M4 lab records gaps
+// of 10 to 380 s). Uncapped, a pause while a console was only briefly busy
+// counts as a long stall and the report never reaches it (bios 2.5 of
+// fc47ea3: a 10 s pause as emergency.service started lost the whole report
+// on ttyS0). Capped, one pause counts as one slice.
 var (
 	consoleStall = 5 * time.Second
 	consoleTurn  = 10 * time.Second
 	consoleSlice = 250 * time.Millisecond
+	consoleStep  = 500 * time.Millisecond
 )
 
 // console is a console device as writeConsole needs it.
@@ -147,21 +156,31 @@ func (t ttyFile) queued() int {
 
 // writeConsole writes report to c and reports whether all of it went.
 func writeConsole(c console, report []byte) bool {
-	start := time.Now()
-	moved, last := start, c.queued()
+	last := c.queued()
+	prev := time.Now()
+	var stall, turn time.Duration // elapsed, each slice capped at consoleStep
 	for len(report) > 0 {
 		c.SetWriteDeadline(time.Now().Add(consoleSlice))
 		n, err := c.Write(report)
 		report = report[n:]
 		q := c.queued()
+		now := time.Now()
+		step := now.Sub(prev)
+		if step > consoleStep {
+			step = consoleStep // a host pause counts as one slice, not its length
+		}
+		prev = now
+		turn += step
 		if n > 0 || (q >= 0 && q < last) {
-			moved = time.Now()
+			stall = 0
+		} else {
+			stall += step
 		}
 		last = q
 		if err == nil {
 			continue
 		}
-		if !errors.Is(err, os.ErrDeadlineExceeded) || time.Since(moved) >= consoleStall || time.Since(start) >= consoleTurn {
+		if !errors.Is(err, os.ErrDeadlineExceeded) || stall >= consoleStall || turn >= consoleTurn {
 			return false
 		}
 	}
