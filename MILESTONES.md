@@ -7,14 +7,17 @@
 - [x] M3 file graph + checkers: tiers, real validators, regex rules with canned
       explanations, sc edit and sc check — done 2026-10-03 (tag `m3`)
 - [ ] M4 rescue path: GRUB entry, rescue.target service printing sc status,
-      boot-ok verification, restore from read-only root
+      boot-ok verification, restore from read-only root — built 2026-10-06
+      (13 steps); the chunk E review and the sign-off runs are next
 - [ ] M5 package: .deb with nfpm, install on a clean VM
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M4, the rescue path; its plan is drafted next, for your
-approval. M3 is done (tag `m3`, 2026-10-03); its follow-ups are listed
-below. The M2 soak was closed after 5.6 h (your call).
+Current: M4, the rescue path ([docs/M4_PLAN.md](docs/M4_PLAN.md)). All
+13 steps are built; next are the chunk E review and the sign-off runs S1
+to S4, each with your OK. M3 is done (tag `m3`, 2026-10-03); its
+follow-ups are listed below. The M2 soak was closed after 5.6 h (your
+call).
 
 ## M1 notes
 
@@ -213,3 +216,58 @@ where nss-systemd supplies root.
 7. scd: look up only the rows a check needs, not a path's whole history.
 8. Cosmetic: an unclosed quote in `/etc/default/grub` is reported past
    the last line; two swap lines share one findmnt heading.
+
+## M4 notes
+
+The rescue path: the GRUB entry **SmartConfig rescue** (`42_smartconfig`),
+which boots to a root shell with root read-only and `/etc/fstab` ignored;
+`sc status`, and its console form in a drop-in for `rescue.service` and
+`emergency.service`, printed above the shell's prompt; a verdict for every
+boot from two units (`sc-boot-seen`, `sc-boot-ok`) in `$SC_HOME/boots`;
+the menu flag `smartconfig_pending` in grubenv, which shows the menu
+after a failed boot; sc on a read-only root, hot journal included; and
+`sc restore` refusing `chattr +i`/`+a` targets. The store's schema is
+unchanged, so the M1, M2 and M3 binaries still read it. Plan:
+[docs/M4_PLAN.md](docs/M4_PLAN.md), with its changes after approval (C1
+to C6) in section 12. Reviews:
+[chunk A](docs/reviews/2026-10-04-m4-chunk-a.md),
+[B](docs/reviews/2026-10-04-m4-chunk-b.md),
+[C](docs/reviews/2026-10-04-m4-chunk-c.md),
+[D](docs/reviews/2026-10-05-m4-chunk-d.md).
+
+The boot itself is tested in a QEMU VM, never on the dev VM: `make
+lab-e2e` runs the owner scenario (a bad fstab line, a failed boot, the
+menu, the rescue entry, the report, the restore, a healthy boot) in UEFI
+and BIOS mode, about 25 minutes each ([lab/README.md](lab/README.md)).
+`make accept-m4` runs the parts that need no reboot on the dev VM.
+
+### Deliberate limits
+
+- No rescue entry for a btrfs or ZFS root; LVM, LUKS and multipath roots
+  are not supported. With `GRUB_DISABLE_RECOVERY=true` there is no rescue
+  entry, and the menu flag stays.
+- One entry, for the newest kernel; the stock "Advanced options" entries
+  remain for an older one.
+- The verdict needs `local-fs.target` active and neither emergency nor
+  rescue mode; failed units are counted, not judged (plan change C3).
+- The console report uses sc's own rules only, lists at most 5 files,
+  worst first, and stops itself after 60 s (C4, C6).
+- The rescue boot cannot clear the menu flag, so the first boot after a
+  fix shows the menu once more.
+- No GRUB password is managed: the README says how to set one.
+
+### Open from the reviews
+
+- Edits made while scd was down can be recorded after the healthy boot's
+  row, if scd's startup rescan still runs when the verdict is given; the
+  undo then names an older, still good, version (chunk B).
+- The console report is held until `sc` returns, so a hung `sc` shows
+  nothing; the shell still starts after 60 s (chunk C, C6).
+- A SIGHUP in the first milliseconds of `sc status --console`, before
+  `signal.Notify` runs, ends sc by the kernel's default (chunk D, B5).
+- No whole-boot ordering-cycle test with the real GRUB units; each unit
+  is verified alone (chunk C).
+- The lab: the host's pauses (the user's to look at), an ssh retry
+  across a pause, systemd's lines missing on ttyS0, two load-bound tests
+  and `facts.sh`'s pipe statuses (chunk D).
+- The GRUB password recipe in the README is not tested in the lab yet.

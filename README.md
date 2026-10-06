@@ -26,8 +26,14 @@ only.
 problems in a config file that stop a boot or lock you out, `sc edit`
 checks an edit before it replaces the file, scd checks every change it
 records, and `sc scope` explains what SmartConfig does with a path.
-Milestones 4 to 7 (rescue boot path,
-package, incident factory, local model) are planned.
+
+**Milestone 4 is built; its sign-off runs are next** (plan
+[docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
+**SmartConfig rescue**, opens a root shell however broken `/etc/fstab`
+is, `sc status` says above its prompt what changed since the last
+healthy boot and how to put it back, and the menu comes back by itself
+after a failed boot. Milestones 5 to 7 (package, incident factory,
+local model) are planned.
 
 ## Build
 
@@ -45,6 +51,9 @@ make m1-compat  # the M1 binary still works on an M2 store
 make smoke      # M1 acceptance run against the real /etc/hosts (asks for sudo; restores it)
 make accept-m2  # M2 acceptance run in the VM (asks for sudo; its own test paths only)
 make accept-m3  # M3 acceptance run in the VM (asks for sudo, scd stopped; made-up files, one test unit)
+make accept-m4  # M4 acceptance run in the VM, the parts that need no reboot (asks for sudo; writes nothing real)
+make lab-test   # the QEMU rescue lab's own tests (no VM)
+make lab-e2e    # the M4 owner scenario in a QEMU VM, UEFI and BIOS (no sudo; see lab/README.md)
 ```
 
 ## Use
@@ -172,6 +181,132 @@ T1 /etc/fstab: check: blocker fstab-source-missing, line 2: ... (3fa2c1)
 The journal gets sc's own sentence, never a line of the file or a
 validator's output (both can quote a secret).
 
+## When the machine does not boot (M4)
+
+A line in `/etc/fstab` for a disk that is not there makes Ubuntu wait
+90 s at boot, then stop in emergency mode or come up without the mount.
+Over SSH the machine is gone. At the console, M4 gives you:
+
+- **A menu entry, SmartConfig rescue.** It boots the newest kernel with
+  root read-only and `/etc/fstab` ignored (`ro fstab=no
+  systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`), straight to a
+  root shell, in about 40 s however broken fstab is.
+- **The menu after a failed boot.** It shows by itself for 30 s, even on
+  a desktop install whose menu is hidden.
+- **The report above the prompt.** Before the shell starts, `sc status
+  --console` says which boot was the last healthy one, what changed
+  since, worst first, and the commands that put the file back.
+- **A verdict for every boot** in `$SC_HOME/boots`: ok, bad, or never
+  reached multi-user.
+
+This is the rescue boot in the QEMU lab (`make lab-e2e`), after a bad
+fstab line and one failed boot:
+
+```
+This boot:     08156d46 (rescue), root read-only
+Last healthy:  2026-10-06 01:25, boot 0ed9182e
+Failed since:  1 boot, last 10-06 01:29: a mount failed, emergency mode
+scd:           not running
+
+Changed since the last healthy boot, worst first:
+95838f 01:26  blocker fstab-source-missing, line 4  /etc/fstab
+
+To put /etc/fstab back:
+  mount -o remount,rw /
+  sc restore e0e82f
+  sync
+  systemctl daemon-reload
+  systemctl reboot
+The menu shows once more: the first entry, Ubuntu, is the one.
+You are in rescue mode. After logging in, type "journalctl -xb" to view
+...
+Press Enter for maintenance
+(or press Control-D to continue):
+```
+
+Press Enter and type the commands. The next boot is normal and its
+verdict is ok. The menu shows once more, because the rescue boot cannot
+clear its flag; the first entry, Ubuntu, is the one to pick.
+
+If the machine stops in emergency mode instead, the same report is
+printed there, with root already read-write. Ubuntu sometimes starts a
+`login:` prompt on that console as well; if you get one instead of `#`,
+log in and put `sudo` before each command. The rescue entry's shell is
+the only thing reading its console.
+
+Installed by hand until the package milestone, next to scd (`sc` must
+be `/usr/local/sbin/sc`). The first verdict is given at the next boot:
+
+```sh
+sudo install -m 0755 bin/sc /usr/local/sbin/sc && sudo systemctl try-restart scd
+sudo install -m 0644 scripts/sc-boot-seen.service scripts/sc-boot-ok.service /etc/systemd/system/
+sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/rescue.service.d/50-smartconfig.conf
+sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/emergency.service.d/50-smartconfig.conf
+sudo systemctl daemon-reload && sudo systemctl enable sc-boot-seen sc-boot-ok
+sudo install -m 0755 scripts/42_smartconfig /etc/grub.d/ && sudo update-grub
+```
+
+On a running system, `sudo sc status` gives the same report as a table
+with every change since the last healthy boot. It only reads, and exits
+0 when healthy, 2 when a boot failed since the last healthy one or a
+change since then added a blocker or an error, and 1 when sc itself
+failed.
+
+On a read-only root, `sc log`, `diff`, `cat`, `check` and `status` work.
+That includes a store a crash left half-written: sc reads a repaired
+copy in `/run` and says so, and the store is not touched. As root,
+`sc check` puts the validators' copies in `/run` when the store cannot
+be written.
+`sc restore` says to remount first. It also refuses a file or directory
+marked immutable or append-only (`chattr +i`, `+a`) before it writes
+anything, and names the `chattr` to run.
+
+Where it does less: a btrfs or ZFS root gets no rescue entry, and LVM,
+LUKS and multipath roots are not supported (M4 plan, non-goals). With
+`GRUB_DISABLE_RECOVERY=true` there is no rescue entry either. The menu
+flag needs GRUB's 1024-byte `grubenv`; on a separate `/boot` that failed
+to mount, the menu after a failed boot depends on Ubuntu's own
+`recordfail`.
+
+**The rescue entry is a root shell without a password, from a menu
+item.** On Ubuntu 24.04 that adds no new way in: emergency mode already
+opens one at the console (Ubuntu's sulogin patch), so do the stock
+recovery entries, and anyone at the console can edit a GRUB entry to
+the same effect, as Ubuntu sets no GRUB password. Full-disk encryption
+still asks for its passphrase in the rescue boot (not tested here).
+
+To close the menu paths, give GRUB a superuser password. Every entry
+then asks for it unless it is marked `--unrestricted`, so mark the
+default entry, or every boot stops at the password prompt. This is not
+tested in SmartConfig's lab yet: try it on a VM snapshot first.
+
+```sh
+grub-mkpasswd-pbkdf2                     # prints grub.pbkdf2.sha512.10000.…
+sudoedit /etc/grub.d/40_custom           # add two lines at the end:
+                                         #   set superusers="admin"
+                                         #   password_pbkdf2 admin grub.pbkdf2.sha512.10000.…
+grep -n gnulinux-simple /etc/grub.d/10_linux
+sudoedit /etc/grub.d/10_linux            # on that menuentry line: ${CLASS} --unrestricted
+sudo update-grub
+sudo grep -c -- --unrestricted /boot/grub/grub.cfg   # 1: the default entry only
+```
+
+The rescue entry, the recovery entries and editing any entry then need
+the password. Emergency mode after a failed boot does not: that is
+sulogin, not GRUB. A GRUB package update asks whether to keep your
+`10_linux`.
+
+To remove the rescue path:
+
+```sh
+sudo systemctl disable sc-boot-seen sc-boot-ok
+sudo rm /etc/systemd/system/sc-boot-seen.service /etc/systemd/system/sc-boot-ok.service \
+  /etc/systemd/system/rescue.service.d/50-smartconfig.conf \
+  /etc/systemd/system/emergency.service.d/50-smartconfig.conf /etc/grub.d/42_smartconfig
+sudo grub-editenv /boot/grub/grubenv unset smartconfig_pending
+sudo systemctl daemon-reload && sudo update-grub
+```
+
 ## Layout
 
 ```
@@ -181,7 +316,10 @@ internal/fsutil/   reads that never follow symlinks, atomic write-back and symli
 internal/scope/    which paths are watched, their tiers, fingerprint-only rules
 internal/watch/    the watcher: inotify, debounced worker, rescans, limits, checks
 internal/check/    checkers: the file graph, rules and explanations, the validator runner
-scripts/           scd.service and the acceptance runs: smoke.sh (M1), accept-m2.sh, accept-m3.sh
+internal/boot/     boot verdicts: the boots file, ok or bad, the last healthy boot
+scripts/           scd.service, the M4 units, drop-in and 42_smartconfig, and the
+                   acceptance runs: smoke.sh (M1), accept-m2.sh, accept-m3.sh, accept-m4.sh
+lab/               the QEMU rescue lab (make lab-e2e): dev only, not shipped
 docs/              worklog, plans, reviews, visual explainers
 ```
 

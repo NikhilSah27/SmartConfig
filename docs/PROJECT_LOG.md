@@ -4,8 +4,8 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-02, M2 done and tagged `m2` (the 24-hour soak is
-deferred to the next session). M1 was tagged `m1` on 2026-09-28.
+Last updated: 2026-10-06, M4 built (its review and sign-off are next).
+Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 
 ---
 
@@ -21,12 +21,16 @@ deferred to the next session). M1 was tagged `m1` on 2026-09-28.
 | Visual explainers | [docs/README.md](README.md) (system map, narrated films) |
 | Dev VM checkout | `/home/vboxuser/code/smartconfig` |
 | Dev VM data store | `/var/lib/smartconfig` (root only) |
+| QEMU rescue lab cache | `~/.cache/smartconfig-lab` (images, runs; [lab/README.md](../lab/README.md)) |
+| Scratch outside the repo | `~/smartconfig-work` (plans as drafted, raw review output, lab evidence in `signoff/`) |
 
-Status (2026-10-02): **M2 done and tagged `m2`**. `scd` is installed and
-enabled on the dev VM, and the soak check is due next session. Plan:
-[M2_PLAN.md](M2_PLAN.md), live progress: [WORKLOG.md](WORKLOG.md). Before
-that: **M1 done and tagged `m1`** (store + CLI, hardened by four review rounds
-and five rounds of fixes, see [reviews/](reviews/)).
+Status (2026-10-06): **M4, the rescue path, is built**; the chunk E
+review and the sign-off runs S1 to S4 are next ([M4_PLAN.md](M4_PLAN.md)).
+Nothing of M4 is installed on the dev VM yet (S2 does that). **M3 is done**
+(tag `m3`), and its build runs as `scd`. Before that: **M2** (tag `m2`) and
+**M1** (tag `m1`, store + CLI, hardened by four review rounds and five
+rounds of fixes, see [reviews/](reviews/)). Live progress:
+[WORKLOG.md](WORKLOG.md).
 
 M2 research: [M2_WATCHLIST.md](M2_WATCHLIST.md) lists what the watcher must watch,
 ignore and beware of, verified on this VM, plus two M1 fixes needed first and
@@ -127,13 +131,14 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 
 | Item | Value |
 |------|-------|
-| OS | Ubuntu 24.04.5 LTS, kernel 7.0.0-34-generic running, 7.0.0-38 installed (boots at the next restart), systemd 255, GRUB 2.12 |
+| OS | Ubuntu 24.04.5 LTS, kernel 7.0.0-38-generic, systemd 255, GRUB 2.12 (`grub-common` 2.12-1ubuntu7.3); BIOS boot, GRUB menu hidden (`GRUB_TIMEOUT=0`) |
 | Go | 1.22.2 from apt; builds use 1.26.8, which go.mod requires (cached in `~/go/pkg/mod`) |
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
 | SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,546 rows on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
-| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc` (since 2026-10-03 the build of `b6ab3cc`, M2 plus follow-ups 1-8, sha256 `396f84cb…`); the `m2` build is `/var/backups/smartconfig/sc-m2`; `sudo journalctl -u scd` |
+| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc`: since 2026-10-03 21:25 UTC the M3 build (code of `bb31f3e`, sha256 `cf5ba078…`). Earlier builds in `/var/backups/smartconfig`: `sc-m3pre` (M3 before its final fixes), `sc-b6ab3cc` (M2 with its follow-ups), `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
+| SmartConfig rescue path (M4) | not installed: no boot units, drop-ins or `42_smartconfig` yet (sign-off S2) |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
 | Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
@@ -190,7 +195,27 @@ link, deleted and fingerprint rows with one line.
 For `/etc/fstab` specifically, `2c6901` in `/var/lib/smartconfig` is the
 original file of this VM.
 
-### The machine no longer boots (before M4's rescue entry is installed)
+### The machine no longer boots (M4's rescue path installed)
+
+1. After a failed boot the menu shows by itself for 30 s; otherwise hold
+   **Shift** (BIOS) or press **Esc** (UEFI) to show it. Pick
+   **SmartConfig rescue**.
+2. Above "Press Enter for maintenance", `sc status` says what changed
+   since the last healthy boot, worst first, and gives the commands for
+   the newest blocker. Press Enter and type them: `mount -o remount,rw /`,
+   `sc restore <id>`, `sync`, `systemctl daemon-reload`,
+   `systemctl reboot`.
+3. The next boot shows the menu once more (the rescue boot cannot clear
+   its flag): pick the first entry, Ubuntu. Its verdict is ok, and
+   `sudo sc status` says so.
+
+A boot that stops in emergency mode prints the same report, with root
+already read-write; at a `login:` prompt there, log in and put `sudo`
+before each command. If the entry is missing or does not boot, or there
+is no report, follow the next section; `sc status` and `sc log` work in
+that shell too.
+
+### The machine no longer boots (without the rescue entry)
 
 1. If the console says **"Press Enter for maintenance"**, press Enter.
    Ubuntu 24.04 opens a root shell there although root is locked (its
@@ -245,7 +270,8 @@ fastest way back from a completely broken system.
 Open Claude Code in the checkout and say:
 
 > Read CLAUDE.md, then docs/WORKLOG.md (its "Now" section says what is in
-> progress), docs/M2_PLAN.md and its Appendix C, then continue.
+> progress) and the current milestone's plan (docs/M4_PLAN.md), then
+> continue.
 
 Rules that carry over: plan first; one step at a time, each with its tests
 and mutation checks, a commit, a WORKLOG line and a push; run gofmt, vet and

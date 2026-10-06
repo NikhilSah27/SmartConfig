@@ -1657,3 +1657,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   verify`, `make build fmt vet test`. Not run as root: that is S1 and
   needs the user's OK. This VM had gone down again before this session
   (about 11:30 UTC, idle, `last -x`: crash); the check-in was recreated.
+- **M4 step 13: the docs** (by the 30-minute check-in, after step 12).
+  - README: M4 in the status; `make accept-m4`, `lab-test` and `lab-e2e`;
+    a section "When the machine does not boot (M4)": what the rescue
+    path gives, the rescue report as the lab's UEFI run of `22383a0`
+    printed it, what to type, the emergency-mode login prompt and the
+    rescue shell's quiet console (chunk D item 6), the install by hand
+    and its removal, `sc status`'s exit codes, sc on a read-only root,
+    the chattr refusal, where it does less, and the security note with
+    a GRUB superuser recipe (`--unrestricted` on 10_linux's default
+    entry only), marked as not tested in the lab yet.
+  - MILESTONES: the M4 line and "Current"; M4 notes with the plan, the
+    reviews, deliberate limits and what is open from the reviews.
+  - PROJECT_LOG: last updated, status, the lab cache and scratch rows,
+    this VM's state (kernel 7.0.0-38, BIOS, the M3 build as scd, the
+    backups; M4 not installed), a recovery section for the rescue entry
+    beside the one without it, the resume prompt.
+  - CLAUDE.md: `internal/boot` and the scripts in the layout.
+  - Docs only: links checked, no test reads these files.
