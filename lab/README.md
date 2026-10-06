@@ -103,6 +103,7 @@ runs before it did) fails 2.5.
 ```sh
 make lab-image                 # once: the pinned image, then the reference image (~30 min)
 make lab-image LAB_IMAGE_FROM=~/smartconfig-work/m4lab/noble-server-cloudimg-amd64.img
+make lab-image LAB_FORCE=1     # after an ovmf update (P.5): the reference image again
 make lab-e2e                   # both modes, ~25 min each under TCG
 make lab-e2e LAB_MODES=uefi LAB_E2E_ARGS=--no-boot5     # while iterating
 make lab-test                  # the unit tests and sh -n (no QEMU, seconds)
@@ -183,7 +184,9 @@ directory in `SC_LAB_CACHE` is refused before anything in it is touched,
 and `lab-clean` removes only names the lab makes (runs named by their UTC
 time, `ref-*`, `*.img`, its own `.part` files). The reference image
 remembers the sha256 of the `OVMF_CODE` it was made under; P.5 refuses a
-uefi run after the firmware package changed (`make lab-image` again).
+uefi run after the firmware package changed. Its name does not depend on
+the firmware, so build it again with `make lab-image LAB_FORCE=1`
+(about 4 to 30 minutes).
 
 A run directory holds:
 

@@ -318,7 +318,7 @@ def ovmf_problems(ref_json, ovmf_code):
         return ["%s: %s" % (ref_json, e)]
     got = labvm.sha256_file(ovmf_code)
     if want and got != want:
-        return ["%s is %s, and the reference image was made under %s: make lab-image" % (ovmf_code, got[:12], want[:12])]
+        return ["%s is %s, and the reference image was made under %s: make lab-image LAB_FORCE=1" % (ovmf_code, got[:12], want[:12])]
     return []
 
 

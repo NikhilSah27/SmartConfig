@@ -9,6 +9,7 @@ LAB_MODES ?= uefi bios
 LAB_TIMEOUT ?= 4500
 LAB_E2E_ARGS ?=
 LAB_IMAGE_FROM ?=
+LAB_FORCE ?=
 
 build:
 	go build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/sc
@@ -63,6 +64,13 @@ lab-e2e: build
 	  case "$$r:$$line" in 0:*) ;; 1:FAIL\ *) rc=1;; *) [ $$rc = 0 ] && rc=3;; esac; done; \
 	  case $$rc in 0) echo "lab-e2e: PASS$$tags";; 1) echo "lab-e2e: FAIL$$tags";; *) echo "lab-e2e: INCONCLUSIVE$$tags";; esac; \
 	  exit $$rc
+
+# The pinned cloud image (LAB_IMAGE_FROM=FILE copies it) and the reference
+# image built from it (about 30 min under TCG), in the lab cache. After an
+# ovmf update, P.5 asks for it again: provision --force builds it under the
+# new firmware.
+lab-image:
+	$(LAB) lab/vm.py image $(if $(LAB_IMAGE_FROM),--from $(LAB_IMAGE_FROM)) && $(LAB) lab/vm.py provision $(if $(LAB_FORCE),--force)
 
 lab-test:
 	$(LAB) -m unittest discover -s lab
