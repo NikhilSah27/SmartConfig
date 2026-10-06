@@ -245,7 +245,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		stop := time.AfterFunc(consoleLimit, func() {
 			once.Do(func() {
 				writeConsoles(real, []byte(fmt.Sprintf("sc: the report took over %s and was stopped, so that the shell can start.\n"+
-					"Run it from the shell: sc status\n", consoleLimit)))
+					"Run it from the shell: sc status\n", seconds(consoleLimit))))
 				os.Exit(1)
 			})
 		})
@@ -383,23 +383,34 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		e.problem, e.sev = statusProblem(ctx, c, s, e.row, e.before)
 		worst = max(worst, e.sev)
 	}
-	// The undo is for the newest change that added a blocker or an error.
+	// The undo is for the newest change that added a blocker, else the
+	// newest that added an error: a newer error must not take the undo
+	// from the blocker that stops the boot (the console lists worst first).
 	var undo *entry
 	for i := range entries {
-		if entries[i].sev >= check.Error {
+		if entries[i].sev >= check.Error && (undo == nil || entries[i].sev > undo.sev) {
 			undo = &entries[i]
-			break
 		}
 	}
 
-	currentOK := healthy && last.ID == cur
+	// The menu flag is still set, so the next boot shows the menu, when a
+	// boot failed since the last healthy one (sc boot seen set it, no ok
+	// verdict cleared it), or this boot set it (seen, no verdict: the
+	// emergency shell). A rescue boot sets nothing: entered by hand after
+	// a healthy boot, the next boot has no menu.
+	menuSet := len(failed) > 0
+	for _, b := range boots {
+		if b.ID == cur && !b.Seen.IsZero() && b.Verdict == "" {
+			menuSet = true
+		}
+	}
 	if console {
 		// Worst first, so what matters is on screen; then newest first.
 		shown := append([]entry(nil), entries...)
 		sort.SliceStable(shown, func(i, j int) bool { return shown[i].sev > shown[j].sev })
 		var undoText bytes.Buffer
 		if undo != nil {
-			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, currentOK)
+			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, menuSet)
 		}
 		title := fmt.Sprintf("\nChanged since %s, worst first:\n", since)
 		// 20 rows of 25: systemd's prompt takes the other five. The rows
@@ -436,7 +447,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		tw.Flush()
 	}
 	if undo != nil {
-		statusUndo(out, c, *undo, bounded, mode, ro, console, currentOK)
+		statusUndo(out, c, *undo, bounded, mode, ro, console, menuSet)
 	}
 	return exit(worst)
 }
@@ -502,7 +513,7 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 // version e.before (or move a new file aside), then, in the rescue or
 // emergency boot, reboot. After an fstab failure a plain reboot waits for
 // the missing disk again: daemon-reload first (the M4 lab).
-func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode string, ro, console, currentOK bool) {
+func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode string, ro, console, menuSet bool) {
 	path := show(e.row.Path)
 	as := " as it was before this change"
 	if bounded {
@@ -546,9 +557,8 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 			// boots in the M4 lab had one; the rescue entry's shell never).
 			fmt.Fprintln(out, `At a "login:" prompt instead of "#": log in, then put sudo before each.`)
 		}
-		// A rescue boot cannot clear the menu flag (/boot is not mounted),
-		// one after a healthy boot has none set.
-		if !currentOK {
+		// A rescue boot cannot clear the menu flag (/boot is not mounted).
+		if menuSet {
 			fmt.Fprintln(out, "The menu shows once more: the first entry, Ubuntu, is the one.")
 		}
 	} else if a := c.GraphInUse().Apply(e.row.Path); a != "" {
@@ -621,6 +631,15 @@ func scdState() string {
 		}
 	}
 	return "not running"
+}
+
+// seconds is d as "60 s" when it is whole seconds, else as Go writes it
+// ("300ms", in tests), never "1m0s".
+func seconds(d time.Duration) string {
+	if d%time.Second == 0 {
+		return fmt.Sprintf("%d s", d/time.Second)
+	}
+	return d.String()
 }
 
 // shortBoot is a boot id short enough for a line: its first 8 hex digits.

@@ -384,9 +384,44 @@ func TestStatusTwoEditsSinceHealthy(t *testing.T) {
 	}
 }
 
+// An older blocker keeps the undo when a newer change adds only an error:
+// the console lists the blocker first, and its commands must put that
+// file back, not the newer one (the chunk E review).
+func TestStatusBlockerBeforeNewerError(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro", false)
+	fstab2 := filepath.Join(dir, "fstab2")
+	g, err := check.ParseGraph("check fstab " + fstab + " " + fstab2 + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Graph = g }
+	good := snap(t, fstab, goodLine)
+	good2 := snap(t, fstab2, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	snap(t, fstab, badLine)                    // the older blocker
+	snap(t, fstab2, goodLine+"/dev/null /x\n") // the newer error: two fields
+	for _, args := range [][]string{{"status"}, {"status", "--console"}} {
+		r := sc(t, args...)
+		if r.code != 2 || !strings.Contains(r.stdout, "blocker fstab-source-missing") || !strings.Contains(r.stdout, "error fstab-fields") {
+			t.Fatalf("%v: %+v", args, r)
+		}
+		if !strings.Contains(r.stdout, "\n  sc restore "+good+"\n") || strings.Contains(r.stdout, "sc restore "+good2) {
+			t.Errorf("%v: the undo is not the blocker's:\n%s", args, r.stdout)
+		}
+	}
+	// With the blocker fixed, the error gets the undo.
+	snap(t, fstab, goodLine)
+	if r := sc(t, "status"); r.code != 2 || !strings.Contains(r.stdout, "\n  sc restore "+good2+"\n") {
+		t.Errorf("the error alone: %+v", r)
+	}
+}
+
 // Long paths and a symlink to a long target still fit: the problem column
 // is cut, a symlink's target left out, a new file's undo is cd and a short
-// mv; and when this boot came up healthy, the menu is not promised again.
+// mv. The menu is promised again only while its flag is set: after a
+// failed boot, not when the rescue entry was picked by hand after a
+// healthy boot, nor when this boot came up healthy (the chunk E review).
 func TestStatusConsoleFits(t *testing.T) {
 	dir, fstab, home := statusEnv(t, "systemd.unit=rescue.target", true)
 	for i := 0; i < 6; i++ {
@@ -401,6 +436,11 @@ func TestStatusConsoleFits(t *testing.T) {
 		mustSC(t, "snapshot", l)
 	}
 	snap(t, fstab, badLine) // new since the healthy boot
+	// The rescue entry picked by hand after the healthy boot: no flag.
+	if r := sc(t, "status", "--console"); r.code != 2 || strings.Contains(r.stdout, "The menu shows once more") {
+		t.Errorf("rescue after a healthy boot: %+v", r)
+	}
+	boot.Seen(home, "bbbbbbbb-2", time.Now()) // a boot that never reached multi-user
 	r := sc(t, "status", "--console")
 	if r.code != 2 || screenRows(r.stdout) > 20 {
 		t.Fatalf("%d rows: %+v", screenRows(r.stdout), r)
@@ -817,5 +857,14 @@ func TestTTYFileQueued(t *testing.T) {
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("writeConsole hangs on a full terminal")
+	}
+}
+
+// The stop line says "60 s", not Go's "1m0s" (the chunk E review).
+func TestSeconds(t *testing.T) {
+	for d, want := range map[time.Duration]string{consoleLimit: "60 s", 90 * time.Second: "90 s", 300 * time.Millisecond: "300ms"} {
+		if got := seconds(d); got != want {
+			t.Errorf("seconds(%v) = %q, want %q", d, got, want)
+		}
 	}
 }
