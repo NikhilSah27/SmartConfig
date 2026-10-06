@@ -95,12 +95,15 @@ plan change C7): 1 high (the README's GRUB password recipe), 4 medium,
 the newest blocker before a newer error; the menu promise only while
 its flag is set) and `4b91d97` (accept-m4.sh: the runtime units stay
 loaded, so step 2 can read their journal; the real store read-only; a
-bad verdict; more). **M4 is built and reviewed. Next: the sign-off
-runs, each with your OK.** S1: all checks, `make lab-e2e` again (the
-product changed after its PASS on `22383a0`), and `make accept-m4` as
-root, never run yet. Then S2 (a fresh snapshot, install, one normal
-reboot), S3 (the owner scenario on this VM) and S4 (final review, docs,
-tag `m4`).
+bad verdict; more). **M4 is built and reviewed.** **Now: sign-off S1**
+(your OK, 2026-10-06 14:22 UTC, "yes start S1"). All checks pass
+(`make m1-compat` too, CI green); `make accept-m4` as root **PASS** on
+`19f2200`, its first root run (log). **`make lab-e2e` runs on the commit
+of this line** (UEFI then BIOS, about an hour, detached; the log path is
+in `~/smartconfig-work/signoff/lab-e2e.current`). Until it ends: no
+commits, builds, tests, reviews or agents on this machine. Then S2 (a
+fresh snapshot, install, one normal reboot), S3 (the owner scenario on
+this VM) and S4 (final review, docs, tag `m4`), each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1728,3 +1731,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   Reproduced here 1 in 25 beside four CPU burners; `0a1b71f` asks after
   the reader's EOF: 0 in 25 under the same load, `make lab-test` 326 ok,
   CI green on `0a1b71f`. Lesson: check `gh run list` after each push.
+- **M4 sign-off S1 started** (your OK: "yes start S1").
+  - Checks on this build: gofmt, vet, `go test ./...` as a user and as
+    root, `make race`, `make lab-test` (326), CI green (`0a1b71f`), and
+    `make m1-compat`.
+  - `make accept-m4` as root on `19f2200`: **PASS**, the script's first
+    root run (`~/smartconfig-work/signoff/accept-m4-20261006T142311Z-19f2200.log`).
+    The boot units took 19 and 35 ms; this boot's verdict is ok
+    (`failed-units=0`); the bad verdict kept the flag; `sc status` and
+    `--console` gave the blocker and `sc restore` of the good version;
+    the chattr refusals; the read-only and hot-journal stores;
+    `42_smartconfig` under `grub-mkconfig` adds only its part, and this
+    machine's grub.cfg is what grub-mkconfig makes today; this machine's
+    store, read-only: no problem in its 3 newest files, exit 0. Nothing
+    left behind (no runtime unit, mount, work dir or private dir; the
+    real grubenv has no flag).
+  - `make lab-e2e` starts on the commit of this entry.
