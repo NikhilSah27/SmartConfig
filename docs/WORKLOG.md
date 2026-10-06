@@ -95,15 +95,20 @@ plan change C7): 1 high (the README's GRUB password recipe), 4 medium,
 the newest blocker before a newer error; the menu promise only while
 its flag is set) and `4b91d97` (accept-m4.sh: the runtime units stay
 loaded, so step 2 can read their journal; the real store read-only; a
-bad verdict; more). **M4 is built and reviewed.** **Now: sign-off S1**
-(your OK, 2026-10-06 14:22 UTC, "yes start S1"). All checks pass
-(`make m1-compat` too, CI green); `make accept-m4` as root **PASS** on
-`19f2200`, its first root run (log). **`make lab-e2e` runs on the commit
-of this line** (UEFI then BIOS, about an hour, detached; the log path is
-in `~/smartconfig-work/signoff/lab-e2e.current`). Until it ends: no
-commits, builds, tests, reviews or agents on this machine. Then S2 (a
-fresh snapshot, install, one normal reboot), S3 (the owner scenario on
-this VM) and S4 (final review, docs, tag `m4`), each with your OK.
+bad verdict; more). **M4 is built and reviewed.** **Sign-off S1
+passed** (your OK, 2026-10-06 14:22 UTC, "yes start S1"; log): all
+checks, `make accept-m4` as root PASS (`19f2200`), and `make lab-e2e`
+PASS in both modes on `2c58f8b`, one `sc` build (`cafca1512050`):
+BIOS 44m18s and UEFI 37m19s, no retries, boot 5, clean tree. On the
+way: an ovmf update made the lab's reference image stale, and `make
+lab-image` was found gone since `9d3df9e` (back in `b9761a9`).
+**Next: S2, which needs your OK and a fresh VirtualBox snapshot of this
+VM taken by you.** S2 installs the M4 build, the two boot units, the
+drop-ins and `42_smartconfig`, runs `update-grub`, and reboots once
+normally: the verdict must be ok, the boot no slower
+(`systemd-analyze`), and the menu hidden. Then S3 (the owner scenario on
+this VM: a bad fstab line, a failed boot, the rescue entry) and S4
+(final review, docs, tag `m4`), each with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1747,3 +1752,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     left behind (no runtime unit, mount, work dir or private dir; the
     real grubenv has no flag).
   - `make lab-e2e` starts on the commit of this entry.
+- **M4 sign-off S1 passed.**
+  - `make lab-e2e` on `2c58f8b` (clean tree, `sc` `cafca1512050`):
+    BIOS **PASS** in 44m18s (0 retries, boot2=b, boot 5). UEFI was
+    INCONCLUSIVE at P.5 in 1 s: `ovmf` was upgraded by apt at 06:34 UTC
+    today (2024.02-2ubuntu0.9 to 0.10), after the reference image was
+    made, and the lab refuses another firmware under the old variables.
+  - `make lab-image` did nothing: the chunk D fixes (`9d3df9e`) had
+    dropped its rule, and plain provision would have kept the image
+    anyway (its name does not depend on the firmware). So, without a
+    commit (one build for both modes): `vm.py provision --force`, 216 s,
+    then UEFI alone on the same commit: **PASS** in 37m19s (0 retries,
+    boot2=b, boot 5). Evidence in
+    `~/smartconfig-work/signoff/lab-e2e-2c58f8b/`; logs
+    `lab-e2e-20261006T142402Z-2c58f8b.log` and
+    `lab-e2e-20261006T151513Z-2c58f8b-uefi.log`.
+  - `b9761a9`: the `lab-image` rule back, with `LAB_FORCE=1` for an
+    ovmf update, in P.5's advice and the lab README; checked by running
+    it and `make lab-test`.
+  - Next: S2, with your OK and your fresh VirtualBox snapshot.
