@@ -1,7 +1,7 @@
 BIN := bin/sc
 export CGO_ENABLED := 0
 
-.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 clean lab-e2e lab-image lab-test lab-clean
+.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 accept-m4 clean lab-e2e lab-image lab-test lab-clean
 
 # The QEMU rescue lab (lab/README.md): dev only, stdlib Python, no sudo, no KVM, not in CI.
 LAB = env PYTHONDONTWRITEBYTECODE=1 python3
@@ -34,6 +34,11 @@ accept-m2: build
 
 accept-m3: build
 	sudo ./scripts/accept-m3.sh
+
+# M4 acceptance in the VM, the parts that need no reboot (plan step 12, S1):
+# nothing real is written.
+accept-m4: build
+	sudo ./scripts/accept-m4.sh
 
 # The M1 binary must keep working on a store the M2 code has migrated.
 m1-compat:
