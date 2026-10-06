@@ -102,16 +102,24 @@ PASS in both modes on `2c58f8b`, one `sc` build (`cafca1512050`):
 BIOS 44m18s and UEFI 37m19s, no retries, boot 5, clean tree. On the
 way: an ovmf update made the lab's reference image stale, and `make
 lab-image` was found gone since `9d3df9e` (back in `b9761a9`).
-**S2 runs** (your OK and your snapshot, 2026-10-06 19:45 UTC, "took
-the snapshot"). The M4 build (`cafca1512050`, the one S1 tested), the
-two boot units, the drop-ins and `42_smartconfig` are installed on this
-VM and `update-grub` has run (19:49-19:50 UTC; log). **Sign-off S2
-passed** (log): the reboot's verdict ok, flag clear, 23.5 s, sc off
-the critical chain, the menu hidden, `sc status` healthy. You reset the
-two boots after it (a black desktop; your answer, 20:4x UTC). **Next:
-S3** (the owner scenario on this VM: a bad fstab line, a failed boot,
-the rescue entry), with your OK and a fresh snapshot taken before the
-bad line goes in. Then S4 (final review, docs, tag `m4`), with your OK.
+**Sign-off S2 passed** (your OK and your snapshot, 2026-10-06 19:45
+UTC, "took the snapshot"; log). The M4 build (`cafca1512050`, the one
+S1 tested), the two boot units, the drop-ins and `42_smartconfig` are
+installed on this VM, `update-grub` has run; the reboot's verdict ok,
+flag clear, 23.5 s, sc off the critical chain, the menu hidden, `sc
+status` healthy. You reset the two boots after it (a black desktop;
+your answer). **S3 runs** (your OK and a fresh snapshot, 21:05 UTC,
+"Yes, taken — go"; log): the bad line is in `/etc/fstab` (line 10,
+row `053fdf`, scd: blocker), and this VM reboots into the failing boot.
+You drive the console: the failed boot (a photo: the report above
+"Press Enter"? `#` or `login:`?), a reset, the menu by itself, "SmartConfig
+rescue", the report (a photo), Enter, its commands, then Ubuntu at the
+menu once more. **At the next session:** the verdicts (the failed boot
+bad or never reached, the rescue boot none, the boot after ok), the
+flag clear after it, `/etc/fstab` = `fb5cf4` (sha256 `9d71ab60…`),
+`sc log` with the pre-restore and restore rows, `sc status` healthy,
+exit 0; your photos and what you saw. Then S4 (final review, docs, tag
+`m4`), with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1837,3 +1845,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     `grub-common.service` at 10.2, 15.3 and 14.7 s, before each reset
     (as in the lab, A6); you reported no menu.
   - **S2 passed.**
+- **M4 sign-off S3: the bad line is in; the failing boot is next** (your
+  OK and your fresh snapshot, 21:05 UTC, "Yes, taken — go").
+  - Before (`~/smartconfig-work/signoff/pre-s3-20261006T210624Z.txt`):
+    boot `94783975` ok, grubenv empty, `/etc/fstab` 446 bytes, sha256
+    `9d71ab60…`, the same as its newest row `fb5cf4`; `sc status`
+    healthy, exit 0. Checked first on a copy: `sc check --as
+    /etc/fstab` gives the blocker, exit 2.
+  - The edit at 21:06:29 UTC, as root, the lab's line and method
+    (appended; the plan's owner uses nano, the writer does not matter
+    to the rescue path): line 10, `UUID=3f6c1e2a-9b7d-4c1e-8f2a-5d6e7f8a9b0c
+    /mnt/backup ext4 defaults 0 2`, sha256 `1ab60193…`. scd at once:
+    row `053fdf`, "check: blocker fstab-source-missing, line 10"; `sc
+    status` lists it and the undo `sc restore fb5cf4`, exit 2. No
+    daemon-reload: the owner reboots.
+  - Next: the reboot (`systemd-run --on-active=120 systemctl reboot`);
+    you drive the console.
