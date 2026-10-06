@@ -165,7 +165,7 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("2.2", "M4", "H", "S", "Command line is EXP_DEFAULT"),
     ("2.3", "M4", "H", "S", "the bad device times out, then local-fs.target fails"),
     ("2.4", "M4", "H", "S+SSH", "outcome a (no ssh), b (ssh, emergency.target active) or c (ssh, inactive)"),
-    ("2.5", "M4", "F", "S", "the emergency report matches console-emergency.golden (W in c)"),
+    ("2.5", "M4", "F", "S", "the emergency report matches console-emergency.golden (F in every outcome)"),
     ("2.6", "M4", "H", "SSH", "b/c: B2 seen, B2 bad local-fs!=active; grubenv smartconfig_pending=1"),
     ("2.7", "lab", "H", "M", "system_reset after the settle time gives a RESET"),
     ("3.0", "lab", "H", "K", "nothing was typed or keyed since boot 2's reset"),

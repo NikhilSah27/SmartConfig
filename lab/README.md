@@ -82,9 +82,10 @@ Boot 2's outcome is b or c only once ssh answers with `multi-user.target`
 active (then `sc boot verdict` gives B2 a bad line), else a. ssh can come
 up without that: when the console getty hangs up the emergency shell,
 systemd starts `default.target` again, waits for the device once more and
-drops back into emergency mode (plan A2). The report can be lost in that
-race (plan A7), so 2.5 is a W wherever the serial text shows the shell
-returning, as in c. The hang-up can also end the shell before its first
+drops back into emergency mode (plan A2). The report could be lost in that
+race (plan A7); since `55d2bde` `sc status --console` outlives the
+hang-up, so a report lost or cut fails 2.5 (F) in every outcome, c
+included. The hang-up can also end the shell before its first
 line: the console then has the report, the getty's login prompt and no
 "You are in emergency mode". 2.5 then holds the block above the login
 prompt to the golden, as strictly, and notes it. `sc status --console`
