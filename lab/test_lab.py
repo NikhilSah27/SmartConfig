@@ -1696,8 +1696,10 @@ except BaseException as e:
 """
 
     def signals(self, sig, pre=None):
+        # SIGHUP as a shell gives it, whatever this test inherited: under
+        # nohup the child saw it ignored (the chunk H flake hunt).
         r = subprocess.run([sys.executable, "-c", self.SIGNALS % HERE, sig], capture_output=True, text=True,
-                           timeout=60, preexec_fn=pre)
+                           timeout=60, preexec_fn=pre or (lambda: signal.signal(signal.SIGHUP, signal.SIG_DFL)))
         return r.returncode, r.stdout.split("\n")[:-1]
 
     def test_the_first_signal_is_the_only_one(self):
