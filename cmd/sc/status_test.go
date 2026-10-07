@@ -138,6 +138,26 @@ func TestStatusAfterFailedBoot(t *testing.T) {
 	}
 }
 
+// With room to spare (no undo), the console still lists consoleRows
+// files and counts the rest; a change with warnings only gets no undo,
+// and is no failure (the M4 final review, B section 4: mutations no test
+// caught).
+func TestStatusConsoleCapWarnings(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro fstab=no systemd.unit=rescue.target", true)
+	snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	snap(t, fstab, "/dev/sc-no-such-disk /data ext4 defaults,nofail 0 2\n")
+	for i := 0; i < 7; i++ {
+		snap(t, filepath.Join(dir, fmt.Sprintf("f%02d", i)), "x\n")
+	}
+	r := sc(t, "status", "--console")
+	rows := regexp.MustCompile(`(?m)^[0-9a-f]{6} \d\d-\d\d \d\d:\d\d  `).FindAllString(r.stdout, -1)
+	if r.code != 0 || len(rows) != consoleRows || !strings.Contains(r.stdout, "\n3 files more (sc status lists them all)\n") ||
+		!strings.Contains(r.stdout, "warning fstab-source-missing") || strings.Contains(r.stdout, "To put") || strings.Contains(r.stdout, "sc restore") {
+		t.Errorf("%d rows: %+v", len(rows), r)
+	}
+}
+
 // The rescue console fits an 80x25 screen with systemd's five lines:
 // worst first, at most consoleRows files, the rest counted, long paths
 // shortened from the left (but never in a command); every change is still

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,20 @@ func TestBootUnits(t *testing.T) {
 		// boot and was killed by its timeout (the chunk B review, in the lab).
 		if name == "sc-boot-seen.service" && (strings.Contains(unit, "local-fs.target") || strings.Contains(unit, "Before=sysinit.target")) {
 			t.Errorf("%s waits for local-fs.target or holds up sysinit.target", name)
+		}
+		// After sysinit.target or basic.target, seen would wait for what a
+		// failed disk holds up; ok bound to anything, or in conflict with
+		// one (emergency.target), would give the failed boots no verdict
+		// (the M4 final review, A7: mutations no test caught).
+		for _, l := range strings.Split(unit, "\n") {
+			key, val, _ := strings.Cut(l, "=")
+			switch {
+			case name == "sc-boot-seen.service" && slices.Contains([]string{"After", "Requires", "Requisite", "BindsTo", "Wants"}, key) &&
+				(strings.Contains(val, "sysinit.target") || strings.Contains(val, "basic.target")):
+				t.Errorf("%s: %s", name, l)
+			case name == "sc-boot-ok.service" && slices.Contains([]string{"Requires", "Requisite", "BindsTo", "PartOf", "Conflicts"}, key):
+				t.Errorf("%s: %s", name, l)
+			}
 		}
 		analyze, err := exec.LookPath("systemd-analyze")
 		if err != nil {
