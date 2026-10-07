@@ -318,6 +318,7 @@ normal)
 	sec boots file /var/lib/smartconfig/boots
 	sec sc-log-fstab sc log /etc/fstab
 	sec sc-status sc status
+	sec seen-before run systemctl show -p Before sc-boot-seen.service
 	sec critical-chain analyze critical-chain multi-user.target
 	sec analyze analyze
 	sec blame blame

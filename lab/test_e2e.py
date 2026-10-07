@@ -911,6 +911,7 @@ def normal_text(**over):
                                  "failed-units=0)" % B1])),
         ("journal-scd", (0, ["baseline: 14 files"])),
         ("sc-log-fstab", (0, ["%s  2026-10-04 12:00  scd  /etc/fstab  146" % GOOD])),
+        ("seen-before", (0, ["Before=grub-common.service shutdown.target sc-boot-ok.service grub-initrd-fallback.service"])),
         ("critical-chain", (0, ["multi-user.target @21.6s", "└─getty.target @21.5s"])),
         ("active", (0, ["local-fs.target=active", "emergency.target=inactive", "rescue.target=inactive",
                         "scd.service=active"])),
@@ -966,6 +967,15 @@ class TestFactsBlocks(unittest.TestCase):
         row = self.run_check("1.8", normal_facts(**{"critical-chain": (0, ["multi-user.target @9s",
                                                                            "└─sc-boot-seen.service @1s"])}))
         self.assertIn("names sc-boot-seen", row.notes)
+        self.assertEqual(self.run_check("1.8", normal_facts()).status, "PASS")
+        # Ordered before a target boot waits for (the M4 final review, A8:
+        # the chain alone never shows a oneshot): F, as is an unread order.
+        for before in ((0, ["Before=grub-common.service sysinit.target shutdown.target"]),
+                       (0, ["Before=basic.target"]), (0, []), (1, ["Failed to get properties"]), None):
+            row = self.run_check("1.8", normal_facts(**{"seen-before": before}))
+            self.assertEqual((row.status, row.strength), ("FAIL", "F"), before)
+        self.assertIn("ordered before sysinit.target",
+                      self.run_check("1.8", normal_facts(**{"seen-before": (0, ["Before=sysinit.target"])})).notes)
 
     def test_units_journal(self):
         r = fake_run(self)

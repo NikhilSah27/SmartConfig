@@ -153,7 +153,7 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("1.5", "M4", "H", "SSH", "sc-boot-seen and sc-boot-ok succeeded; no grubenv complaint in their journal"),
     ("1.6", "M4", "H", "SSH", "grubenv has no smartconfig_pending"),
     ("1.7", "M4", "H", "SSH", "sc status: this boot normal and healthy, scd running, exit 0"),
-    ("1.8", "M4", "F", "SSH", "critical-chain multi-user.target does not name sc-boot-seen"),
+    ("1.8", "M4", "F", "SSH", "sc-boot-seen is ordered before no target but shutdown.target; critical-chain does not name it"),
     ("1.9", "M4", "H", "SSH", "scd baseline this boot; GOOD = newest fstab row; sc cat GOOD = /etc/fstab"),
     ("E.1", "lab", "H", "SSH", "the bad line appended to /etc/fstab (N, BAD_SHA)"),
     ("E.2", "M4", "H", "SSH", "scd records the edit: a new newest row, BAD, stable for 10 s"),
@@ -2358,17 +2358,27 @@ class E2E:
                     source="sc boot verdict (ok unsets it)", evidence=f.ev("grubenv"))
 
     def check_18(self, f):
-        """1.8: critical-chain multi-user.target, read (rc 0, the target in
-        it), does not name sc-boot-seen."""
+        """1.8: boot does not wait for sc-boot-seen: it is ordered before no
+        target but shutdown.target (systemctl show -p Before, read), and
+        critical-chain multi-user.target (read, the target in it) does not
+        name it. critical-chain alone could not fail: it follows only units
+        that became active, and a oneshot never does (the M4 final review,
+        A8)."""
         chain = f.text("critical-chain")
-        p = f.need("critical-chain")
+        p = f.need("seen-before", "critical-chain")
+        before = f.kv("seen-before").get("Before", "").split()
+        if "seen-before" in f.blocks and "Before" not in f.kv("seen-before"):
+            p.append("systemctl show printed no Before= for sc-boot-seen")
+        p += ["sc-boot-seen is ordered before %s: boot waits for it" % u
+              for u in before if u.endswith(".target") and u != "shutdown.target"]
         if "multi-user.target" not in chain:
             p.append("critical-chain does not show multi-user.target")
         if "sc-boot-seen" in chain:
             p.append("critical-chain names sc-boot-seen")
-        self.record("1.8", problems=p, seen=" | ".join(chain.strip().split("\n")[:4]), expected="no sc-boot-seen",
+        self.record("1.8", problems=p, seen="Before=%s | %s" % (" ".join(before), " | ".join(chain.strip().split("\n")[:3])),
+                    expected="no target but shutdown.target; no sc-boot-seen in the chain",
                     source="sc-boot-seen.service (DefaultDependencies=no)",
-                    evidence=f.ev("critical-chain", "analyze", "blame"))
+                    evidence=f.ev("seen-before", "critical-chain", "analyze", "blame"))
 
     def check_44(self, f):
         """4.4: grubenv, read (rc 0), has no smartconfig_pending line at all

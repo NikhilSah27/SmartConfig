@@ -335,7 +335,7 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 	}{
 		{[]string{"normal"}, common + "mounts fstab fstab-sha256 grubenv-stat grubenv grub-defaults root-passwd paths is-enabled active " +
 			"show:sc-boot-seen.service show:sc-boot-ok.service show:scd.service dropins units-cat system-running failed " +
-			"journal-sc-boot journal-scd boots sc-log-fstab sc-status critical-chain analyze blame grub-cfg end"},
+			"journal-sc-boot journal-scd boots sc-log-fstab sc-status seen-before critical-chain analyze blame grub-cfg end"},
 		{[]string{"rescue", "abc123"}, common + "hashes-before mounts active show:sc-boot-seen.service show:sc-boot-ok.service boots " +
 			"sc-log-fstab sc-status-console sc-diff sc-cat-good sc-check sc-restore hashes-after leftovers vcs1 end"},
 		{[]string{"dump"}, common + "uptime mounts mounts-all system-running targets failed jobs active procs show:sc-boot-seen.service " +
