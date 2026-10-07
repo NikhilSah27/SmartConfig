@@ -2370,3 +2370,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   and no undo for warnings. Each of the six mutations (four unit lines,
   the cap, the undo's severity) and the row -1 fallback's fails a test.
   Full checks passed.
+- **Lab check 1.8, done `f0bf189`** (chunk H; the final review's A8).
+  `facts.sh normal` prints `sc-boot-seen`'s `Before=` (`seen-before`);
+  1.8 fails on a target in it but `shutdown.target`, or an unread one.
+  This VM's installed unit: `grub-common.service shutdown.target
+  sc-boot-ok.service grub-initrd-fallback.service`. Lab tests for each
+  case; undoing the check fails one. Full checks and `make lab-test`
+  passed.

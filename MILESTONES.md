@@ -298,9 +298,10 @@ snapshot.
   across a pause, systemd's lines missing on ttyS0, the mux's 1 s drain
   during a serial reconnect, two load-bound tests and `facts.sh`'s pipe
   statuses (chunk D).
-- The lab's check 1.8 cannot fail: `critical-chain` follows only units
-  that became active, and the boot units are oneshots that never do
-  (final review, A8).
+- Done (`f0bf189`): the lab's check 1.8 could not fail: `critical-chain`
+  follows only units that became active, and the boot units are oneshots
+  that never do (final review, A8). It now reads `sc-boot-seen`'s
+  `Before=`: no target but `shutdown.target`.
 - The GRUB password recipe in the README is not tested in the lab yet,
   in BIOS or UEFI mode (whether Ubuntu's signed EFI GRUB takes
   `password_pbkdf2` included) (chunk E).
