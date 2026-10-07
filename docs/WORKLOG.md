@@ -2217,3 +2217,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     a fake findmnt with a child: both gone, no scratch, sc dies by the
     signal within 3 s), `TestStop` (running, scratch, started after).
     4 mutations, each caught. Full checks passed.
+- **M3 follow-up 7, scd's check reads two rows, done `8923fd7`** (chunk F).
+  `checkPath` listed the path's whole history (0.1 s at 20,000 rows) to
+  find two rows. `Store.Around` gets them by index search: the change by
+  its id (found while writing it: ids are unique, a UNIQUE index, so the
+  old loop's handling of a repeated id was never needed), and the row
+  before the first queued change through `AsOf`. `TestPathQueryPlans`
+  asserts both SQLite plans (no scan, no sort); `TestAround`; 5
+  mutations, each caught. Checks: gofmt, vet, `go test ./...` as a user
+  and as root, `make race` (uncached), `make m1-compat`.

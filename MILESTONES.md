@@ -224,7 +224,8 @@ where nss-systemd supplies root.
 6. A read-only root (M4's rescue shell): run sc's own rules without a
    scratch copy. Done another way in M4 (step 3, C2: a private scratch
    directory in `/run`).
-7. scd: look up only the rows a check needs, not a path's whole history.
+7. Done (`8923fd7`): scd: look up only the rows a check needs, not a path's
+   whole history.
 8. Cosmetic: an unclosed quote in `/etc/default/grub` is reported past
    the last line; two swap lines share one findmnt heading.
 
