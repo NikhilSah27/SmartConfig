@@ -303,7 +303,11 @@ to mount, the menu after a failed boot depends on Ubuntu's own
 /boot` before restoring a file under `/boot/grub`. `sc restore` refuses
 to write under a mount point of `/etc/fstab` that is not mounted, and
 says which to mount: the file would land on the root filesystem's copy.
-`sc status` puts that `mount` in its undo.
+`sc status` puts that `mount` in its undo. `systemctl soft-reboot` keeps
+the kernel and its boot id, so to sc the new session is the boot before
+it, verdict and all: a failure in it brings no menu at the next boot
+(systemd 255, Ubuntu 24.04's, does not count soft reboots). To have a
+change to fstab or a unit judged, reboot in full.
 
 **The rescue entry is a root shell from a menu item.** While root is
 locked, as it is on Ubuntu by default, it asks for no password; if root
