@@ -125,11 +125,22 @@ closed** (your OK, 2026-10-07 06:45 UTC, "go ahead with S4";
 [reviews/2026-10-07-m4-final.md](reviews/2026-10-07-m4-final.md), plan
 change C8): three reviewers, 2 high, 6 medium, all fixed, and 13 low
 (`69ea585` … `d9c8817`, log); the rest is the M4 follow-up list in
-MILESTONES. **Next:** `make lab-e2e` on the fixed tree (the rescue
-entry's command line and both units changed; it needs no sudo), then,
-with your word, `accept-m4` as root on the fixed build, its install on
-this VM (`sc`, both units, `42_smartconfig`, `update-grub`), and the tag
-`m4`.
+MILESTONES. **Paused at your word** (2026-10-07 09:31 UTC, "stop and
+save the state"): the `make lab-e2e` run on `87c6636` was stopped in
+UEFI mode at check 3.5, after 41 rows passed (0.5 on the new rescue
+command line, the failing boot, 3.2 the rescue kernel with `fstab=no`);
+it does not count (log). No VM, agent or check-in job is running.
+**At the next session, in order:**
+1. `git fetch`, compare with `origin/main` (`87c6636` + this worklog
+   commit), `uptime`, `pgrep qemu-system`; the tree must be clean.
+2. `make lab-e2e` on the fixed tree, detached, with
+   `LAB_REQUIRE_CLEAN=1` (CLAUDE.md's command; ~75 min, both modes; no
+   commit while it runs). Needed because the rescue entry's command line
+   and both units changed. It needs no sudo, so no OK.
+3. With your word (asked 2026-10-07, no answer yet): `make accept-m4`
+   as root on the fixed build; then its install on this VM (`sc`, both
+   units, `42_smartconfig`, `update-grub`; the S1 build `cafca151…` is
+   installed now); then the tag `m4`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1999,3 +2010,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Not run yet:
     - `make lab-e2e` on the fixed tree (next, no sudo).
     - `accept-m4` as root, the install, the tag: your word.
+- **Paused at your word** ("stop and save the state", 09:31 UTC).
+  - `make lab-e2e` on `87c6636` (log
+    `~/smartconfig-work/signoff/lab-e2e-20261007T091132Z-87c6636.log`,
+    run `~/.cache/smartconfig-lab/runs/20261007T091134Z-uefi-87c6636/`)
+    stopped by SIGTERM to its process group after 20 min, in UEFI mode:
+    INCONCLUSIVE, "interrupted (signal, exit 143)" at 3.5.
+  - Before that, 41 rows passed, 0 failed. Among them: 0.5, the rescue
+    entry with the default entry's options and the mask; 1.x, the
+    healthy boot with both changed units; 2.x, the failing boot; 3.2,
+    the rescue kernel with `fstab=no`. Not a sign-off run; it is to be
+    rerun.
+  - Stopped: the 30-minute check-in job and the run's waiter. QEMU is
+    gone. The reviewers' clones and reports stay in
+    `~/smartconfig-work/review-m4final/`.
