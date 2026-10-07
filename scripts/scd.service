@@ -1,10 +1,18 @@
 [Unit]
 Description=SmartConfig watcher (scd): records config file changes
 Documentation=https://github.com/NikhilSah27/SmartConfig
-# multi-user.target is ordered after every service it wants, this one too.
-# Type=exec makes scd count as started once the binary runs, so boot waits
-# only for the exec, never for the baseline scan. No other unit orders
-# itself after scd or requires it.
+# Type=notify: scd counts as started once its startup rescan is recorded,
+# and sc-boot-ok's verdict, ordered after it, comes after those rows (a
+# file edited while scd was down is not a change of the healthy boot's;
+# the M4 chunk B review). multi-user.target is ordered after every service
+# it wants unless the service has no default dependencies: so these are
+# systemd's defaults for a service, but that one, and boot does not wait
+# for the rescan.
+DefaultDependencies=no
+Requires=sysinit.target
+After=sysinit.target basic.target
+Conflicts=shutdown.target
+Before=shutdown.target
 StartLimitIntervalSec=10min
 StartLimitBurst=5
 # Login homes on NFS or autofs must be mounted before the startup rescan,
@@ -12,7 +20,11 @@ StartLimitBurst=5
 After=remote-fs.target
 
 [Service]
-Type=exec
+Type=notify
+# A rescan that hangs fails the start (and Restart= tries again) rather
+# than hold the verdict back for good: a boot with no verdict counts as
+# failed.
+TimeoutStartSec=5min
 ExecStart=/usr/local/sbin/sc watch
 # systemctl reload scd: a rescan (SIGHUP never stops the watcher).
 ExecReload=/bin/kill -HUP $MAINPID

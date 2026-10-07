@@ -52,6 +52,14 @@ root unless --root is given.`,
 				Home:  store.Home(),
 				Roots: abs,
 				Log:   newLogWriter(os.Stderr, cmd.ErrOrStderr()),
+				// scd.service is Type=notify: systemd counts it started,
+				// and sc-boot-ok's verdict comes, once the startup rescan
+				// is recorded.
+				Ready: func() {
+					if err := sdNotify("READY=1"); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "%ssc: could not tell systemd that scd is ready: %v\n", errPrefix(cmd.ErrOrStderr()), err)
+					}
+				},
 			})
 			if err != nil {
 				return err

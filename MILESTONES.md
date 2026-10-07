@@ -277,9 +277,13 @@ snapshot.
 
 ### Open from the reviews
 
-- Edits made while scd was down can be recorded after the healthy boot's
-  row, if scd's startup rescan still runs when the verdict is given; the
-  undo then names an older, still good, version (chunk B).
+- Done (your pick): edits made while scd was down could be recorded
+  after the healthy boot's row, if scd's startup rescan still ran when
+  the verdict was given; the undo then named an older, still good,
+  version (chunk B). scd is `Type=notify`, ready once that rescan is
+  recorded, and `sc-boot-ok` is ordered after it; scd has no default
+  dependencies (they are spelt out, but the target's), so boot does not
+  wait for the rescan.
 - Done (`7fdb494`, your pick): a report that is slow shows its header first (after
   2 s: This boot, Last healthy, Failed since, scd), so a hung `sc` still
   says which boot was healthy before the 60 s stop; one in time is one

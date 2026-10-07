@@ -48,6 +48,10 @@ type Config struct {
 	CheckQueue   int           // paths waiting for the checker; 100
 	Batch        int           // 50
 	Log          io.Writer     // stderr
+	// Ready, if set, is called once, when the startup rescan is recorded
+	// and its baseline logged: scd tells systemd it is ready then, so the
+	// boot's verdict comes after those rows (the chunk B review's note).
+	Ready func()
 }
 
 // Defaults fills the zero fields of c with the production values.
@@ -1263,19 +1267,24 @@ func (w *Watcher) expandPrefix(dir string) {
 // paths are all handled.
 func (w *Watcher) maybeLogBaseline() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	b := w.baseline
 	if b == nil || !b.walked {
+		w.mu.Unlock()
 		return
 	}
 	for _, e := range w.dirty {
 		if e.reason == reasonStartup {
+			w.mu.Unlock()
 			return
 		}
 	}
 	w.baseline = nil
 	w.logLine(prioInfo, fmt.Sprintf("baseline: %d first seen, %d changed and %d deleted while not watching (%s)",
 		b.first, b.changed, b.gone, time.Since(b.start).Round(time.Millisecond)))
+	w.mu.Unlock()
+	if w.cfg.Ready != nil {
+		w.cfg.Ready()
+	}
 }
 
 // logRow writes one line per recorded row (plan 7.6), path first; first

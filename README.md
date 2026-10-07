@@ -97,7 +97,11 @@ sudo systemctl daemon-reload && sudo systemctl enable --now scd
 sudo journalctl -u scd -p warning   # boot- and access-critical changes (needs sudo)
 ```
 
-`scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. What is
+`scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. It
+counts as started (`Type=notify`) once its startup rescan is recorded, which
+boot does not wait for. To update, run the same lines, `sc` first, then
+`sudo systemctl restart scd`: an older `sc` (the `m4` tag's or before)
+never says it is ready, and this unit gives it up after 5 minutes. What is
 watched is the built-in scope (`internal/scope/default.scope`): all of `/etc`
 minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 `custom.cfg`, and each login's `authorized_keys`, `rc` and `environment`.
@@ -209,7 +213,9 @@ console, M4 gives you:
   --console` says which boot was the last healthy one, what changed
   since, worst first, and the commands that put the file back.
 - **A verdict for every boot** that can write `/var`, in
-  `$SC_HOME/boots`: ok, bad, or never reached multi-user. The rescue boot
+  `$SC_HOME/boots`: ok, bad, or never reached multi-user. With scd
+  running it comes once scd's startup rescan is recorded, so a file
+  edited while scd was down is not taken for a change since. The rescue boot
   itself gets none, and keeps its journal in memory only:
   `journalctl -xb` works while you are in it, and after the reboot
   `journalctl --list-boots` does not list it.

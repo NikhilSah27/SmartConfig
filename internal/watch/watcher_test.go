@@ -1078,3 +1078,30 @@ func TestCheckHomeRootSlash(t *testing.T) {
 		t.Fatal("SC_HOME under / accepted")
 	}
 }
+
+// Ready is called once, when the startup rescan's baseline is logged (scd
+// tells systemd it is ready then, and the boot's verdict waits for it);
+// not again for a later rescan.
+func TestReadyAfterBaseline(t *testing.T) {
+	e := newEnv(t)
+	os.WriteFile(filepath.Join(e.root, "a"), []byte("x\n"), 0o644)
+	var mu sync.Mutex
+	var calls int
+	var logAtCall string
+	e.cfg.Ready = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		logAtCall = e.log.String()
+	}
+	e.start()
+	e.waitFor("Ready", func() bool { mu.Lock(); defer mu.Unlock(); return calls == 1 })
+	e.w.RequestRescan()
+	os.WriteFile(filepath.Join(e.root, "b"), []byte("y\n"), 0o644)
+	e.waitFor("b recorded", func() bool { return strings.Contains(e.log.String(), filepath.Join(e.root, "b")) })
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 || !strings.Contains(logAtCall, "baseline: ") {
+		t.Errorf("Ready called %d times; the log then:\n%s", calls, logAtCall)
+	}
+}

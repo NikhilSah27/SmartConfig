@@ -25,7 +25,11 @@ func TestUnitFile(t *testing.T) {
 	}
 	unit := "\n" + strings.Join(lines, "\n") + "\n"
 	for _, want := range []string{
-		"\nType=exec\n", "\nRestart=on-failure\n", "\nWantedBy=multi-user.target\n",
+		"\nType=notify\n", "\nTimeoutStartSec=", "\nRestart=on-failure\n", "\nWantedBy=multi-user.target\n",
+		// No default dependencies, so multi-user.target does not wait for
+		// the startup rescan (Type=notify); these are the defaults but that.
+		"\nDefaultDependencies=no\n", "\nRequires=sysinit.target\n", "\nAfter=sysinit.target basic.target\n",
+		"\nConflicts=shutdown.target\n", "\nBefore=shutdown.target\n",
 		"\nEnvironment=GOTRACEBACK=none\n", "\nStartLimitBurst=", "\nIOSchedulingClass=",
 		"\nExecStart=/usr/local/sbin/sc watch\n", "\nSyslogIdentifier=scd\n",
 		"\nExecReload=/bin/kill -HUP $MAINPID\n", "\nAfter=remote-fs.target\n",
@@ -38,10 +42,10 @@ func TestUnitFile(t *testing.T) {
 		t.Error("idle I/O class: a commit could hold the lock past sc's busy timeout")
 	}
 	// These could hide /etc, /boot, /root or /home from the watcher, or
-	// order other units after scd.
+	// order other units after scd (shutdown.target is systemd's default).
 	for _, bad := range []string{"ProtectHome=", "ProtectSystem=", "TemporaryFileSystem=",
 		"InaccessiblePaths=", "PrivateTmp=", "Before="} {
-		if strings.Contains(unit, "\n"+bad) {
+		if strings.Contains(strings.ReplaceAll(unit, "\nBefore=shutdown.target\n", "\n"), "\n"+bad) {
 			t.Errorf("unit has %s", bad)
 		}
 	}
@@ -78,7 +82,7 @@ func TestBootUnits(t *testing.T) {
 			"\nConditionKernelCommandLine=!fstab=no\n"},
 		"sc-boot-ok.service": {"\nConditionPathIsReadWrite=/var/lib\n", "\nConditionKernelCommandLine=!fstab=no\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
-			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service\n"},
+			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service scd.service\n"},
 	} {
 		unit := unitLines(t, name)
 		for _, w := range want {

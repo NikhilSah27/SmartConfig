@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -353,5 +354,30 @@ func TestWatchSIGHUPRescans(t *testing.T) {
 	cmd.Process.Signal(syscall.SIGTERM)
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("after SIGHUP then SIGTERM: %v\n%s", err, errb.String())
+	}
+}
+
+// sdNotify sends its state as one datagram to $NOTIFY_SOCKET, and does
+// nothing without it (sc watch not under systemd).
+func TestSdNotify(t *testing.T) {
+	t.Setenv("NOTIFY_SOCKET", "")
+	if err := sdNotify("READY=1"); err != nil {
+		t.Errorf("without a socket: %v", err)
+	}
+	sock := filepath.Join(t.TempDir(), "notify")
+	l, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: sock, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	t.Setenv("NOTIFY_SOCKET", sock)
+	if err := sdNotify("READY=1"); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	l.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := l.Read(buf)
+	if err != nil || string(buf[:n]) != "READY=1" {
+		t.Errorf("got %q %v", buf[:n], err)
 	}
 }
