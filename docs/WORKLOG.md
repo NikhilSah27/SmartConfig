@@ -2291,3 +2291,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   anyway); `FS_IOC_GETFLAGS` is only for the ports sc builds for (mips
   and sparc were never built: the review's case cannot happen). Tests
   for each; `make lab-test` 326 and the full checks passed.
+- **The rescue mount hint, done `845b395`** (chunk G; the chunk E review's
+  note). `sc status` puts `mount <point>` in its undo when the file is
+  under an unmounted mount point of fstab (a separate `/boot`), as `sc
+  restore` now refuses there. `TestStatusUndoMounts`. Full checks
+  passed (a first run's root pass used the system's Go 1.22, as the path
+  to the toolchain was taken outside the repo; rerun right).

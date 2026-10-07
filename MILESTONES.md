@@ -297,7 +297,7 @@ snapshot.
 - The GRUB password recipe in the README is not tested in the lab yet,
   in BIOS or UEFI mode (whether Ubuntu's signed EFI GRUB takes
   `password_pbkdf2` included) (chunk E).
-- Done: `sc status` puts `mount /boot` (any unmounted mount point of
+- Done (`845b395`): `sc status` puts `mount /boot` (any unmounted mount point of
   fstab the file is under) in its undo (chunk E, C7); `/usr/local` is
   where sc runs from, so it is mounted when sc runs. With no store in a
   rescue or emergency boot it says to mount `/var` (final review, B4).
