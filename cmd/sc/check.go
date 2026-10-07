@@ -216,15 +216,20 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 			notes = append(notes, show(t.label)+": no checker reads this file")
 			continue
 		}
-		checked++
-		if rep.Incomplete {
+		switch {
+		case rep.Unchecked:
+			unchecked++ // its note says why (review of chunk F, B6)
+		case rep.Incomplete:
+			checked++
 			partial++
+		default:
+			checked++
 		}
 		for _, f := range rep.Findings {
 			rows = append(rows, findingRow{t.label, f})
 		}
 		for _, n := range rep.Notes {
-			notes = append(notes, show(t.label)+": "+n)
+			notes = append(notes, show(t.label)+": "+show(n)) // a note may name a file or carry a path (B7)
 		}
 		for _, s := range rep.Said {
 			said = append(said, show(t.label)+": "+show(s))
@@ -246,6 +251,7 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 		for _, s := range said {
 			fmt.Fprintln(out, "  "+s)
 		}
+		fmt.Fprintln(out) // the tally that follows is not part of it (B9)
 	case len(said) > 0 && len(rows) == 0:
 		fmt.Fprintln(out, "sc check -v shows what the validators said.")
 	}

@@ -17,7 +17,7 @@ import (
 // bootRunner runs systemctl for sc boot verdict, as the M3 runner runs a
 // validator: from fixed directories, no shell, LC_ALL=C, a timeout. Tests
 // point it at a fake.
-var bootRunner = check.Runner{Timeout: 30 * time.Second}
+var bootRunner = check.Runner{Timeout: 30 * time.Second, KeepOnStop: true}
 
 // grubenvPath is GRUB's environment block, where 42_smartconfig's code in
 // grub.cfg reads smartconfig_pending. Tests point it elsewhere.

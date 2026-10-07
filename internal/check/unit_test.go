@@ -366,6 +366,12 @@ func TestUnitDropIn(t *testing.T) {
 			want: "2 unit-syntax error", runs: 2, links: map[string]string{"sshd.service": "ssh.service"}},
 		{name: "another unit's problem", path: unitDir + "sshd.service.d/50-x.conf", with: fmt.Sprintf(refusal, "ssh.service", "ssh.service"), code: 1, runs: 1},
 		{name: "a template", path: unitDir + "getty@.service.d/50-x.conf", with: typo, want: "3 unit-unknown-key warning", runs: 1},
+		// The root mount's own drop-in, not one for every unit (review A5).
+		{name: "the root mount's", path: unitDir + "-.mount.d/50-x.conf", with: typo, want: "3 unit-unknown-key warning", runs: 1},
+		// The same kind of finding about the unit, said another way without
+		// the drop-in: still the drop-in's (the key has the message).
+		{name: "a refusal like the unit's, but another", with: "my.service: Something new A. Refusing.\n",
+			without: "my.service: Something new B. Refusing.\n", code: 1, want: "0 unit-syntax error", runs: 2},
 		{name: "a drop-in for every foo- unit", path: unitDir + "foo-.service.d/50-x.conf",
 			note: "a drop-in for every unit whose name starts with foo-; it was not checked"},
 	} {
@@ -455,5 +461,96 @@ func TestUnitDropInRealVerify(t *testing.T) {
 		if got := brief(rep.Findings); got != tc.want || len(rep.Notes) != 0 {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q", tc.name, got, tc.want, rep.Notes)
 		}
+	}
+}
+
+// The names systemd reports a drop-in's unit under (review of chunk F,
+// A1): an alias's, and a template alias's in the instance's form.
+func TestUnitNames(t *testing.T) {
+	fakeUnitDirs(t, map[string]string{"autovt@.service": "getty@.service", "sshd.service": "ssh.service"})
+	for unit, want := range map[string]string{
+		"my.service":          "my.service my.service",
+		"sshd.service":        "sshd.service sshd.service ssh.service ssh.service",
+		"getty@.service":      "getty@.service getty@i.service",
+		"autovt@.service":     "autovt@.service autovt@i.service getty@.service getty@i.service",
+		"autovt@tty2.service": "autovt@tty2.service autovt@tty2.service getty@tty2.service",
+	} {
+		if got := strings.Join(unitNames(unit), " "); got != want {
+			t.Errorf("unitNames(%s) = %s, want %s", unit, got, want)
+		}
+	}
+}
+
+// unitAlias takes the first file of the name on the unit path: a real file
+// there is no alias, whatever a later directory has, and a link to a file
+// of the same name (systemctl link) is none either.
+func TestUnitAliasPath(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(a, "x.service"), []byte("[Service]\n"), 0o644)
+	os.WriteFile(filepath.Join(b, "y.service"), []byte("[Service]\n"), 0o644)
+	os.Symlink("y.service", filepath.Join(b, "x.service"))
+	os.WriteFile(filepath.Join(b, "z.service"), []byte("[Service]\n"), 0o644)
+	os.Symlink(filepath.Join(b, "z.service"), filepath.Join(a, "z.service"))
+	saved := unitDirs
+	unitDirs = []string{a, b}
+	t.Cleanup(func() { unitDirs = saved })
+	if got := unitAlias("x.service"); got != "" {
+		t.Errorf("a real file first: %q", got)
+	}
+	if got := unitAlias("z.service"); got != "" {
+		t.Errorf("a linked unit: %q", got)
+	}
+}
+
+// A drop-in for an alias of a template, or of its instance, with the real
+// systemd: the autologin drop-in without its "ExecStart=" reset stops every
+// getty (review of chunk F, A1, high).
+func TestUnitDropInTemplateAlias(t *testing.T) {
+	if _, err := os.Lstat("/usr/lib/systemd/system/autovt@.service"); err != nil {
+		t.Skip("no autovt@.service")
+	}
+	c := &Checks{Home: filepath.Join(t.TempDir(), "schome")}
+	data := "[Service]\nExecStart=-/sbin/agetty --autologin bob --noclear %I $TERM\n"
+	for _, p := range []string{"autovt@.service.d/autologin.conf", "autovt@tty2.service.d/autologin.conf", "getty@.service.d/autologin.conf"} {
+		rep, err := c.Check(context.Background(), unitDir+p, []byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != "2 unit-syntax error" {
+			t.Errorf("%s: findings %q notes %q", p, got, notesSaid(rep))
+		}
+	}
+}
+
+// A unit a generator makes (an /etc/init.d script, an fstab line) is on the
+// machine, but verify, which runs no generators, finds none (A4): a note.
+func TestUnitDropInGenerated(t *testing.T) {
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	dropinTool(t, c, "Unit my.service not found.\n", "", 1)
+	fakeUnitDirs(t, nil)
+	gen := t.TempDir()
+	os.WriteFile(filepath.Join(gen, "my.service"), []byte("[Service]\n"), 0o644)
+	saved := generatorDirs
+	generatorDirs = []string{gen}
+	t.Cleanup(func() { generatorDirs = saved })
+	rep, err := c.Check(context.Background(), unitDir+"my.service.d/50-x.conf", []byte("[Service]\nRestart=always\n"))
+	if err != nil || len(rep.Findings) != 0 ||
+		notesSaid(rep) != "my.service is made at boot by a generator, which systemd-analyze does not run; the drop-in was not checked" {
+		t.Errorf("%q %q %v", brief(rep.Findings), notesSaid(rep), err)
+	}
+}
+
+// SYSTEMD_UNIT_PATH is split on ":": with one in SC_HOME the candidate
+// would not be read, so the drop-in is not checked, and a note says so (A6).
+func TestUnitDropInColonHome(t *testing.T) {
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	log := dropinTool(t, c, "", "", 0)
+	c.Home = filepath.Join(t.TempDir(), "sc:home")
+	rep, err := c.Check(context.Background(), unitDir+"my.service.d/50-x.conf", []byte("[Service]\nRestrt=1\n"))
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != `sc's scratch directory has a ":" in its path, which systemd's unit path cannot hold; the drop-in was not checked` {
+		t.Errorf("%q %q %v", brief(rep.Findings), notesSaid(rep), err)
+	}
+	if b, _ := os.ReadFile(log); len(b) != 0 {
+		t.Errorf("verify ran: %s", b)
 	}
 }

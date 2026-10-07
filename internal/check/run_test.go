@@ -5,6 +5,7 @@ package check
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -150,7 +151,13 @@ func TestStop(t *testing.T) {
 	}
 	defer cleanup()
 	done := make(chan Result)
-	go func() { res, _ := r.Run(context.Background(), "", "fake"); done <- res }()
+	go func() {
+		res, err := r.Run(context.Background(), "", "fake")
+		if !errors.Is(err, ErrStopped) {
+			t.Errorf("killed by Stop: %v", err)
+		}
+		done <- res
+	}()
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		liveMu.Lock()
 		n := len(liveGroups)
@@ -174,9 +181,26 @@ func TestStop(t *testing.T) {
 	if _, err := os.Stat(filepath.Dir(file)); !os.IsNotExist(err) {
 		t.Errorf("scratch directory still there: %v", err)
 	}
-	start := time.Now()
-	if res, err := r.Run(context.Background(), "", "fake"); err != nil || res.Exit != -1 || time.Since(start) > 5*time.Second {
-		t.Errorf("started after Stop: %+v %v after %v", res, err, time.Since(start))
+	// After Stop nothing starts; a runner told to keep what it starts
+	// (sc boot's) still runs it, to the end.
+	if res, err := r.Run(context.Background(), "", "fake"); !errors.Is(err, ErrStopped) || len(res.Out) != 0 {
+		t.Errorf("started after Stop: %+v %v", res, err)
+	}
+	keep := tool(t, "fake", "echo done\n")
+	keep.KeepOnStop = true
+	if res, err := keep.Run(context.Background(), "", "fake"); err != nil || string(res.Out) != "done\n" {
+		t.Errorf("KeepOnStop after Stop: %+v %v", res, err)
+	}
+	// Nothing is made after Stop: it would never be removed (review of
+	// chunk F, A8).
+	if _, _, err := Scratch(home, "/etc/hosts", []byte("x\n")); !errors.Is(err, ErrStopped) {
+		t.Errorf("Scratch after Stop: %v", err)
+	}
+	if err := scratchMkdir(filepath.Join(home, "tmp", "check-x", "with")); !errors.Is(err, ErrStopped) {
+		t.Errorf("scratchMkdir after Stop: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(home, "tmp", "check-*")); len(left) != 0 {
+		t.Errorf("made after Stop: %v", left)
 	}
 	liveMu.Lock()
 	defer liveMu.Unlock()
@@ -329,6 +353,18 @@ func TestRunTimeoutBeforeStart(t *testing.T) {
 	r.Timeout = time.Nanosecond
 	res, err := r.Run(context.Background(), "", "fake")
 	if err != nil || !res.TimedOut || res.Exit != -1 || len(res.Out) != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// A caller's context that is done before the start is the caller's error,
+// not a timeout of the tool's.
+func TestRunCancelledBeforeStart(t *testing.T) {
+	r := tool(t, "fake", "echo started\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, err := r.Run(ctx, "", "fake")
+	if !errors.Is(err, context.Canceled) || res.TimedOut {
 		t.Fatalf("%+v %v", res, err)
 	}
 }

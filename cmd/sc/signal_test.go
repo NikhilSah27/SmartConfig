@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -570,5 +571,121 @@ func TestSignalStopsValidator(t *testing.T) {
 		if left, _ := filepath.Glob(filepath.Join(home, "tmp", "check-*")); len(left) != 0 {
 			t.Errorf("%v: scratch copies left: %v", sig, left)
 		}
+	}
+}
+
+// A signal while sc check has more files to check: Stop kills the first
+// file's validator, and the command must not go on to make the next file's
+// scratch copy before sc ends (review of chunk F, B1: 8 of 20 runs left
+// one).
+func TestSignalScratchNextTarget(t *testing.T) {
+	bin := scBinary(t)
+	leaks := 0
+	const runs = 20
+	for i := 0; i < runs; i++ {
+		home, tools := t.TempDir(), t.TempDir()
+		pids := filepath.Join(tools, "pids")
+		os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nif mkdir "+tools+"/first 2>/dev/null; then sleep 60 & echo $$ $! > "+pids+".tmp; mv "+pids+".tmp "+pids+"; wait; fi\nexit 0\n"), 0o755)
+		args := []string{"check"}
+		for j := 0; j < 40; j++ {
+			args = append(args, "/etc/fstab")
+		}
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(os.Environ(), "SC_HOME="+home, "SC_TEST_TOOLS="+tools)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+			if _, err := os.Stat(pids); err == nil {
+				break
+			} else if time.Now().After(deadline) {
+				t.Fatal("the validator never started")
+			}
+		}
+		cmd.Process.Signal(syscall.SIGTERM)
+		cmd.Wait()
+		if left, _ := filepath.Glob(filepath.Join(home, "tmp", "check-*")); len(left) != 0 {
+			leaks++
+			files, _ := filepath.Glob(filepath.Join(left[0], "*"))
+			t.Logf("run %d: scratch left: %v %v", i, left, files)
+		}
+		b, _ := os.ReadFile(pids)
+		exec.Command("sh", "-c", "kill -9 "+string(b)).Run()
+	}
+	if leaks != 0 {
+		t.Errorf("%d of %d runs left a scratch copy behind", leaks, runs)
+	}
+}
+
+// A signal while sc check starts validators one after another: one that
+// was being started when Stop ran must not run on after sc died (B2: 10
+// of 30 runs left one). The fake validator hangs once the marker exists,
+// which the test makes just before the signal.
+func TestSignalValidatorStarting(t *testing.T) {
+	bin := scBinary(t)
+	args := []string{"check"}
+	for j := 0; j < 300; j++ {
+		args = append(args, "/etc/fstab")
+	}
+	survived := 0
+	const runs = 30
+	for i := 0; i < runs; i++ {
+		home, tools := t.TempDir(), t.TempDir()
+		marker := filepath.Join(tools, "marker")
+		tag := fmt.Sprintf("31.%d%d", os.Getpid()%1000, i)
+		os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\n[ -e "+marker+" ] && exec sleep "+tag+"\nexit 0\n"), 0o755)
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(os.Environ(), "SC_HOME="+home, "SC_TEST_TOOLS="+tools)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Duration(100+rand.Intn(300)) * time.Millisecond)
+		os.WriteFile(marker, nil, 0o644)
+		cmd.Process.Signal(syscall.SIGTERM)
+		cmd.Wait()
+		time.Sleep(300 * time.Millisecond)
+		if out, err := exec.Command("pgrep", "-f", "^sleep "+tag+"$").Output(); err == nil {
+			survived++
+			t.Logf("run %d: validator still runs after sc died: pid %s", i, strings.TrimSpace(string(out)))
+			exec.Command("pkill", "-f", "^sleep "+tag+"$").Run()
+		}
+	}
+	if survived != 0 {
+		t.Errorf("%d of %d runs left a validator running", survived, runs)
+	}
+}
+
+// What sc boot runs (grub-editenv rewrites grubenv in place) finishes when
+// a signal ends sc, as before Stop: the fake truncates grubenv as
+// grub-editenv's fopen("wb") does and writes the block a moment later; a
+// SIGTERM to sc boot seen in between (B4: grubenv was left empty).
+func TestSignalKeepsGrubEditenv(t *testing.T) {
+	bin := scBinary(t)
+	home, tools := t.TempDir(), t.TempDir()
+	env := filepath.Join(t.TempDir(), "grubenv")
+	block := "# GRUB Environment Block\n" + strings.Repeat("#", 1024-len("# GRUB Environment Block\n"))
+	os.WriteFile(env, []byte(block), 0o644)
+	started := filepath.Join(tools, "started")
+	os.WriteFile(filepath.Join(tools, "grub-editenv"), []byte("#!/bin/sh\n: > \"$1\"\ntouch "+started+"\nsleep 1\nprintf '%s' '"+block+"' > \"$1\"\n"), 0o755)
+	cmd := exec.Command(bin, "boot", "seen")
+	cmd.Env = append(os.Environ(), "SC_HOME="+home, "SC_TEST_BOOT_TOOLS="+tools, "SC_TEST_GRUBENV="+env)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(started); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatal("grub-editenv never started")
+		}
+	}
+	cmd.Process.Signal(syscall.SIGTERM)
+	cmd.Wait()
+	time.Sleep(2 * time.Second)
+	if fi, err := os.Stat(env); err != nil || fi.Size() != 1024 {
+		t.Errorf("grubenv after a SIGTERM to sc boot seen: size %d %v, want 1024 (grub-editenv was killed mid-write)", fi.Size(), err)
 	}
 }

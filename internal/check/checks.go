@@ -39,9 +39,14 @@ type Report struct {
 	// journal.
 	Said []string
 	// Incomplete: a validator was cut short this time (killed, out of
-	// time, output cut), so findings may be missing. A problem it found
-	// before is then not known to be gone.
+	// time, output cut, or it exited without a word sc understands), so
+	// findings may be missing. A problem it found before is then not known
+	// to be gone.
 	Incomplete bool
+	// Unchecked: nothing was checked, and a note says why (a drop-in for
+	// every unit with a prefix). sc check counts the file as not checked
+	// (review of chunk F, B6).
+	Unchecked bool
 }
 
 // input is what a checker gets.
@@ -57,6 +62,24 @@ type input struct {
 	incomplete *bool
 	// said collects Report.Said.
 	said *[]string
+	// unchecked is Report.Unchecked.
+	unchecked *bool
+}
+
+// cut marks the report Incomplete and returns note.
+func (in input) cut(note string) string {
+	if in.incomplete != nil {
+		*in.incomplete = true
+	}
+	return note
+}
+
+// skip marks the report Unchecked and returns note.
+func (in input) skip(note string) string {
+	if in.unchecked != nil {
+		*in.unchecked = true
+	}
+	return note
 }
 
 // say keeps lines a validator printed for Report.Said and returns note,
@@ -134,6 +157,8 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 	in.incomplete = &incomplete
 	var said []string
 	in.said = &said
+	unchecked := false
+	in.unchecked = &unchecked
 	fs, notes, err := fn(ctx, c, in)
 	if err != nil {
 		return Report{}, fmt.Errorf("check %s: %w", path, err)
@@ -142,7 +167,7 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 		fs[i].Path = path
 	}
 	sort.SliceStable(fs, func(i, j int) bool { return fs[i].Line < fs[j].Line })
-	return Report{Checker: name, Findings: fs, Notes: notes, Said: said, Incomplete: incomplete}, nil
+	return Report{Checker: name, Findings: fs, Notes: notes, Said: said, Incomplete: incomplete, Unchecked: unchecked}, nil
 }
 
 // pathExists reports whether p exists on this machine.

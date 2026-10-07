@@ -17,7 +17,8 @@ import (
 // send a signal in that window.
 // SC_TEST_STATUS_CHECKS holds it back once its store and scratch are
 // open. SC_TEST_CONSOLE_LIMIT is sc status --console's limit.
-// SC_TEST_TOOLS is the one directory validators are looked up in.
+// SC_TEST_TOOLS is the one directory validators are looked up in,
+// SC_TEST_BOOT_TOOLS sc boot's tools, SC_TEST_GRUBENV its grubenv.
 func init() {
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_AFTER_RUN")); err == nil {
 		testHookAfterRun = func() { time.Sleep(d) }
@@ -33,6 +34,12 @@ func init() {
 	}
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_CONSOLE_LIMIT")); err == nil {
 		consoleLimit = d
+	}
+	if d := os.Getenv("SC_TEST_BOOT_TOOLS"); d != "" {
+		bootRunner.Dirs = []string{d}
+	}
+	if p := os.Getenv("SC_TEST_GRUBENV"); p != "" {
+		grubenvPath = p
 	}
 	if d := os.Getenv("SC_TEST_TOOLS"); d != "" {
 		testHookChecks = func(c *check.Checks) { c.Run.Dirs = []string{d} }

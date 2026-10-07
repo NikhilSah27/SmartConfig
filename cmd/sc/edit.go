@@ -164,10 +164,11 @@ func runEdit(cmd *cobra.Command, arg string) (err error) {
 			return err
 		}
 		for _, note := range rep.Notes {
-			fmt.Fprintln(out, "note: "+note)
+			fmt.Fprintln(out, "note: "+show(note))
 		}
 		// The validators' words behind the notes, as explain shows a
-		// finding's: the file is the one being edited.
+		// finding's: they may quote the edited file, or one it goes with
+		// (sshd_config, the unit), which root may read.
 		for _, s := range rep.Said {
 			fmt.Fprintln(out, "  "+show(s))
 		}

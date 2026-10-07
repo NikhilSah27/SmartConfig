@@ -173,7 +173,7 @@ func checkUdev(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		return nil, append(notes, note), nil
 	case udevChecked.FindSubmatch(res.Out) == nil || string(udevChecked.FindSubmatch(res.Out)[1]) != "1":
 		// It counts the files it checked: 0 for one it passed over.
-		return nil, append(notes, "udevadm verify did not report checking the file; it was not checked"), nil
+		return nil, append(notes, in.cut("udevadm verify did not report checking the file; it was not checked")), nil
 	}
 	return out, notes, nil
 }

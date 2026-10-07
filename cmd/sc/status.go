@@ -281,8 +281,9 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 				writeConsoles(real, []byte(fmt.Sprintf("sc: the report took over %s and was stopped, so that the shell can start.\n"+
 					"Run it from the shell: sc status\n", seconds(consoleLimit))), until)
 				// The store's repaired copy and the checks' scratch, in
-				// /run: os.Exit runs no deferred cleanup (the M4 final
-				// review, B6).
+				// /run or $SC_HOME/tmp: os.Exit runs no deferred cleanup
+				// (the M4 final review, B6; review of chunk F, B5).
+				check.Stop()
 				fsutil.RemovePending()
 				os.Exit(1)
 			})
@@ -550,7 +551,10 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 	added := check.Added(had, rep.Findings)
 	w := check.Worst(added)
 	if w == 0 {
-		if rep.Incomplete {
+		switch {
+		case rep.Unchecked:
+			return "not checked", 0
+		case rep.Incomplete:
 			return "not fully checked", 0
 		}
 		return "no problem found", 0

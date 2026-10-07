@@ -198,6 +198,9 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		}
 		return
 	}
+	if rep.Unchecked {
+		return // nothing was checked (a drop-in sc does not judge): nothing to say
+	}
 	if rep.Incomplete {
 		// Not remembered, and no "ok again": a validator that did not
 		// finish cannot say a problem it found before is gone.

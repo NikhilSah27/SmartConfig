@@ -356,3 +356,40 @@ func TestCheckCLISaid(t *testing.T) {
 		t.Errorf("with -v: %+v", r)
 	}
 }
+
+// A file whose check did nothing (a drop-in for every unit with a prefix)
+// is a file not checked: exit 1, not "no problems found" (review of chunk
+// F, B6). Its note, which carries the stem from the path, is escaped (B7).
+func TestCheckCLIUnchecked(t *testing.T) {
+	t.Setenv("SC_HOME", filepath.Join(t.TempDir(), "home"))
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Run.Dirs = []string{empty} }
+	t.Cleanup(func() { testHookChecks = nil })
+	cand := filepath.Join(t.TempDir(), "d.conf")
+	os.WriteFile(cand, []byte("[Service]\nRestart=always\n"), 0o644)
+	r := sc(t, "check", "--as", "/etc/systemd/system/x\x1b[7m-.service.d/a.conf", cand)
+	if r.code != 1 || r.stderr != "sc: 1 file not checked (see the notes)\n" || strings.Contains(r.stdout, "no problems found") ||
+		strings.Contains(r.stdout, "\x1b") || !strings.Contains(r.stdout, `a drop-in for every unit whose name starts with x\x1b[7m-; it was not checked`) {
+		t.Errorf("%+v", r)
+	}
+}
+
+// What a validator said behind a note is escaped as a finding's raw lines
+// are; with findings, the "-v explains" line says enough, and the
+// "behind the notes" block is set off from the tally.
+func TestCheckCLISaidShown(t *testing.T) {
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte(badFstab), 0o644)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nprintf 'findmnt: \\033[7mbad\\n' >&2\nexit 1\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs = []string{tools} }
+	r := sc(t, "check", fstab)
+	if strings.Contains(r.stdout, "shows what the validators said") || !strings.Contains(r.stdout, "sc check -v explains") {
+		t.Errorf("without -v: %q", r.stdout)
+	}
+	r = sc(t, "check", "-v", fstab)
+	if strings.Contains(r.stdout, "\x1b") || !strings.Contains(r.stdout, "  "+fstab+`: "findmnt: \x1b[7mbad"`+"\n\n1 blocker, 1 warning in 1 file.") {
+		t.Errorf("with -v: %q", r.stdout)
+	}
+}

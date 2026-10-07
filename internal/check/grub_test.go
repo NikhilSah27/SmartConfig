@@ -278,6 +278,8 @@ func TestShQuoteOpen(t *testing.T) {
 		{"A=\\\"x\nB=`date\n", 2},                  // \" outside quotes; a backquote
 		{"A=\"x\\\ny\nB=1\n", 1},                   // a backslash and newline inside quotes
 		{"A=0\nB=\"x\"\n", 0},
+		{"A=\"x\nB='y\nC=\"z\"\n", 1},   // the next open line does not close it
+		{"A=1;# it's\nB=2 # it's\n", 0}, // a # after ; or a space starts a comment
 	} {
 		if got := shQuoteOpen([]byte(tc.data)); got != tc.want {
 			t.Errorf("%q: %d, want %d", tc.data, got, tc.want)

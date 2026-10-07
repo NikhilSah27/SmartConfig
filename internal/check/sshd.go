@@ -60,7 +60,7 @@ func checkSshd(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 	var err error
 	if in.path == sshdMain {
 		var others []string
-		out, notes, others, err = sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path), in.say)
+		out, notes, others, _, err = sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path), in.say)
 		notes = append(notes, sshdOthers(in, others)...)
 	} else {
 		out, notes, err = sshdTogether(ctx, c, in)
@@ -162,7 +162,7 @@ func sshdOthers(in input, others []string) []string {
 // drop-in is read. Without an sshd_config there is nothing to read it in.
 func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	alone := func(why string) ([]Finding, []string, error) {
-		out, notes, others, err := sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path), in.say)
+		out, notes, others, _, err := sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path), in.say)
 		notes = append(notes, sshdOthers(in, others)...)
 		if why != "" {
 			notes = append(notes, why+"; the drop-in was checked alone")
@@ -180,6 +180,11 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	dir, name := filepath.Dir(in.path), filepath.Base(in.path)
 	root := filepath.Join(filepath.Dir(in.file), "together")
 	copies := filepath.Join(root, "d")
+	if strings.ContainsAny(copies, "\"*?[\\") {
+		// sshd would read them as a quote or a pattern (review of chunk F,
+		// A2); a space is safe in the quotes below.
+		return alone("sc's scratch directory has a quote or a pattern character in its path")
+	}
 	var pats []string
 	lines := strings.Split(string(main), "\n")
 	for i, l := range lines {
@@ -195,7 +200,7 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 			}
 			if ok, _ := filepath.Match(p, in.path); ok && filepath.Dir(p) == dir {
 				pats = append(pats, filepath.Base(p))
-				f[j+1], named = filepath.Join(copies, filepath.Base(p)), true
+				f[j+1], named = `"`+filepath.Join(copies, filepath.Base(p))+`"`, true
 			}
 		}
 		if named {
@@ -205,7 +210,7 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	if len(pats) == 0 {
 		return alone(sshdMain + " does not include it")
 	}
-	if err := os.MkdirAll(copies, 0o700); err != nil {
+	if err := scratchMkdir(copies); err != nil {
 		return nil, nil, err
 	}
 	entries, err := os.ReadDir(filepath.Join(c.sshdRoot, dir))
@@ -239,13 +244,13 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	var heard []string
 	hear := func(note string, lines ...string) string { heard = append(heard, lines...); return note }
 	quiet := func(note string, _ ...string) string { return note }
-	run := func(data []byte, say func(string, ...string) string) ([]Finding, []string, []string, error) {
+	run := func(data []byte, say func(string, ...string) string) ([]Finding, []string, []string, bool, error) {
 		if err := os.WriteFile(filepath.Join(copies, name), data, 0o600); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
 		return sshdRun(ctx, c, in, file, names, say)
 	}
-	out, notes, others, err := run(in.data, hear)
+	out, notes, others, _, err := run(in.data, hear)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -254,9 +259,16 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		in.say("", heard...)
 		return out, notes, nil
 	}
-	before, _, othersBefore, err := run(nil, quiet)
+	before, _, othersBefore, ok, err := run(nil, quiet)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !ok {
+		// No second run: what sshd said about other files, or without a
+		// line, is not known to be the drop-in's doing (A3).
+		in.say("", heard...)
+		return slices.DeleteFunc(out, lineless), append(notes,
+			"sshd did not finish a second run, without the drop-in; what it said about other files or without a line is left out"), nil
 	}
 	if len(othersBefore) > 0 {
 		return alone("sshd stops at a problem in another file, maybe before the drop-in")
@@ -293,19 +305,19 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 // files, and say keeps its words behind a note. The server reads its host
 // keys before it says the file is fine, which only root can; a test gives
 // it a throwaway key with -h instead.
-func sshdRun(ctx context.Context, c *Checks, in input, file string, names *strings.Replacer, say func(string, ...string) string) (out []Finding, notes, others []string, err error) {
+func sshdRun(ctx context.Context, c *Checks, in input, file string, names *strings.Replacer, say func(string, ...string) string) (out []Finding, notes, others []string, ok bool, err error) {
 	args := []string{"-t", "-f", file}
 	if c.sshdHostKey != "" {
 		args = append(args, "-h", c.sshdHostKey)
 	}
 	res, notes, ok, err := c.validate(ctx, in, "sshd", args...)
 	if err != nil || !ok {
-		return nil, notes, nil, err
+		return nil, notes, nil, false, err
 	}
 	// Its messages all go to stderr. With exit 0 they are notices
 	// (deprecated options) and the file is fine.
 	if res.Exit == 0 {
-		return nil, notes, nil, nil
+		return nil, notes, nil, true, nil
 	}
 	said := len(notes)
 	byLine := map[int]int{} // line -> index in out
@@ -324,7 +336,7 @@ func sshdRun(ctx context.Context, c *Checks, in input, file string, names *strin
 		if m == nil {
 			if strings.HasPrefix(l, in.path+": ") {
 				// "F: No such file or directory": it never read the file.
-				return nil, append(notes, say("sshd could not check the file", l)), nil, nil
+				return nil, append(notes, say("sshd could not check the file", l)), nil, true, nil
 			}
 			loose = append(loose, l)
 			continue
@@ -376,9 +388,9 @@ func sshdRun(ctx context.Context, c *Checks, in input, file string, names *strin
 		out, notes = sshdHostKeys(c, in, env, out, notes, say)
 	}
 	if len(out) == 0 && len(notes) == said && len(others) == 0 {
-		notes = append(notes, fmt.Sprintf("sshd failed (exit %d) without naming a problem; the file was not checked", res.Exit))
+		notes = append(notes, in.cut(fmt.Sprintf("sshd failed (exit %d) without naming a problem; the file was not checked", res.Exit)))
 	}
-	return out, notes, others, nil
+	return out, notes, others, true, nil
 }
 
 // sshdHostKeys reads the lines about the machine. "no hostkeys available"

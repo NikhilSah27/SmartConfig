@@ -147,16 +147,17 @@ sc check -v explains; sc log FILE lists the versions to restore.
 `sc check` exits 2 when a file has a blocker or an error, 1 when a file
 could not be checked (run it with sudo for files only root may read), and
 0 otherwise. With no argument it checks the files scd records that have a
-checker. A note says, in sc's words, when a file was not fully checked;
-what the validator said, which may quote a file, is shown with `-v`.
+checker. A note says, in sc's words, when a file was not (fully)
+checked; what the validator said, which may quote a file, `sc check`
+shows with `-v` and `sc edit` under the note.
 
 What is checked, each with the system's own validator in a check-only form
 plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers
 (`visudo -c`), `sshd_config` and its drop-ins (`sshd -t`, a drop-in
 inside `sshd_config` as sshd reads it, and a warning for a
 `ListenAddress` no interface here has), systemd units in
-`/etc/systemd/system` and their drop-ins (`NAME.service.d/*.conf`, checked
-with the unit) (`systemd-analyze verify`), `/etc/default/grub` and
+`/etc/systemd/system` and their drop-ins in `NAME.d/*.conf`, each drop-in
+with its unit (`systemd-analyze verify`), `/etc/default/grub` and
 `grub.cfg` (`sh -n`, `grub-script-check`), netplan (netplan's generator on
 a scratch copy of all its files), udev rules (`udevadm verify`), passwd
 and group (`pwck -r`, `grpck -r`, with a made-up shadow file), sysctl

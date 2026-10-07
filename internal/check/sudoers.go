@@ -257,7 +257,7 @@ func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string
 		}
 	}
 	if res.Exit != 0 && !said {
-		notes = append(notes, fmt.Sprintf("visudo exited %d without a message sc understands; the file was not checked", res.Exit))
+		notes = append(notes, in.cut(fmt.Sprintf("visudo exited %d without a message sc understands; the file was not checked", res.Exit)))
 	}
 	return out, notes, nil
 }

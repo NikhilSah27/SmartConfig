@@ -262,6 +262,10 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) (c
 			claimEnd()
 			return int(ec)
 		}
+		// Stopped by a signal: its handler says so and ends sc.
+		if errors.Is(err, check.ErrStopped) {
+			return 1
+		}
 		// A reader that went away is no error to report (main).
 		if claimEnd() && !errors.Is(err, syscall.EPIPE) {
 			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")

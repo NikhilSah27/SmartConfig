@@ -286,7 +286,7 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 			about = about[k : k+1]
 		} else if len(about) > 1 {
 			named := slices.DeleteFunc(slices.Clone(about), func(e fstabEntry) bool {
-				return !slices.ContainsFunc(g.msgs, func(m string) bool { return strings.Contains(m, " source: "+e.source+":") })
+				return !slices.ContainsFunc(g.msgs, func(m string) bool { return namesSource(m, e.source) })
 			})
 			if len(named) == 1 {
 				about = named
@@ -298,6 +298,26 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 		notes = append(notes, "findmnt could not read the disks (not root): filesystem types were not compared")
 	}
 	return out, notes, nil
+}
+
+// namesSource reports whether a findmnt message names source: a path is
+// followed by ": reason", a tag (UUID=...) ends the message, as findmnt
+// 2.39.3 prints them, and without the quotes fstab may put around a tag's
+// value (review of chunk F, A7).
+func namesSource(msg, source string) bool {
+	src := " source: " + strings.ReplaceAll(source, `"`, "")
+	msg = strings.TrimRight(msg, " \t")
+	for i := strings.Index(msg, src); i >= 0; {
+		if rest := msg[i+len(src):]; rest == "" || rest[0] == ':' {
+			return true
+		}
+		j := strings.Index(msg[i+1:], src)
+		if j < 0 {
+			break
+		}
+		i += 1 + j
+	}
+	return false
 }
 
 // fstabMessages reads findmnt's messages under one heading, about the

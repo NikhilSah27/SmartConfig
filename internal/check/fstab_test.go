@@ -461,3 +461,39 @@ func TestFstabHeadings(t *testing.T) {
 		}
 	}
 }
+
+// findmnt names a tag source without a ":" after it ("unreachable on boot
+// required source: UUID=..."), as findmnt 2.39.3 prints it. As root a
+// healthy swap partition gets no message, so of three swap lines only the
+// missing middle one has a finding, not the first under the shared
+// heading (review of chunk F, A7).
+func TestFstabTagSource(t *testing.T) {
+	const (
+		u1 = "UUID=aaaaaaaa-0000-4000-8000-000000000001"
+		u2 = "UUID=bbbbbbbb-0000-4000-8000-000000000002"
+		u3 = "UUID=cccccccc-0000-4000-8000-000000000003"
+	)
+	fstab := rootUUID + " / ext4 defaults 0 1\n" + u1 + " none swap sw 0 0\n" + u2 + " none swap sw 0 0\n" + u3 + " none swap sw 0 0\n"
+	out := "none\n   [W] target specified more than once\n   [W] target specified more than once\n" +
+		"none\n   [W] target specified more than once\n   [E] unreachable on boot required source: " + u2 + "\n"
+	c, _ := fakeMachine(t, []string{rootUUID, "/dev/disk/by-uuid/aaaaaaaa-0000-4000-8000-000000000001",
+		"/dev/disk/by-uuid/cccccccc-0000-4000-8000-000000000003"}, "findmnt", writeGolden(t, "tag", out, ""), 1)
+	rep, err := c.Check(context.Background(), "/etc/fstab", []byte(fstab))
+	if err != nil || brief(rep.Findings) != "3 fstab-source-missing error" {
+		t.Errorf("%q %v", brief(rep.Findings), err)
+	}
+	for msg, want := range map[string]bool{
+		"[E] unreachable on boot required source: " + u2:        true,
+		"[W] unreachable source: /dev/sdz8: No such file":       true,
+		"[E] unreachable on boot required source: " + u2 + "0":  false,
+		"[E] unreachable on boot required source: " + u2 + " x": false,
+	} {
+		src := u2
+		if strings.Contains(msg, "sdz8") {
+			src = "/dev/sdz8"
+		}
+		if namesSource(msg, src) != want || namesSource(msg, strings.Replace(src, "=", "=\"", 1)+"\"") != want && src == u2 {
+			t.Errorf("namesSource(%q, %q) != %v", msg, src, want)
+		}
+	}
+}

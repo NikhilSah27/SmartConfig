@@ -152,6 +152,43 @@ func unitAlias(name string) string {
 	return ""
 }
 
+// unitNames returns the names systemd-analyze verify may give unit in its
+// messages: its own and the instance it verifies of a template, and those
+// of the unit it is an alias of, whole or by its template (autovt@.service
+// is getty@.service on Ubuntu: a drop-in for autovt@tty2.service is
+// reported under getty@tty2.service; review of chunk F, A1).
+func unitNames(unit string) []string {
+	name, instance := unitName(unit)
+	names := []string{name, instance}
+	if a := unitAlias(name); a != "" {
+		_, ai := unitName(a)
+		names = append(names, a, ai)
+	}
+	if at := strings.IndexByte(name, '@'); at > 0 && !strings.Contains(name, "@.") {
+		if a := unitAlias(name[:at+1] + filepath.Ext(name)); strings.Contains(a, "@.") {
+			names = append(names, a[:strings.IndexByte(a, '@')+1]+name[at+1:])
+		}
+	}
+	return names
+}
+
+// generatorDirs are where systemd's generators put the units they make at
+// boot (an /etc/init.d script, an fstab line), which systemd-analyze
+// verify does not run; tests fake them.
+var generatorDirs = []string{"/run/systemd/generator.early", "/run/systemd/generator", "/run/systemd/generator.late"}
+
+// unitGenerated reports whether a generator made a unit of one of names.
+func unitGenerated(names []string) bool {
+	for _, d := range generatorDirs {
+		for _, n := range names {
+			if _, err := os.Lstat(filepath.Join(d, n)); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // checkUnitDropIn checks a drop-in, /etc/systemd/system/NAME.d/X.conf,
 // together with the unit NAME it changes (M3 follow-up 1). systemd-analyze
 // verify loads the unit by name with a scratch directory first on its
@@ -167,22 +204,24 @@ func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []str
 	unit := strings.TrimSuffix(dir, ".d")
 	dot := strings.LastIndexByte(unit, '.')
 	if unit == dir || dot <= 0 {
-		return nil, []string{"the drop-in is not in a unit's NAME.d directory; it was not checked"}, nil
+		return nil, []string{in.skip("the drop-in is not in a unit's NAME.d directory; it was not checked")}, nil
 	}
-	if stem := unit[:dot]; strings.HasSuffix(stem, "-") {
+	if stem := unit[:dot]; stem != "-" && strings.HasSuffix(stem, "-") {
 		// systemd 246 and later: one drop-in for every unit whose name
 		// starts with stem. Which of them it breaks, sc does not judge.
-		return nil, []string{"a drop-in for every unit whose name starts with " + stem + "; it was not checked"}, nil
+		// -.mount.d is the root mount's own (A5).
+		return nil, []string{in.skip("a drop-in for every unit whose name starts with " + stem + "; it was not checked")}, nil
 	}
-	name, instance := unitName(unit)
-	names := []string{name, instance}
-	if a := unitAlias(name); a != "" {
-		names = append(names, a)
+	if strings.ContainsRune(filepath.Dir(in.file), ':') {
+		// SYSTEMD_UNIT_PATH is split on ":" (A6).
+		return nil, []string{in.skip("sc's scratch directory has a \":\" in its path, which systemd's unit path cannot hold; the drop-in was not checked")}, nil
 	}
+	_, instance := unitName(unit)
+	names := unitNames(unit)
 	verify := func(sub string, data []byte) (res Result, file string, notes []string, ok bool, err error) {
 		root := filepath.Join(filepath.Dir(in.file), sub)
 		file = filepath.Join(root, dir, filepath.Base(in.path))
-		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		if err := scratchMkdir(filepath.Dir(file)); err != nil {
 			return res, file, nil, false, err
 		}
 		if err := os.WriteFile(file, data, 0o600); err != nil {
@@ -197,6 +236,9 @@ func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []str
 	}
 	out, problem, said, notFound := readVerify(res, in.data, file, in.path, names...)
 	switch {
+	case notFound && unitGenerated(names):
+		// A4: on the machine all the same.
+		return nil, append(notes, in.skip(unit+" is made at boot by a generator, which systemd-analyze does not run; the drop-in was not checked")), nil
 	case notFound:
 		return []Finding{{Rule: "unit-dropin-orphan", Severity: Warning, Raw: said,
 			Text: unit + " is not on this machine, so systemd does not read the drop-in"}}, notes, nil

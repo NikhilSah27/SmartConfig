@@ -30,6 +30,10 @@ type Runner struct {
 	Dirs    []string      // where tools are looked up; nil: toolDirs
 	Timeout time.Duration // 0: 10 s
 	MaxOut  int           // most output kept; 0: 64 KiB
+	// KeepOnStop: Stop leaves what it starts to finish, as a signal to sc
+	// did before (sc boot's grub-editenv rewrites grubenv in place; review
+	// of chunk F, B4). Validators are stopped.
+	KeepOnStop bool
 }
 
 // Result is what one validator run gave.
@@ -99,7 +103,24 @@ func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool strin
 	// have one stream land in the middle of the other's line.
 	out, errOut := &capWriter{max: maxOut}, &capWriter{max: maxOut}
 	cmd.Stdout, cmd.Stderr = out, errOut
-	if err := cmd.Start(); err != nil {
+	// Started and kept under the lock Stop takes: Stop kills it, or it is
+	// never started (review of chunk F, B2: one forked while Stop ran was
+	// missed and ran on after sc died).
+	if !r.KeepOnStop {
+		liveMu.Lock()
+		if stopped {
+			liveMu.Unlock()
+			return Result{Found: true, Exit: -1}, fmt.Errorf("run %s: %w", tool, ErrStopped)
+		}
+	}
+	err := cmd.Start()
+	if err == nil && !r.KeepOnStop {
+		liveGroups[cmd.Process.Pid] = true
+	}
+	if !r.KeepOnStop {
+		liveMu.Unlock()
+	}
+	if err != nil {
 		// Start refuses a context that is done: a time that ran out on a
 		// busy machine before the tool started is a timeout all the same.
 		if ctx.Err() == nil && tctx.Err() != nil {
@@ -107,23 +128,23 @@ func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool strin
 		}
 		return Result{Found: true}, fmt.Errorf("run %s: %w", tool, err)
 	}
-	// Until Wait reaps the tool, its pid and so its process group id
-	// cannot belong to anything else: Stop may kill the group until then.
-	pid := cmd.Process.Pid
-	liveMu.Lock()
-	if stopped {
-		syscall.Kill(-pid, syscall.SIGKILL)
-	}
-	liveGroups[pid] = true
-	liveMu.Unlock()
 	// Whatever the tool started and left behind is killed too, while the
-	// tool is still a zombie.
+	// tool is still a zombie: until Wait reaps it, its pid and so its
+	// process group id cannot belong to anything else, and Stop may kill
+	// the group until then.
+	pid := cmd.Process.Pid
 	waitExited(pid)
 	syscall.Kill(-pid, syscall.SIGKILL)
 	liveMu.Lock()
 	delete(liveGroups, pid)
+	killed := stopped && !r.KeepOnStop
 	liveMu.Unlock()
-	err := cmd.Wait()
+	err = cmd.Wait()
+	if killed {
+		// Stop's: sc is ending, and the command goes no further (B3:
+		// it printed "was killed" or went on to the next file).
+		return Result{Found: true, Exit: -1}, fmt.Errorf("run %s: %w", tool, ErrStopped)
+	}
 	res := Result{Found: true, Out: out.buf, Err: errOut.buf, Truncated: out.cut || errOut.cut}
 	var ee *exec.ExitError
 	switch {
@@ -150,8 +171,24 @@ var (
 	liveMu      sync.Mutex
 	liveGroups  = map[int]bool{}
 	liveScratch = map[string]bool{}
-	stopped     bool // Stop ran: a validator started later is killed at once
+	stopped     bool // Stop ran: no validator starts, no scratch is made
 )
+
+// ErrStopped is what Run, Scratch and the checks give once Stop ran: sc is
+// ending by a signal, and the command has nothing more to say.
+var ErrStopped = errors.New("sc is stopping")
+
+// scratchMkdir makes a directory inside a scratch directory, unless Stop
+// ran: Stop may have removed the scratch directory, which must not come
+// back with copies in it.
+func scratchMkdir(dir string) error {
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	if stopped {
+		return ErrStopped
+	}
+	return os.MkdirAll(dir, 0o700)
+}
 
 // Stop kills every validator sc started and has not reaped, with all it
 // started, and removes every scratch directory. sc's signal handler calls
@@ -241,13 +278,22 @@ func Scratch(home, path string, data []byte) (file string, cleanup func(), err e
 		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
 	}
 	sweepScratch(tmp)
-	dir, err := os.MkdirTemp(tmp, "check-")
-	if err != nil {
+	// Made and kept under the lock Stop takes, so Stop removes it or it is
+	// never made (review of chunk F, A8).
+	liveMu.Lock()
+	dir := ""
+	if !stopped {
+		if dir, err = os.MkdirTemp(tmp, "check-"); err == nil {
+			liveScratch[dir] = true
+		}
+	}
+	liveMu.Unlock()
+	switch {
+	case dir == "" && err == nil:
+		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, ErrStopped)
+	case err != nil:
 		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
 	}
-	liveMu.Lock()
-	liveScratch[dir] = true
-	liveMu.Unlock()
 	cleanup = func() {
 		liveMu.Lock()
 		delete(liveScratch, dir)

@@ -70,44 +70,41 @@ func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []strin
 // open read on its own, unless the next such line closes it (a value over
 // several lines): read as one file, the next line's first quote would
 // close the open one and its second open another, and the mistake would
-// seem to be a line later. Else the line the file's open quote starts on.
+// seem to be a line later. A file whose every line is closed read on its
+// own is closed read as a whole.
 func shQuoteOpen(data []byte) int {
 	lines := strings.Split(string(data), "\n")
 	for i := 0; i < len(lines); i++ {
-		if shUnclosed([]byte(lines[i])) == 0 {
+		if !shOpen(lines[i]) {
 			continue
 		}
 		j := i + 1
-		for j < len(lines) && shUnclosed([]byte(lines[j])) == 0 {
+		for j < len(lines) && !shOpen(lines[j]) {
 			j++
 		}
-		if j == len(lines) || shUnclosed([]byte(strings.Join(lines[i:j+1], "\n"))) > 0 {
+		if j == len(lines) || shOpen(strings.Join(lines[i:j+1], "\n")) {
 			return i + 1
 		}
 		i = j // a value over lines i+1 to j+1
 	}
-	return shUnclosed(data)
+	return 0
 }
 
-// shUnclosed returns the line a quote opens on that text never closes, or
-// 0, read as sh reads it: a ', ", or ` quote, a backslash outside single
-// quotes, and a # that starts a word begins a comment.
-func shUnclosed(data []byte) int {
-	line, open := 1, 0
+// shOpen reports whether text leaves a quote open, read as sh reads it: a
+// ', ", or ` quote, a backslash outside single quotes, and a # that starts
+// a word begins a comment.
+func shOpen(text string) bool {
 	var quote byte
 	word := true // at the start of a word
-	for i := 0; i < len(data); i++ {
-		ch := data[i]
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
 		switch {
 		case quote == '\'':
 			if ch == '\'' {
 				quote = 0
 			}
-		case ch == '\\' && i+1 < len(data):
+		case ch == '\\' && i+1 < len(text):
 			i++ // the next one is taken as it is, a newline too
-			if data[i] == '\n' {
-				line++
-			}
 			word = false
 			continue
 		case quote != 0:
@@ -115,22 +112,16 @@ func shUnclosed(data []byte) int {
 				quote = 0
 			}
 		case ch == '#' && word:
-			for i+1 < len(data) && data[i+1] != '\n' {
+			for i+1 < len(text) && text[i+1] != '\n' {
 				i++
 			}
 			continue
 		case ch == '\'' || ch == '"' || ch == '`':
-			quote, open = ch, line
-		}
-		if ch == '\n' {
-			line++
+			quote = ch
 		}
 		word = quote == 0 && strings.IndexByte(" \t\n;&|()", ch) >= 0
 	}
-	if quote != 0 {
-		return open
-	}
-	return 0
+	return quote != 0
 }
 
 var (

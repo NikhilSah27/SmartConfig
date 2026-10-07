@@ -68,7 +68,7 @@ func checkNetplan(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	dir, name := filepath.Dir(in.path), filepath.Base(in.path)
 	if !slices.Contains(netplanDirs, strings.TrimPrefix(dir, "/")) || !strings.HasSuffix(name, ".yaml") || strings.HasPrefix(name, ".") {
 		// netplan's glob skips a name with a leading dot.
-		return nil, []string{"netplan does not read this file (it reads *.yaml, not names that start with a dot); it was not checked"}, nil
+		return nil, []string{in.skip("netplan does not read this file (it reads *.yaml, not names that start with a dot); it was not checked")}, nil
 	}
 	others, notes := c.netplanOthers(in.path)
 	// Files sc could not read are left out of the merge: an error that
@@ -94,7 +94,7 @@ func checkNetplan(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	l := strings.ReplaceAll(netplanFirstError(res.Err), root, "")
 	if l == "" {
 		// None of its output is quoted: it may be a line of the file.
-		return nil, append(notes, fmt.Sprintf("netplan's generator failed (exit %d) without a message sc understands; the file was not checked", res.Exit)), nil
+		return nil, append(notes, in.cut(fmt.Sprintf("netplan's generator failed (exit %d) without a message sc understands; the file was not checked", res.Exit))), nil
 	}
 	if m := netplanLineMsg.FindStringSubmatch(l); m != nil {
 		n, _ := strconv.Atoi(m[2])
@@ -194,7 +194,7 @@ func (c *Checks) netplanOthers(path string) (others []netplanFile, notes []strin
 func netplanTree(root string, files []netplanFile) error {
 	for _, f := range files {
 		p := filepath.Join(root, f.path)
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		if err := scratchMkdir(filepath.Dir(p)); err != nil {
 			return fmt.Errorf("netplan scratch root: %w", err)
 		}
 		if err := os.WriteFile(p, f.data, 0o600); err != nil {

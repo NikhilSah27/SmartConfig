@@ -465,6 +465,12 @@ func TestSshdTogether(t *testing.T) {
 		{"another drop-in refused", include, map[string]string{"40-other.conf": "PermitRootLogn no\n"}, "Port 22\n", "",
 			strings.TrimPrefix(clean+"|", "|") + "sshd stops at a problem in another file, maybe before the drop-in" + alone + cleanSaid},
 		{"not included", "Port 22\n", other, akc, "0 sshd-invalid blocker", sshdMain + " does not include it" + alone},
+		// Include as sshd reads it: quoted, in any case; a pattern over
+		// several directories is not rewritten, so the drop-in is alone.
+		{"a quoted Include", "Include \"/etc/ssh/sshd_config.d/*.conf\"\nAuthorizedKeysCommandUser nobody\n", other, akc, "", clean + cleanSaid},
+		{"a lowercase include", "include /etc/ssh/sshd_config.d/*.conf\nAuthorizedKeysCommandUser nobody\n", other, akc, "", clean + cleanSaid},
+		{"an Include over several directories", "Include /etc/ssh/*/*.conf\nAuthorizedKeysCommandUser nobody\n", other, akc,
+			"0 sshd-invalid blocker", sshdMain + " does not include it" + alone},
 		{"no sshd_config", "", other, akc, "0 sshd-invalid blocker", ""},
 	} {
 		c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key, sshdRoot: sshdRootWith(t, tc.main, tc.dropins)}
@@ -524,7 +530,7 @@ func TestSshdTogetherOther(t *testing.T) {
 	// directory names the copies, the other one is left as it was; the
 	// copies are the drop-ins the pattern reads.
 	b, _ := os.ReadFile(args)
-	want := "Port 22\nInclude " + filepath.Join(c.Home, "tmp") + "/check-*/together/d/*.conf /etc/ssh/extra.conf\nUsePAM yes\n40-other.conf\n50-local.conf\n"
+	want := "Port 22\nInclude \"" + filepath.Join(c.Home, "tmp") + "/check-*/together/d/*.conf\" /etc/ssh/extra.conf\nUsePAM yes\n40-other.conf\n50-local.conf\n"
 	got := regexp.MustCompile(`check-[0-9]+`).ReplaceAllString(string(b), "check-*")
 	if got != want+want {
 		t.Errorf("sshd was given:\n%s\nwant twice:\n%s", got, want)
@@ -541,5 +547,50 @@ func TestSshdTogetherSaid(t *testing.T) {
 	rep, err := c.Check(context.Background(), sshdDropIn, []byte("Port 22\n"))
 	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "sshd did not finish checking the file said: Missing privilege separation directory: /run/sshd" {
 		t.Errorf("%q %q %v", brief(rep.Findings), notesSaid(rep), err)
+	}
+}
+
+// The rewritten Include is quoted, so a space in SC_HOME is safe; a quote
+// or a pattern character there is not, so the drop-in is checked alone
+// (review of chunk F, A2: unquoted, sshd read two patterns that matched
+// nothing and passed a broken drop-in).
+func TestSshdTogetherScratchPath(t *testing.T) {
+	for _, p := range []string{"/usr/sbin/sshd", "/usr/bin/ssh-keygen"} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skip("no " + p)
+		}
+	}
+	key := filepath.Join(t.TempDir(), "key")
+	if out, err := exec.Command("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v\n%s", err, out)
+	}
+	for home, note := range map[string]string{"schome": "", "sc home": "",
+		"sc[home": "sc's scratch directory has a quote or a pattern character in its path; the drop-in was checked alone"} {
+		c := &Checks{Home: filepath.Join(t.TempDir(), home), sshdHostKey: key, sshdRoot: sshdRootWith(t, "Include /etc/ssh/sshd_config.d/*.conf\n", nil)}
+		rep, err := c.Check(context.Background(), sshdDropIn, []byte("Port 22\nPermitRootLogn no\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != "2 sshd-invalid blocker" || notesSaid(rep) != note {
+			t.Errorf("SC_HOME %q: findings %q notes %q", home, got, notesSaid(rep))
+		}
+	}
+}
+
+// When the second run (the candidate empty) does not finish, what the first
+// said about other files or without a line is not known to be the
+// drop-in's: left out, and a note says so (A3: a good drop-in got a
+// blocker for sshd_config's own bad line).
+func TestSshdTogetherSecondRunUnfinished(t *testing.T) {
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	c.sshdRoot = sshdRootWith(t, "Include /etc/ssh/sshd_config.d/*.conf\nPortt 22\n", nil)
+	c.Run.Timeout = 2 * time.Second
+	script := "#!/bin/sh\nf=$3\nif [ ! -s \"$(dirname \"$f\")/d/50-local.conf\" ]; then sleep 30; fi\n" +
+		"echo \"$f: line 2: Bad configuration option: Portt\" >&2\necho \"$f: terminating, 1 bad configuration options\" >&2\nexit 255\n"
+	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte(script), 0o755)
+	rep, err := c.Check(context.Background(), sshdDropIn, []byte("PasswordAuthentication no\n"))
+	if err != nil || len(rep.Findings) != 0 || !rep.Incomplete ||
+		notesSaid(rep) != "sshd did not finish a second run, without the drop-in; what it said about other files or without a line is left out" {
+		t.Errorf("%q %q incomplete %v %v", brief(rep.Findings), notesSaid(rep), rep.Incomplete, err)
 	}
 }

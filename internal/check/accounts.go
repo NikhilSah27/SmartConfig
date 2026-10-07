@@ -546,7 +546,7 @@ func (t *ckTool) findings(in input, msgs []ckMessage, exit, skip int) ([]Finding
 	}
 	var notes []string
 	if exit != 0 && !said {
-		notes = []string{fmt.Sprintf("%s exited %d without a message sc understands; the file was not checked", t.name, exit)}
+		notes = []string{in.cut(fmt.Sprintf("%s exited %d without a message sc understands; the file was not checked", t.name, exit))}
 	}
 	return out, notes
 }
