@@ -8,7 +8,8 @@ throwaway QEMU VM (Appendix A).
 
 - **What you get.**
   - A boot menu entry, **SmartConfig rescue**. It boots this machine to a
-    root shell in about 40 s, however broken `/etc/fstab` is. Root stays
+    root shell in about 40 s (the QEMU lab), however broken `/etc/fstab`
+    is. Root stays
     read-only and `/etc/fstab` is ignored.
   - Above that shell's prompt, **`sc status`** says:
     - which boot was the last healthy one;
@@ -20,7 +21,8 @@ throwaway QEMU VM (Appendix A).
   - **sc works on a read-only root:** `log`, `diff`, `cat`, `check` and
     `status`. That includes a store a crash left half-written (a hot
     journal); the store is never changed.
-  - **Every boot gets a verdict:** ok, bad, or never reached multi-user.
+  - **Every boot gets a verdict** (one that can write `/var`): ok, bad,
+    or never reached multi-user.
 - **What the research changed** (Appendix A):
   1. **Emergency mode on Ubuntu 24.04 is not a dead end.** Ubuntu
      patches sulogin to open a root shell without a password even
@@ -179,8 +181,10 @@ only when the validators are not there or the root is read-only.
 - It picks the newest kernel the way `10_linux` does, and uses
   `prepare_grub_to_access_device`.
 - Its `linux` line keeps `root=` and every token of `GRUB_CMDLINE_LINUX`
-  and the `console=` tokens, drops `quiet splash`, and adds the recipe:
-  `ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`.
+  and `GRUB_CMDLINE_LINUX_DEFAULT` but `quiet splash` (C8; it kept only
+  the `console=` tokens), masks `grub-initrd-fallback.service`, and adds
+  the recipe: `ro fstab=no systemd.unit=rescue.target
+  SYSTEMD_SULOGIN_FORCE=1`.
   Upstream sulogin needs the last argument; Ubuntu's does not.
 - It is installed by hand (README) like scd, until M5:
   `install -m 0755 scripts/42_smartconfig /etc/grub.d/` and
@@ -225,10 +229,12 @@ the M2 plan's deferred "+i/+a precheck".
 
 ## 5. Security
 
-- **The rescue entry is a password-less root shell from a menu item.**
-  On Ubuntu 24.04 that is no new power: emergency mode already gives
-  one at the console (the sulogin patch), and so does editing any GRUB
-  entry (Ubuntu sets no GRUB password).
+- **The rescue entry is a root shell from a menu item,** password-less
+  while root is locked (Ubuntu's default); a root password, sulogin asks
+  for (the final review's probe). On Ubuntu 24.04 that is no new power:
+  emergency mode already gives the same shell at the console (the
+  sulogin patch), and editing any GRUB entry gives root whatever the
+  password (Ubuntu sets no GRUB password).
 - **The README says how to add a GRUB superuser password** that guards
   all entries but the default (`--unrestricted`), and that disk
   encryption still asks for the passphrase in rescue (untested here).
@@ -255,7 +261,8 @@ the M2 plan's deferred "+i/+a precheck".
 | 12 | E | `scripts: accept-m4.sh` (the non-boot parts on this VM, as root) | |
 | 13 | E | docs: README "When the machine does not boot", PROJECT_LOG, MILESTONES | |
 
-The chunk reviews are after steps 3, 6, 10 and 13; then the sign-off.
+The chunk reviews are after steps 3, 6, 10, 11 and 13; then the
+sign-off.
 
 ## 7. Acceptance and sign-off
 
@@ -351,6 +358,7 @@ plus your time for S2 and S3, which need reboots of this VM.
 | C5 | 2026-10-04 | From the chunk C review. The grubenv flag is kept wherever grubenv is GRUB's 1024-byte block (section 3.3 named 00_header's filesystem check): Linux writes it, GRUB only reads it. A `/boot` that fails to mount leaves the flag unset, and the menu then depends on recordfail. `GRUB_DISABLE_RECOVERY=true` leaves the rescue entry out, and the menu flag stays. The rescue boot cannot clear the flag, so the first boot after the fix shows the menu once more (section 7); `sc status` says so. The rescue report goes to every console. `sc-boot-seen` runs before Ubuntu's other writers of grubenv, which wait for it. A multipath root's `root=` is deferred, with LVM and LUKS. | [reviews/2026-10-04-m4-chunk-c.md](reviews/2026-10-04-m4-chunk-c.md): lost grubenv writes, a screen without the report, an admin's choice ignored. | `683678a` |
 | C6 | 2026-10-05 | From the chunk D review. `sc status --console` stops itself after 60 s and says so on every console, with the command to run from the shell (C4 said no time cap): systemd ends `rescue.service` and `emergency.service`, shell and all, when their start, `ExecStartPre` included, passes 90 s, and the `-` before the drop-in's line forgives an exit status, not a timeout. The report goes to each console while that console takes bytes or its output queue drains, given up after 5 s of stalled slices and 10 s per console at most, where a host pause counts as one slice (chunk C gave each console one 2 s write). The emergency report has one more line: at a `login:` prompt instead of `#`, log in and put sudo before each command. The hangup is ignored from the start of `main`, not from the command. | [reviews/2026-10-05-m4-chunk-d.md](reviews/2026-10-05-m4-chunk-d.md): a transient unit with a slow `ExecStartPre` got no shell; in the lab runs a slow ttyS0 cut the report and a 10 s host pause lost it. | `3115b71`, `1d25037`, `c70d886` |
 | C7 | 2026-10-06 | From the chunk E review. The rescue report promises the menu once more only while its flag is set: after a failed boot, or in the emergency shell of the failing boot itself (it said so in every rescue boot, also one picked by hand after a healthy boot). The console lists at most 5 files (C4 said 6; changed with chunk C's fixes, `683678a`, and not recorded then). `sc status` does not say `mount /boot` (section 8): the README says to mount a separate `/boot`, `/var` or `/usr/local` in the rescue shell. The undo is for the newest blocker, else the newest error, as section 3.1 says (the code took the newest of either). | [reviews/2026-10-06-m4-chunk-e.md](reviews/2026-10-06-m4-chunk-e.md): an older fstab blocker lost its undo to a newer error, and the menu was promised where none comes. | `654ee7f` |
+| C8 | 2026-10-07 | From the final review (sign-off S4). The two boot units also need a command line without `fstab=no`: the rescue boot gets no line, even continued to the desktop. A boot with a verdict is not seen again; seen sets the flag before its line; a bad verdict sets it too. The rescue entry keeps every token of `GRUB_CMDLINE_LINUX_DEFAULT` but `quiet splash` (3.4) and masks `grub-initrd-fallback.service`. `sc status`: a path is new only with proof of absence ("did not exist"); one first seen after the line is compared with its first version, and with no earlier version the report says to fix it by hand; without a healthy boot the comparison is with the version before the rows listed; deleting a flag file or `ld.so.preload` is no error; with no store in a rescue or emergency boot it says to mount `/var`; the undo's paths are shell words. The console: the command's output gets the report only when no console opens, one deadline, 80 s from the start, ends every write, and the stop removes the `/run` copies. As built and not recorded before: `sc status` finds scd in `/proc`, not by its lock; the undo has `systemctl daemon-reload` in every rescue or emergency boot; a verdict line holds its time; a boot that cannot write `/var` gets no line. | [reviews/2026-10-07-m4-final.md](reviews/2026-10-07-m4-final.md): a stopped sole console held the report, and the shell, past 90 s; an fstab first seen after the line was called new and moved aside by the undo; a rescue boot continued with "exit" was "ok" and hid the next failure's undo; a `nomodeset` was dropped. | `69ea585`, `4a8f7b4`, `8c6f30e`, `580edca`, `03ec9ca`, `734b670`, `d9c8817` |
 
 ---
 

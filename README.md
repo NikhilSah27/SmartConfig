@@ -27,8 +27,8 @@ problems in a config file that stop a boot or lock you out, `sc edit`
 checks an edit before it replaces the file, scd checks every change it
 records, and `sc scope` explains what SmartConfig does with a path.
 
-**Milestone 4 is built and reviewed; its sign-off runs are next** (plan
-[docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
+**Milestone 4 is built; sign-off S1 to S3 passed, and its final review
+is in** (plan [docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
 **SmartConfig rescue**, opens a root shell however broken `/etc/fstab`
 is, `sc status` says above its prompt what changed since the last
 healthy boot and how to put it back, and the menu comes back by itself
@@ -109,7 +109,8 @@ storing new content and logs that once. A file that a program rewrites
 without pause gets 20 rows, then one every 5 minutes with its newest
 content, marked `(rate-limited)`, and one warning line.
 
-To remove the watcher, keep the store: the M1 binary
+To remove the watcher, keep the store. With the rescue path (M4)
+installed, remove that first ("When the machine does not boot"). The M1 binary
 (`/var/backups/smartconfig/sc-m1` on the dev VM) still reads it and restores
 file rows.
 
@@ -184,20 +185,29 @@ validator's output (both can quote a secret).
 ## When the machine does not boot (M4)
 
 A line in `/etc/fstab` for a disk that is not there makes Ubuntu wait
-90 s at boot, then stop in emergency mode or come up without the mount.
-Over SSH the machine is gone. At the console, M4 gives you:
+90 s at boot. Then it stops in emergency mode, where over SSH the
+machine is gone, or comes up without the mount. A desktop comes up to
+its login screen all the same, with emergency mode out of sight behind
+it, and nothing on the screen says what went wrong (sign-off S3). At the
+console, M4 gives you:
 
 - **A menu entry, SmartConfig rescue.** It boots the newest kernel with
   root read-only and `/etc/fstab` ignored (`ro fstab=no
-  systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`), straight to a
-  root shell, in about 40 s however broken fstab is.
-- **The menu after a failed boot.** It shows by itself for 30 s, even on
-  a desktop install whose menu is hidden.
+  systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`), with the default
+  entry's options but `quiet splash`, straight to a root shell: no 90 s
+  wait, however broken fstab is (about 40 s from power-on in the QEMU
+  lab, which emulates the CPU).
+- **The menu after a failed boot.** It shows by itself, for 30 s where
+  the menu is normally hidden (a desktop install's default), else for
+  your `GRUB_TIMEOUT`.
 - **The report above the prompt.** Before the shell starts, `sc status
   --console` says which boot was the last healthy one, what changed
   since, worst first, and the commands that put the file back.
-- **A verdict for every boot** in `$SC_HOME/boots`: ok, bad, or never
-  reached multi-user. The read-only rescue boot itself gets none.
+- **A verdict for every boot** that can write `/var`, in
+  `$SC_HOME/boots`: ok, bad, or never reached multi-user. The rescue boot
+  itself gets none, and keeps its journal in memory only:
+  `journalctl -xb` works while you are in it, and after the reboot
+  `journalctl --list-boots` does not list it.
 
 This is the rescue boot in the QEMU lab (`make lab-e2e`), after a bad
 fstab line and one failed boot:
@@ -226,13 +236,21 @@ Press Enter for maintenance
 
 Press Enter and type the commands. The next boot is normal and its
 verdict is ok. The menu shows once more, because the rescue boot cannot
-clear its flag; the first entry, Ubuntu, is the one to pick.
+clear its flag; the first entry, Ubuntu, is the one to pick. End with
+`systemctl reboot`, not "exit" or Control-D: those go on to the desktop
+with `/etc/fstab` still ignored, a boot that gets no verdict either. A
+file with no version recorded from before its change gets no commands;
+the report says to fix it by hand.
 
 If the machine stops in emergency mode instead, the same report is
 printed there, with root already read-write. Ubuntu sometimes starts a
 `login:` prompt on that console as well; if you get one instead of `#`,
 log in and put `sudo` before each command. The rescue entry's shell is
-the only thing reading its console.
+the only thing reading its console. On a desktop the login screen comes
+up over that console, so the report is not seen there. Reboot: the menu
+shows by itself, and SmartConfig rescue prints the report. Or log in and
+run `sudo sc status` in a terminal; it gives the same commands, each to
+run with `sudo` (not tried in the sign-off).
 
 Installed by hand until the package milestone, next to scd (`sc` must
 be `/usr/local/sbin/sc`). The first verdict is given at the next boot:
@@ -273,12 +291,19 @@ to mount, the menu after a failed boot depends on Ubuntu's own
 /usr/local`) and then `sc status`; with a separate `/boot`, run `mount
 /boot` before restoring a file under `/boot/grub`.
 
-**The rescue entry is a root shell without a password, from a menu
-item.** On Ubuntu 24.04 that adds no new way in: emergency mode already
-opens one at the console (Ubuntu's sulogin patch), so do the stock
-recovery entries, and anyone at the console can edit a GRUB entry to
-the same effect, as Ubuntu sets no GRUB password. Full-disk encryption
-still asks for its passphrase in the rescue boot (not tested here).
+**The rescue entry is a root shell from a menu item.** While root is
+locked, as it is on Ubuntu by default, it asks for no password; if root
+has a password, the shell asks for it (the report above the prompt is
+shown either way), so know it before you need it. On Ubuntu 24.04 that
+adds no new way in: with a locked root, emergency mode and the stock
+recovery entries open the same shell, and without a GRUB password anyone
+at the console (or a VM's or server's remote console) can edit a GRUB
+entry (`init=/bin/bash`) to get root whatever root's password is. A
+GRUB password you already have covers the rescue entry too: it is not
+marked `--unrestricted`. Full-disk encryption still asks for its
+passphrase in the rescue boot (not tested here). A GRUB password does
+not stop a boot from a USB stick; that takes a firmware password, or
+disk encryption.
 
 To close the menu paths, give GRUB a superuser password. Every entry
 then asks for it unless it is marked `--unrestricted`. The recipe below
@@ -286,7 +311,7 @@ marks the first entry, Ubuntu, so that must be the entry that boots:
 use it only when this prints `GRUB_DEFAULT=0` and nothing else.
 
 ```sh
-grep -hE '^GRUB_(DEFAULT|SAVEDEFAULT|DISABLE_SUBMENU)=' /etc/default/grub /etc/default/grub.d/*.cfg
+grep -shE '^GRUB_(DEFAULT|SAVEDEFAULT|DISABLE_SUBMENU)=' /etc/default/grub /etc/default/grub.d/*.cfg
 ```
 
 With a saved default, a default under "Advanced options",

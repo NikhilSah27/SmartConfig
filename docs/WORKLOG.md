@@ -120,13 +120,16 @@ and the boot after it: verdict ok, flag clear, `/etc/fstab` back
 for S4 (log): a red `[FAILED] grub-initrd-fallback.service` right above
 the report (Ubuntu's unit, which cannot write grubenv on the read-only
 root), `sc boot seen` twice in each failed boot (harmless here), and
-the README's "stops in emergency mode". **S4 runs** (your OK,
-2026-10-07 06:45 UTC, "go ahead with S4"): the final review, three
-reviewer agents in their own clones (`~/smartconfig-work/review-m4final/`):
-boot integration, the rescue-time CLI and its data, security and the
-docs. Read-only on this VM; no QEMU. Then the fixes, the docs and the
-tag `m4`; installing a fixed build and `accept-m4` as root wait for your
-word.
+the README's "stops in emergency mode". **S4: the final review is
+closed** (your OK, 2026-10-07 06:45 UTC, "go ahead with S4";
+[reviews/2026-10-07-m4-final.md](reviews/2026-10-07-m4-final.md), plan
+change C8): three reviewers, 2 high, 6 medium, all fixed, and 13 low
+(`69ea585` … `d9c8817`, log); the rest is the M4 follow-up list in
+MILESTONES. **Next:** `make lab-e2e` on the fixed tree (the rescue
+entry's command line and both units changed; it needs no sudo), then,
+with your word, `accept-m4` as root on the fixed build, its install on
+this VM (`sc`, both units, `42_smartconfig`, `update-grub`), and the tag
+`m4`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1940,3 +1943,59 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
       in, as plan section 8 says ("M4 does not depend on emergency
       mode"); the README could say so.
   - **S3 passed.** Next: S4 (final review, docs, tag `m4`), with your OK.
+- **M4 sign-off S4: the final review** (your OK, 06:45 UTC, "go ahead
+  with S4"). Write-up
+  [reviews/2026-10-07-m4-final.md](reviews/2026-10-07-m4-final.md); the
+  reports in `~/smartconfig-work/review-m4final/findings-{a,b,c}.md`.
+  - Three reviewer agents in their own clones of `81319d8`: A boot
+    integration, B the rescue-time CLI and its data, C security and the
+    docs. Read-only here, no QEMU; the S2 and S3 journals read as root.
+  - 2 high (B), both reproduced and fixed:
+    - `69ea585`: a stopped sole console held `sc status --console`, and
+      the shell, past systemd's 90 s (the fallback write to stdout,
+      the same console, had no limit). Now stdout only when no console
+      opens, and one 80 s deadline for every write.
+    - `4a8f7b4`: an fstab first seen after the line (scd's baseline,
+      no healthy boot yet) was "new", and the undo moved it aside;
+      without a healthy boot a blocker in the oldest row listed was
+      missed. Now new only with proof of absence, else compared with
+      the first version, else "fix it by hand".
+  - 6 medium, fixed:
+    - `8c6f30e` (A1, C2): "exit" in the rescue shell after the remount
+      gave an "ok" verdict that cleared the flag and hid the next
+      undo. Both units now need a command line without `fstab=no`. A
+      whole-boot `systemd-analyze verify` test came with it.
+    - `580edca` (A2): the rescue entry keeps the default entry's options
+      but `quiet splash` (a `nomodeset` was lost).
+    - `734b670` (B3, B4): a deleted flag file is no error; no store in
+      rescue says to mount `/var`, not `sc init`.
+    - C1, C3: docs, below.
+  - 13 low, fixed:
+    - `580edca` masks Ubuntu's grub-initrd-fallback in the rescue boot:
+      S3's red FAILED line.
+    - `03ec9ca`: a boot with a verdict is not seen again; the flag is set
+      before the seen line, and by a bad verdict; the boots file ends a
+      torn line before the next, skips one unended, and refuses a
+      symlink.
+    - `d9c8817`: the 60 s stop removes the `/run` copies; the undo's
+      paths are shell-quoted.
+  - S3's three desktop observations:
+    - The double seen was a sound card's transaction while sysinit waited
+      90 s; harmless.
+    - The FAILED line is masked now.
+    - The login screen over emergency mode is documented, with the
+      reboot to the menu.
+  - Docs (C1, C3 to C13):
+    - README, PROJECT_LOG, docs/README: the desktop case and ssh; the
+      rescue shell asks for root's password if root has one; "exit"
+      ends nothing well; the rescue boot's journal; the lab's 40 s; the
+      30 s; `grep -s`; removal order.
+    - MILESTONES: status, C1 to C8, follow-ups 1-9.
+    - M4_PLAN: sections 0, 3.4, 5 and 6, and plan change C8.
+  - Checks on each commit: gofmt, vet, `go test ./...` as a user and as
+    root, `make race`, `make lab-test` (326) where the lab or scripts
+    changed, `make m1-compat`. Every new test fails on the code before
+    its fix. CI green on each.
+  - Not run yet:
+    - `make lab-e2e` on the fixed tree (next, no sudo).
+    - `accept-m4` as root, the install, the tag: your word.

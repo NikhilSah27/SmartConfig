@@ -8,14 +8,17 @@
       explanations, sc edit and sc check — done 2026-10-03 (tag `m3`)
 - [ ] M4 rescue path: GRUB entry, rescue.target service printing sc status,
       boot-ok verification, restore from read-only root — built 2026-10-06
-      (13 steps, five chunk reviews); the sign-off runs are next
+      (13 steps, five chunk reviews); sign-off S1 to S3 passed 2026-10-06/07,
+      the final review (S4) is in
 - [ ] M5 package: .deb with nfpm, install on a clean VM
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
 Current: M4, the rescue path ([docs/M4_PLAN.md](docs/M4_PLAN.md)). All
-13 steps are built and the five chunk reviews closed; next are the
-sign-off runs S1 to S4, each with your OK. M3 is done (tag `m3`, 2026-10-03); its
+13 steps are built and the five chunk reviews closed; sign-off S1 to S3
+passed, and the final review (S4) is in, its follow-ups below. Left:
+`accept-m4` and `make lab-e2e` on the fixed build, its install, and the
+tag, each with your OK. M3 is done (tag `m3`, 2026-10-03); its
 follow-ups are listed below. The M2 soak was closed after 5.6 h (your
 call).
 
@@ -212,7 +215,8 @@ where nss-systemd supplies root.
 5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
    its scratch copy at once (now swept after an hour).
 6. A read-only root (M4's rescue shell): run sc's own rules without a
-   scratch copy.
+   scratch copy. Done another way in M4 (step 3, C2: a private scratch
+   directory in `/run`).
 7. scd: look up only the rows a check needs, not a path's whole history.
 8. Cosmetic: an unclosed quote in `/etc/default/grub` is reported past
    the last line; two swap lines share one findmnt heading.
@@ -229,12 +233,13 @@ after a failed boot; sc on a read-only root, hot journal included; and
 `sc restore` refusing `chattr +i`/`+a` targets. The store's schema is
 unchanged, so the M1, M2 and M3 binaries still read it. Plan:
 [docs/M4_PLAN.md](docs/M4_PLAN.md), with its changes after approval (C1
-to C6) in section 12. Reviews:
+to C8) in section 12. Reviews:
 [chunk A](docs/reviews/2026-10-04-m4-chunk-a.md),
 [B](docs/reviews/2026-10-04-m4-chunk-b.md),
 [C](docs/reviews/2026-10-04-m4-chunk-c.md),
 [D](docs/reviews/2026-10-05-m4-chunk-d.md),
-[E](docs/reviews/2026-10-06-m4-chunk-e.md).
+[E](docs/reviews/2026-10-06-m4-chunk-e.md), and the
+[final review](docs/reviews/2026-10-07-m4-final.md).
 
 The boot itself is tested in a QEMU VM: `make lab-e2e` runs the owner
 scenario (a bad fstab line, a failed boot, the
@@ -256,7 +261,9 @@ snapshot.
 - The console report uses sc's own rules only, lists at most 5 files,
   worst first, and stops itself after 60 s (C4, C6, C7).
 - The rescue boot cannot clear the menu flag, so the first boot after a
-  fix shows the menu once more.
+  fix shows the menu once more. It gets no verdict, even when it goes on
+  to the desktop ("exit" in its shell): its command line has `fstab=no`.
+- A boot that cannot write `/var` gets no line in `boots`.
 - No GRUB password is managed: the README says how to set one.
 
 ### Open from the reviews
@@ -269,16 +276,50 @@ snapshot.
   C, C6).
 - A SIGHUP in the first milliseconds of `sc status --console`, before
   `signal.Notify` runs, ends sc by the kernel's default (chunk D, B5).
-- No whole-boot ordering-cycle test with the real GRUB units; each unit
-  is verified alone (chunk C).
 - One `go test ./cmd/sc/` run of 14 failed right after three lab-test
   runs, its output not kept; 13 later runs passed (chunk D).
 - The lab: the host's pauses (the user's to look at), an ssh retry
   across a pause, systemd's lines missing on ttyS0, the mux's 1 s drain
   during a serial reconnect, two load-bound tests and `facts.sh`'s pipe
   statuses (chunk D).
+- The lab's check 1.8 cannot fail: `critical-chain` follows only units
+  that became active, and the boot units are oneshots that never do
+  (final review, A8).
 - The GRUB password recipe in the README is not tested in the lab yet,
   in BIOS or UEFI mode (whether Ubuntu's signed EFI GRUB takes
   `password_pbkdf2` included) (chunk E).
-- `sc status` does not say to mount a separate `/var`, `/usr/local` or
-  `/boot` in the rescue shell; the README does (chunk E, C7).
+- `sc status` does not say to mount a separate `/usr/local` or `/boot`
+  in the rescue shell; the README does (chunk E, C7). With no store in a
+  rescue or emergency boot it says to mount `/var` (final review, B4).
+
+### M4 follow-ups (from the final review; no high one is open)
+
+1. A restore under a separate `/boot` that is not mounted writes to the
+   root filesystem's own `/boot/grub`, if one is there, and says it
+   worked: refuse, or warn, when the target's directory is a mount point
+   in fstab that is not mounted (B8).
+2. A checked file replaced by a symlink is not judged ("now a symlink"):
+   an error, with the healthy version's restore (B9).
+3. `GRUB_TOP_LEVEL` is ignored: the rescue entry boots the newest kernel
+   (A9).
+4. `systemctl soft-reboot` starts a new session with the same boot id:
+   it gets no "seen" line (the boot has its verdict), so a failure in it
+   before multi-user brings no menu (A5, the cost of A3's fix).
+5. The units run as full root: `NoNewPrivileges=`, `ProtectHome=` and,
+   for `sc-boot-seen`, `PrivateNetwork=` (C14). `42_smartconfig` honours
+   its test knob `SC_GRUB_BOOT` from root's environment.
+6. Test gaps from the mutation runs: the Go tests miss `sc-boot-seen`
+   ordered after sysinit or basic, `sc-boot-ok` with `Requires=` on
+   local-fs or `Conflicts=` with emergency, the row -1 fallback, a
+   warning-only change without undo, and the 5-file console cap (A7,
+   B section 4).
+7. Cosmetic: the console's times have no date; `sc status` makes
+   `$SC_HOME/tmp`; a WAL store on a read-only root says "unable to open
+   database file (14)"; `FS_IOC_GETFLAGS` is wrong on mips and sparc;
+   "The newest changes" comes with a "Last healthy" line when the only ok
+   verdict has row -1 (B).
+8. `fstab=no` does not cover crypttab: a second LUKS volume asks for its
+   passphrase in the rescue boot (`luks.crypttab=no`, if wanted; LUKS is
+   a non-goal) (A10).
+9. A torn verdict line whose row id lost digits pulls the line back:
+   more rows count as changed (B5; no checksum per line).

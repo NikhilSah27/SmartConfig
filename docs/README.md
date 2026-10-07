@@ -33,16 +33,19 @@ differ, the published one is newer.
 - The boot failure in the "after it's built" and "without SmartConfig" films
   uses a typo in a *data disk* line (`/data`). Running
   `systemd-fstab-generator` against that file on the VM shows `data.mount`
-  requiring the missing device, so boot waits 90 s and stops in emergency mode.
+  requiring the missing device, so boot waits 90 s and stops in emergency mode
+  (a desktop comes up to its login screen instead, the mount missing: M4's
+  sign-off S3).
   The root account is locked (`passwd -S root` shows `L`), as on every default
   Ubuntu install. Ubuntu 24.04's sulogin still opens a root shell in
   emergency mode at the console (its `sulogin-lockedpwd.patch`, shown in the
-  M4 lab), but over SSH the machine is gone, and nothing says what changed.
+  M4 lab), but over SSH the machine may be gone, and nothing says what changed.
 - A typo in the *root* line (`/`) is different: the root filesystem is already
   mounted by the initramfs, and the generated `-.mount` does not require the
   device, so Ubuntu most likely still boots.
-- Anything tagged "concept" shows milestones 2 to 7, which are not built yet.
-  Their commands and messages are the current design and may change.
+- Anything tagged "concept" shows milestones 2 to 7, which were not built when
+  the films were made (2 to 4 are built since). Their commands and messages
+  were the design then and may differ.
 - Downtime numbers in "without SmartConfig" are illustrative.
 
 ## Voice and sound

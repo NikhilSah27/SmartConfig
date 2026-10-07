@@ -4,7 +4,7 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-06, M4 built and reviewed (its sign-off is next).
+Last updated: 2026-10-07, M4 sign-off S1 to S3 passed; its final review is in.
 Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 
 ---
@@ -24,10 +24,11 @@ Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 | QEMU rescue lab cache | `~/.cache/smartconfig-lab` (images, runs; [lab/README.md](../lab/README.md)) |
 | Scratch outside the repo | `~/smartconfig-work` (plans as drafted, raw review output, lab evidence in `signoff/`) |
 
-Status (2026-10-06): **M4, the rescue path, is built and reviewed**; the
-sign-off runs S1 to S4 are next ([M4_PLAN.md](M4_PLAN.md)).
-Nothing of M4 is installed on the dev VM yet (S2 does that). **M3 is done**
-(tag `m3`), and its build runs as `scd`. Before that: **M2** (tag `m2`) and
+Status (2026-10-07): **M4, the rescue path, is built**; sign-off S1 to
+S3 passed, and S4's final review is in ([M4_PLAN.md](M4_PLAN.md)). The
+build S1 tested (`sc` `cafca151…`) is installed on the dev VM since S2,
+and runs as `scd`; the final review's fixes are not installed yet. **M3
+is done** (tag `m3`). Before that: **M2** (tag `m2`) and
 **M1** (tag `m1`, store + CLI, hardened by four review rounds and five
 rounds of fixes, see [reviews/](reviews/)). Live progress:
 [WORKLOG.md](WORKLOG.md).
@@ -182,7 +183,7 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-SC=/usr/local/sbin/sc               # if it is gone: in /var/backups/smartconfig, sc-m3pre, sc-b6ab3cc, sc-m2, else sc-m1 (file rows only)
+SC=/usr/local/sbin/sc               # if it is gone: in /var/backups/smartconfig, sc-m3, sc-m3pre, sc-b6ab3cc, sc-m2, else sc-m1 (file rows only)
 sudo $SC log /etc/fstab             # find the last good id
 sudo $SC diff <id>                  # confirm what changed
 sudo $SC restore <id>               # put it back; the broken state is saved too
@@ -197,16 +198,18 @@ original file of this VM.
 
 ### The machine no longer boots (M4's rescue path installed)
 
-1. After a failed boot the menu shows by itself for 30 s; otherwise hold
-   **Shift** (BIOS) or press **Esc** (UEFI) to show it. Pick
-   **SmartConfig rescue**.
+1. After a failed boot the menu shows by itself for 30 s (on a desktop
+   the failed boot comes up to the login screen with the mount missing:
+   reboot to get the menu); otherwise hold **Shift** (BIOS) or press
+   **Esc** (UEFI) to show it. Pick **SmartConfig rescue**.
 2. Above "Press Enter for maintenance", `sc status` says what changed
    since the last healthy boot, worst first, and gives the commands for
    the newest blocker (with none, the newest error). With `/var` on a
    filesystem of its own there is no report until `mount /var`; then run
    `sc status`. Press Enter and type them: `mount -o remount,rw /`,
    `sc restore <id>`, `sync`, `systemctl daemon-reload`,
-   `systemctl reboot`.
+   `systemctl reboot` (not "exit": that goes on to the desktop with
+   fstab still ignored).
 3. After a failed boot, the next boot shows the menu once more (the
    rescue boot cannot clear its flag): pick the first entry, Ubuntu. Its
    verdict is ok, and
@@ -216,7 +219,8 @@ A boot that stops in emergency mode prints the same report, with root
 already read-write; at a `login:` prompt there, log in and put `sudo`
 before each command. If the entry is missing or does not boot, or there
 is no report, follow the next section; `sc status` and `sc log` work in
-that shell too.
+that shell too. On a desktop the login screen covers that console:
+reboot to the menu, or run `sudo sc status` in a terminal.
 
 ### The machine no longer boots (without the rescue entry)
 
@@ -229,13 +233,14 @@ that shell too.
    then press Ctrl-X and Enter at the prompt. This rescue boot ignores
    `/etc/fstab` and keeps root read-only. If it fails too, add
    ` init=/bin/bash` instead.
-3. `mount -o remount,rw /`. Until then sc can read the store, except one a
-   crash left half-written.
+3. `mount -o remount,rw /`. Until then sc can read the store, even one a
+   crash left half-written (the M4 build; the backups cannot).
 4. Restore with a static `sc`, or fix the file with nano. Try each of these
    in turn:
-   - `/usr/local/sbin/sc restore <id>`, the installed build (M3);
-   - `/var/backups/smartconfig/sc-m3pre`, the M3 build before the final
-     review's fixes;
+   - `/usr/local/sbin/sc restore <id>`, the installed build (M4, since
+     sign-off S2);
+   - `/var/backups/smartconfig/sc-m3`, the M3 build `scd` ran before M4;
+   - `sc-m3pre`, the M3 build before the final review's fixes;
    - `sc-b6ab3cc`, the M2 build with its follow-ups;
    - `sc-m2`, the `m2` build: the same restores, links and creations
      included;
@@ -258,8 +263,11 @@ If that fails: boot a live USB, mount `/dev/sda2`, and fix the file there.
 fstab), `etc-boot-m1.tar.zst` (`/etc` and `/boot/grub`), `manifest-m1.txt`
 and `sha256-m1.txt` (mode, owner, size and checksum of every file, to see
 exactly what changed after a risky test). Added later: `sc-m2` (the `m2`
-build, 2026-10-03), and the manifests and checksums before S2, before S5
-and after the S5 `apt upgrade`.
+build, 2026-10-03), `sc-b6ab3cc` (M2 with its follow-ups), `sc-m3pre`
+and `sc-m3` (M3 before and after its final review's fixes), and the
+manifests and checksums before M2's S2, before S5, after the S5 `apt
+upgrade`, and before M4's S2 (`manifest-pre-m4s2.txt`,
+`sha256-pre-m4s2.txt`).
 
 ### VirtualBox snapshot
 
