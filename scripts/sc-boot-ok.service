@@ -3,10 +3,14 @@ Description=SmartConfig: record whether this boot came up healthy (sc boot verdi
 Documentation=https://github.com/NikhilSah27/SmartConfig
 # Once multi-user.target is reached: ok when local-fs.target is active and
 # the boot is in neither emergency nor rescue mode. A boot that never gets
-# here keeps only its "seen" line, and counts as failed.
+# here keeps only its "seen" line, and counts as failed. Not the rescue
+# boot (fstab=no): continued to the desktop after a remount, its fstab
+# ignored, it would be "ok", clear the menu flag, and hide what the next
+# failure's report should undo (the M4 final review).
 After=multi-user.target sc-boot-seen.service
 ConditionPathIsReadWrite=/var/lib
 ConditionFileIsExecutable=/usr/local/sbin/sc
+ConditionKernelCommandLine=!fstab=no
 
 [Service]
 Type=oneshot

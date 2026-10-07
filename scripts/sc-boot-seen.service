@@ -6,9 +6,11 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # local-fs.target's failure, and RequiresMountsFor= waits only for the
 # filesystems of the store and of sc. Only Ubuntu's two other writers of
 # grubenv and sc-boot-ok wait for it (it takes about a second), not
-# sysinit.target, and emergency mode does not stop it (IgnoreOnIsolate=).
-# A read-only root (the rescue boot) writes nothing; without sc it is
-# skipped, not failed.
+# sysinit.target, and systemctl rescue or emergency does not stop it
+# (IgnoreOnIsolate=). The rescue boot writes nothing: its root is
+# read-only, and if the owner remounts it and goes on to the desktop
+# ("exit" in the shell), its command line still says fstab=no (the M4
+# final review). Without sc it is skipped, not failed.
 DefaultDependencies=no
 After=systemd-remount-fs.service
 # A separate /boot holds grubenv, where the menu flag goes: after it, if
@@ -22,6 +24,7 @@ Conflicts=shutdown.target
 IgnoreOnIsolate=yes
 ConditionPathIsReadWrite=/var/lib
 ConditionFileIsExecutable=/usr/local/sbin/sc
+ConditionKernelCommandLine=!fstab=no
 
 [Service]
 Type=oneshot

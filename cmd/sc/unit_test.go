@@ -74,8 +74,9 @@ func TestBootUnits(t *testing.T) {
 			"\nRequiresMountsFor=/var/lib/smartconfig /usr/local/sbin\n", "\nConditionPathIsReadWrite=/var/lib\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
 			"\nIgnoreOnIsolate=yes\n", "\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n",
-			"\nBefore=grub-common.service grub-initrd-fallback.service shutdown.target\n"},
-		"sc-boot-ok.service": {"\nConditionPathIsReadWrite=/var/lib\n",
+			"\nBefore=grub-common.service grub-initrd-fallback.service shutdown.target\n",
+			"\nConditionKernelCommandLine=!fstab=no\n"},
+		"sc-boot-ok.service": {"\nConditionPathIsReadWrite=/var/lib\n", "\nConditionKernelCommandLine=!fstab=no\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
 			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service\n"},
 	} {
@@ -102,6 +103,35 @@ func TestBootUnits(t *testing.T) {
 		// Condition key slipped through that way, the chunk C review).
 		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+name).CombinedOutput(); err != nil || len(out) != 0 {
 			t.Errorf("%s: systemd-analyze verify: %v\n%s", name, err, out)
+		}
+	}
+}
+
+// The units in the whole boot, as installed (both enabled), with the
+// targets of a normal, a rescue and an emergency boot: no ordering cycle,
+// in which systemd would drop a job of theirs (the M4 final review: an
+// After= that made one was caught by nothing faster than the lab).
+func TestBootUnitsWholeBoot(t *testing.T) {
+	analyze, err := exec.LookPath("systemd-analyze")
+	if err != nil {
+		t.Skip("no systemd-analyze")
+	}
+	dir := t.TempDir()
+	for name, wantedBy := range map[string]string{"sc-boot-seen.service": "sysinit.target", "sc-boot-ok.service": "multi-user.target"} {
+		b, _ := os.ReadFile("../../scripts/" + name)
+		os.WriteFile(filepath.Join(dir, name), []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc boot", "/bin/true")), 0o644)
+		wants := filepath.Join(dir, wantedBy+".wants")
+		os.MkdirAll(wants, 0o755)
+		os.Symlink("../"+name, filepath.Join(wants, name))
+	}
+	cmd := exec.Command(analyze, "verify", "--man=no", "graphical.target", "rescue.target", "emergency.target")
+	// The trailing ":" keeps the machine's own unit directories.
+	cmd.Env = append(os.Environ(), "SYSTEMD_UNIT_PATH="+dir+":")
+	out, _ := cmd.CombinedOutput()
+	// Only what concerns these units: the machine's own may warn (CI's).
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.Contains(l, "cycle") || strings.Contains(l, "sc-boot") {
+			t.Errorf("systemd-analyze verify: %s", l)
 		}
 	}
 }
