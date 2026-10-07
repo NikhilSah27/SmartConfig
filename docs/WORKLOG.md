@@ -155,7 +155,9 @@ review:
   2 and 3 (sshd: `ListenAddress`, a drop-in with its main file), 4 (raw
   lines for `-v`), 5 (Ctrl-C or SIGTERM to `sc check`), 7 (a check's row
   lookup), 8 (cosmetics).
-- **Chunk G, `sc status` and restore:** M4 1 (a restore under an
+- **Chunk G, `sc status` and restore (done 2026-10-07, reviewed:
+  [reviews/2026-10-07-m4-followups-chunk-g.md](reviews/2026-10-07-m4-followups-chunk-g.md),
+  fixes `0a55306`):** M4 1 (a restore under an
   unmounted `/boot`), 2 (a file replaced by a symlink), 9 (a torn verdict
   line), 7 (cosmetics); the notes: the mount hint for `/usr/local` and
   `/boot`, SIGHUP before `signal.Notify`, edits recorded after the
@@ -170,9 +172,10 @@ review:
   4 (soft-reboot), 5 (the units' hardening, the test knob), 6 (the test
   gaps); the notes: lab check 1.8, the GRUB password recipe in the lab,
   the lab's own items, the `cmd/sc` flake.
-- **Then:** all checks, `make lab-e2e` in both modes, `accept-m3` and
-  `accept-m4` as root and one install of the new build (you run them, as
-  for step 3), your reboot and its read-only check; then the M5 plan.
+- **Then:** all checks, `make lab-e2e` in both modes, `accept-m2`,
+  `accept-m3` and `accept-m4` as root (`accept-m2` too, as `scd.service`
+  changed) and one install of the new build (you run them, as for step
+  3), your reboot and its read-only check; then the M5 plan.
   The install puts in `scd.service` too (`Type=notify` since `32cc097`):
   `sc` first, then the unit, `daemon-reload`, `restart scd`.
 
@@ -2324,3 +2327,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   before `signal.Notify`) was already said in `main`, and the rescue
   shell starts even if the report dies. Docs only. Chunk G's items are
   all in; next, its review.
+- **The chunk G review, closed: [reviews/2026-10-07-m4-followups-chunk-g.md](reviews/2026-10-07-m4-followups-chunk-g.md),
+  fixes `0a55306`.** Two reviewers in clones of `0fcabd1`: A (boot integration)
+  found 2 medium real-machine bugs (scd never ready while a startup path
+  is held back: under the free-space floor or with a store error systemd
+  restarted it every 5 minutes and each verdict waited 5 minutes; READY
+  before a startup path an event touched), 2 that would have failed the
+  sign-off (accept-m2 step 18 on `sc-boot-ok`'s `After=scd.service`; lab
+  2.5 when the getty comes between a slow report's header and its rest),
+  the late header and a torn line at a trim. B (status and restore) found
+  low ones: a covered mount taken as mounted, nested mount points, a
+  symlinked mount point, the console's symlink row without "error", the
+  row -1 boundary's label, fstab blocking its own undo, a file mount
+  point, two titles, and test gaps. All fixed, each with a test; 22 of 22
+  fixes undone one at a time fail a test. Full checks passed (the race
+  pass once lost `test_the_loop_measures_its_wakes`, the load-bound lab
+  test chunk D noted, a chunk H item; the rerun passed). Chunk G is
+  done; chunk H is next. `accept-m2` joins the sign-off runs
+  (`scd.service` changed).
