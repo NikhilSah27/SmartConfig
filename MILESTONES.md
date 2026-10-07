@@ -294,10 +294,17 @@ snapshot.
   starts: the drop-in's `ExecStartPre=-` lets the report fail.
 - One `go test ./cmd/sc/` run of 14 failed right after three lab-test
   runs, its output not kept; 13 later runs passed (chunk D).
-- The lab: the host's pauses (the user's to look at), an ssh retry
-  across a pause, systemd's lines missing on ttyS0, the mux's 1 s drain
-  during a serial reconnect, two load-bound tests and `facts.sh`'s pipe
-  statuses (chunk D).
+- Done (`b092a79`): the lab (chunk D): a read over ssh whose time ran out
+  while the host stood still runs once more with a fresh budget; a mark
+  no longer waits out its 1 s drain while serial reconnects; `facts.sh`'s
+  filtered parts keep the command's exit status; the wake test takes any
+  late wake (it measured 0.3 s beside a race pass). systemd's lines
+  missing on ttyS0 are systemd's rule: once a `Type=idle` unit
+  (`emergency.service`) stops waiting while a unit has the console,
+  systemd writes no more status there (v255 `manager.c`,
+  `manager_dispatch_idle_pipe_fd`). The signal test did not hang in 135
+  runs beside four CPU burners; it stays as it is. The host's pauses
+  stay yours to look at.
 - Done (`f0bf189`): the lab's check 1.8 could not fail: `critical-chain`
   follows only units that became active, and the boot units are oneshots
   that never do (final review, A8). It now reads `sc-boot-seen`'s

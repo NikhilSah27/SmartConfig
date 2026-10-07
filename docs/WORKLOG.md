@@ -2377,3 +2377,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   sc-boot-ok.service grub-initrd-fallback.service`. Lab tests for each
   case; undoing the check fails one. Full checks and `make lab-test`
   passed.
+- **The lab's items (chunk D), done `b092a79`** (chunk H). A read over ssh
+  that ran out of time while the host stood still runs once more; a
+  mark does not wait out its drain while serial reconnects; `facts.sh`'s
+  filtered parts keep the command's status; the wake test takes any late
+  wake. Explained, no change: systemd's lines missing on ttyS0 (v255
+  turns its console output off once a `Type=idle` unit stops waiting
+  while a unit has the console: `emergency.service` and its shell). Not
+  reproduced: the signal test's hang (0 of 135 runs beside four CPU
+  burners). A test for each change, each failing without it. Full
+  checks and `make lab-test` passed (a first run stopped at `gofmt` on
+  the test's stubs).
