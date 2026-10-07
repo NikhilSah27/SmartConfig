@@ -307,7 +307,7 @@ snapshot.
    not mounted wrote to the root filesystem's own `/boot/grub`, if one is
    there, and said it worked; `sc restore` now refuses under a mount
    point of `/etc/fstab` that is not mounted (B8).
-2. Done: a checked file replaced by a symlink was not judged ("now a
+2. Done (`17f4a34`): a checked file replaced by a symlink was not judged ("now a
    symlink"); `sc status` now calls it an error, with the healthy
    version's restore (B9).
 3. `GRUB_TOP_LEVEL` is ignored: the rescue entry boots the newest kernel

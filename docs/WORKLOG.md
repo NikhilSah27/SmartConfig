@@ -2273,3 +2273,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   ahead. Tests: `TestRestoreUnmountedMount` (refused, file unchanged;
   mounted, restored), `TestUnmountedMount` (the deepest point, escaped
   names, no mount table). Full checks passed.
+- **M4 follow-up 2, a checked file now a symlink, done `17f4a34`** (chunk G).
+  `sc status` calls it an error ("now a symlink to X, not checked") with
+  the healthy version's restore; a link that was a link stays as it was.
+  `TestStatusFileNowLink`, which fails without the change. Full checks
+  passed.
