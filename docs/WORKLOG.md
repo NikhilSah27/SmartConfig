@@ -2136,3 +2136,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
     race`, `make m1-compat`. The M4 rescue drop-ins on this VM check
     clean with the new build.
+- **M3 follow-up 2, sshd `ListenAddress`, done `e9133ca`** (chunk F). A new
+  rule of sc's own, `sshd-listen-missing` (warning): a `ListenAddress`
+  whose literal address no interface here has. `sshd -t` binds nothing
+  and passes it.
+  - Probed on this VM: Ubuntu 24.04 starts sshd through `ssh.socket`,
+    which has `FreeBind=yes`, so the bind does not fail at boot; SSH just
+    takes no connections there, and none at all when that is the only
+    address. The review's "gone at the next boot" holds for an sshd that
+    binds for itself.
+  - Host names are not looked up; wildcards and loopback are skipped. A
+    machine with no address but loopback (the rescue boot, no network)
+    gets nothing.
+  - Tests: `TestSshdListen` (12 cases), `TestSshdListenReal` (every
+    address of this machine, then 192.0.2.7). 11 mutations, each caught;
+    the one that first survived (`Unmap`) got a case.
+  - The first full run failed `TestRulesTable`: the explanation had six
+    lines (at most five, for the console). Shortened; all checks then
+    passed: gofmt, vet, `go test ./...` as a user and as root, `make
+    race`, `make m1-compat`.

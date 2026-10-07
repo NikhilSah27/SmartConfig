@@ -209,8 +209,8 @@ where nss-systemd supplies root.
 1. Done (`1246469`): a checker for unit drop-ins (`*.service.d/*.conf`,
    what `systemctl edit` writes), which verifies the unit together with
    its drop-ins (medium).
-2. Done: sshd: a warning for a `ListenAddress` this machine does not
-   have (no SSH there, and none at all when it is the only one).
+2. Done (`e9133ca`): sshd: a warning for a `ListenAddress` this machine
+   does not have (no SSH there, and none at all when it is the only one).
 3. sshd: check a drop-in together with the main file, not alone (a false
    blocker when the two only work together).
 4. Notes: keep a validator's raw lines for `-v`.
