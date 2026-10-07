@@ -5,6 +5,7 @@ package check
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,8 +35,13 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 		nsswitchPath: filepath.Join(dir, "no-nsswitch.conf"), // no nss-systemd: the worse case
 		groupPath:    filepath.Join(dir, "no-group"),         // no admins to look for
 		passwdPath:   filepath.Join(dir, "no-passwd"),
+		addrs:        func() ([]netip.Addr, error) { return fakeAddrs, nil },
 		exists:       func(p string) bool { return set[p] }}, args
 }
+
+// fakeAddrs are a fake machine's interface addresses.
+var fakeAddrs = []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("::1"),
+	netip.MustParseAddr("10.0.2.15"), netip.MustParseAddr("fe80::5054:ff:fe12:3456")}
 
 // brief is "line rule severity" for each finding.
 func brief(fs []Finding) string {

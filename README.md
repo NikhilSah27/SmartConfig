@@ -151,7 +151,8 @@ checker.
 
 What is checked, each with the system's own validator in a check-only form
 plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers
-(`visudo -c`), `sshd_config` (`sshd -t`), systemd units in
+(`visudo -c`), `sshd_config` (`sshd -t`, and a warning for a
+`ListenAddress` no interface here has), systemd units in
 `/etc/systemd/system` and their drop-ins (`NAME.service.d/*.conf`, checked
 with the unit) (`systemd-analyze verify`), `/etc/default/grub` and
 `grub.cfg` (`sh -n`, `grub-script-check`), netplan (netplan's generator on

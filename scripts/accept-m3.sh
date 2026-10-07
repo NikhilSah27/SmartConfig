@@ -89,6 +89,8 @@ as /etc/sudoers.d/90-accept 0 - "root ALL=(ALL:ALL) ALL\n"
 as /etc/sudoers.d/90-accept 2 sudoers-syntax "nobody ALL=(ALL NOPASSWD ALL\n"
 as /etc/ssh/sshd_config.d/90-accept.conf 0 - "PasswordAuthentication no\n"
 as /etc/ssh/sshd_config.d/90-accept.conf 2 sshd-invalid "PermitRootLogn no\n"
+# 192.0.2.0/24 is for documentation: no machine has it.
+as /etc/ssh/sshd_config.d/90-accept.conf 0 sshd-listen-missing "ListenAddress 192.0.2.7\n"
 as $TESTUNIT 0 - "[Unit]\nDescription=accept\n[Service]\nExecStart=/bin/true\n"
 as $TESTUNIT 2 unit-exec-missing "[Unit]\nDescription=accept\n[Service]\nExecStart=/usr/bin/sc-no-such-binary\n"
 as $TESTUNIT 0 unit-unknown-key "[Unit]\nDescription=accept\n[Service]\nExecStart=/bin/true\nRestrt=always\n"

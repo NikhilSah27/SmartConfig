@@ -5,7 +5,10 @@ package check
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -17,6 +20,11 @@ the next start of ssh.service checks the file, fails and is not retried,
 so after a restart or a reboot there is no SSH access.
 Fix the line sshd names (sc check -v shows its message); sshd -t checks
 the file again.`},
+		Rule{"sshd-listen-missing", Warning, `ListenAddress names an address no interface of this machine has now.
+sshd takes no connections there until it appears (ssh.socket binds it
+and waits; an sshd binding for itself skips it), and when it is the only
+address, SSH is out of reach after the next restart or boot. Use one the
+machine has (ip -brief address), or none to listen on all of them.`},
 	)
 }
 
@@ -34,12 +42,84 @@ var (
 	sshdEnv = regexp.MustCompile(`^(Missing privilege separation directory|Privilege separation user |.* must be owned by root and not group or world-writable\.$|sshd: no hostkeys available|Unable to load host key)`)
 )
 
-// checkSshd checks an sshd_config or a drop-in with sshd -t. The server
-// reads its host keys before it says the file is fine, which only root
-// can; a test gives it a throwaway key with -h instead. A drop-in is
-// checked on its own: it may use the same keywords, and a setting that
-// clashes with the main file is sshd's to report.
+// checkSshd checks an sshd_config or a drop-in with sshd -t, and with sc's
+// own rule for ListenAddress, which sshd -t does not judge.
 func checkSshd(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
+	out, notes, err := sshdTest(ctx, c, in)
+	if err != nil {
+		return nil, nil, err
+	}
+	return append(out, sshdListen(c, in)...), notes, nil
+}
+
+// sshdListen finds the ListenAddress lines whose address no interface of
+// this machine has (M3 follow-up 2): sshd -t passes them, as it binds
+// nothing. A host name is not looked up, and the wildcard and loopback
+// addresses are always there. On a machine with no address but loopback
+// (a rescue boot, which starts no network) nothing is known to be
+// missing.
+func sshdListen(c *Checks, in input) []Finding {
+	have, err := c.machineAddrs()
+	if err != nil || !slices.ContainsFunc(have, func(a netip.Addr) bool { return !a.IsLoopback() }) {
+		return nil
+	}
+	var out []Finding
+	for i, l := range strings.Split(string(in.data), "\n") {
+		f := strings.FieldsFunc(l, func(r rune) bool { return r == ' ' || r == '\t' || r == '=' })
+		if len(f) < 2 || !strings.EqualFold(f[0], "ListenAddress") {
+			continue
+		}
+		a, ok := sshdListenAddr(f[1])
+		if !ok || a.IsUnspecified() || a.IsLoopback() || slices.Contains(have, a) {
+			continue
+		}
+		out = append(out, Finding{Rule: "sshd-listen-missing", Severity: Warning, Line: i + 1, Key: lineKey(in.data, i+1),
+			Text: fmt.Sprintf("no interface of this machine has %s now; sshd takes no connections there", a)})
+	}
+	return out
+}
+
+// sshdListenAddr returns the address a ListenAddress value names, ok false
+// for a host name: 192.0.2.1, 192.0.2.1:22, 2001:db8::1, [2001:db8::1]:22,
+// fe80::1%eth0, each maybe in quotes.
+func sshdListenAddr(v string) (netip.Addr, bool) {
+	v = strings.Trim(v, `"`)
+	if h, _, err := net.SplitHostPort(v); err == nil {
+		v = h
+	} else {
+		v = strings.TrimSuffix(strings.TrimPrefix(v, "["), "]")
+	}
+	v, _, _ = strings.Cut(v, "%")
+	a, err := netip.ParseAddr(v)
+	return a.Unmap(), err == nil
+}
+
+// machineAddrs returns the addresses of this machine's interfaces.
+func (c *Checks) machineAddrs() ([]netip.Addr, error) {
+	if c.addrs != nil {
+		return c.addrs()
+	}
+	as, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err
+	}
+	var out []netip.Addr
+	for _, x := range as {
+		if n, ok := x.(*net.IPNet); ok {
+			if a, ok := netip.AddrFromSlice(n.IP); ok {
+				out = append(out, a.Unmap())
+			}
+		}
+	}
+	return out, nil
+}
+
+// sshdTest runs sshd -t on the file. The server reads its host keys before
+// it says the file is fine, which only root can; a test gives it a
+// throwaway key with -h instead. A drop-in is checked on its own: it may
+// use the same keywords, and a setting that clashes with the main file is
+// sshd's to report.
+func sshdTest(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	args := []string{"-t", "-f", in.file}
 	if c.sshdHostKey != "" {
 		args = append(args, "-h", c.sshdHostKey)

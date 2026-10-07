@@ -175,8 +175,8 @@ its changes after approval (C1 to C9) in section 15. Reviews:
 [final](docs/reviews/2026-10-03-m3-final.md).
 
 34 rules across 15 checkers at the tag, each with a fixed explanation
-(`sc check -v`); follow-up 1 added a 16th, for unit drop-ins, and its
-rule `unit-dropin-orphan`. Each validator was first run on this VM in the form sc uses, to make
+(`sc check -v`). Follow-ups added a 16th checker, for unit drop-ins (1),
+and the rules `unit-dropin-orphan` (1) and `sshd-listen-missing` (2). Each validator was first run on this VM in the form sc uses, to make
 sure it only checks, and severities follow what the consumer really does: an fstab
 line with `nofail` is a warning, a passwd file without root is a warning
 where nss-systemd supplies root.
@@ -209,8 +209,8 @@ where nss-systemd supplies root.
 1. Done (`1246469`): a checker for unit drop-ins (`*.service.d/*.conf`,
    what `systemctl edit` writes), which verifies the unit together with
    its drop-ins (medium).
-2. sshd: a warning for a `ListenAddress` this machine does not have
-   (SSH is gone at the next boot).
+2. Done: sshd: a warning for a `ListenAddress` this machine does not
+   have (no SSH there, and none at all when it is the only one).
 3. sshd: check a drop-in together with the main file, not alone (a false
    blocker when the two only work together).
 4. Notes: keep a validator's raw lines for `-v`.

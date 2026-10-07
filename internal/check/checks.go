@@ -5,6 +5,7 @@ package check
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,6 +24,7 @@ type Checks struct {
 	nsswitchPath string                            // "": /etc/nsswitch.conf; tests fake the machine
 	groupPath    string                            // "": /etc/group, whose sudo and admin members are the admins
 	passwdPath   string                            // "": /etc/passwd, the users a group's members must be
+	addrs        func() ([]netip.Addr, error)      // nil: this machine's interface addresses; tests fake the machine
 }
 
 // Report is the result of checking one file.

@@ -5,9 +5,11 @@ package check
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -332,5 +334,78 @@ func TestSshdReal(t *testing.T) {
 	rep, err = c.Check(context.Background(), sshdConfig, []byte(badLines))
 	if err != nil || brief(rep.Findings) != "2 sshd-invalid blocker\n3 sshd-invalid blocker" || len(rep.Notes) != 0 {
 		t.Errorf("no key, bad lines: %q %q %v", brief(rep.Findings), rep.Notes, err)
+	}
+}
+
+// ListenAddress on an address this machine does not have (M3 follow-up
+// 2): sshd -t passes it, sc warns. The fake machine has 127.0.0.1, ::1,
+// 10.0.2.15 and fe80::5054:ff:fe12:3456. sc's own rule, so it runs with
+// no sshd too.
+func TestSshdListen(t *testing.T) {
+	for _, tc := range []struct{ name, data, want string }{
+		{"an address the machine has", "ListenAddress 10.0.2.15\n", ""},
+		{"one it does not have", "Port 22\nListenAddress 192.0.2.7\n", "2 sshd-listen-missing warning"},
+		{"with a port", "ListenAddress 192.0.2.7:2222\n", "1 sshd-listen-missing warning"},
+		{"IPv6 in brackets with a port", "ListenAddress [2001:db8::7]:22\n", "1 sshd-listen-missing warning"},
+		{"IPv6 the machine has, with a zone", "ListenAddress fe80::5054:ff:fe12:3456%eth0\n", ""},
+		{"IPv4 the machine has, written as IPv6", "ListenAddress ::ffff:10.0.2.15\n", ""},
+		{"key=value, any case, quoted", "listenaddress=\"192.0.2.7\"\n", "1 sshd-listen-missing warning"},
+		{"two, one missing", "ListenAddress 10.0.2.15\nListenAddress 192.0.2.7\n", "2 sshd-listen-missing warning"},
+		{"wildcards and loopback", "ListenAddress 0.0.0.0\nListenAddress ::\nListenAddress 127.0.0.2\nListenAddress [::1]:22\n", ""},
+		{"a host name is not looked up", "ListenAddress sc-no-such-host.invalid\n", ""},
+		{"a comment", "#ListenAddress 192.0.2.7\n  # ListenAddress 192.0.2.8\n", ""},
+	} {
+		c, _ := fakeMachine(t, nil, "", "", 0) // no sshd
+		rep, err := c.Check(context.Background(), sshdConfig, []byte(tc.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != tc.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
+		}
+		if strings.Join(rep.Notes, "|") != "no validator found (sshd); only sc's own rules ran" {
+			t.Errorf("%s: notes %q", tc.name, rep.Notes)
+		}
+		for _, f := range rep.Findings {
+			if _, ok := Lookup(f.Rule); !ok || f.Key == "" || !strings.Contains(f.Text, "192.0.2.7") && !strings.Contains(f.Text, "2001:db8::7") {
+				t.Errorf("%s: %+v", tc.name, f)
+			}
+		}
+	}
+	// With sshd's own findings, and with only loopback (a rescue boot) or
+	// no list of addresses at all: nothing is known to be missing.
+	c, _ := sshdMachine(t, nil, "testdata/sshd/good.user", 0)
+	rep, _ := c.Check(context.Background(), sshdDropIn, []byte("ListenAddress 192.0.2.7\n"))
+	if brief(rep.Findings) != "1 sshd-listen-missing warning" {
+		t.Errorf("with sshd: %q %q", brief(rep.Findings), rep.Notes)
+	}
+	for name, addrs := range map[string]func() ([]netip.Addr, error){
+		"loopback only": func() ([]netip.Addr, error) { return fakeAddrs[:2], nil },
+		"no list":       func() ([]netip.Addr, error) { return nil, os.ErrPermission },
+	} {
+		c.addrs = addrs
+		if rep, _ := c.Check(context.Background(), sshdConfig, []byte("ListenAddress 192.0.2.7\n")); len(rep.Findings) != 0 {
+			t.Errorf("%s: %q", name, brief(rep.Findings))
+		}
+	}
+}
+
+// This machine's own addresses, where it has one besides loopback:
+// 192.0.2.0/24 is for documentation and never assigned.
+func TestSshdListenReal(t *testing.T) {
+	c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), Run: Runner{Dirs: []string{}}}
+	have, err := c.machineAddrs()
+	if err != nil || !slices.ContainsFunc(have, func(a netip.Addr) bool { return !a.IsLoopback() }) {
+		t.Skip("no address but loopback")
+	}
+	// Every address it has (IPv4 ones come as IPv6 from the kernel's
+	// list and must match all the same), then one it does not.
+	var data string
+	for _, a := range have {
+		data += "ListenAddress " + a.String() + "\n"
+	}
+	rep, _ := c.Check(context.Background(), sshdConfig, []byte(data+"ListenAddress 192.0.2.7\n"))
+	if want := fmt.Sprintf("%d sshd-listen-missing warning", len(have)+1); brief(rep.Findings) != want {
+		t.Errorf("%q, want %q (the machine has %v)", brief(rep.Findings), want, have)
 	}
 }
