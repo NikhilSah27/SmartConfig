@@ -609,7 +609,7 @@ class FakeRun(e2e.E2E):
 
     def __init__(self, mode="uefi", con=None, **values):  # no super(): it makes a run directory in the cache
         self.tmp = tempfile.mkdtemp(prefix="sclab-test-")
-        self.args = argparse.Namespace(mode=mode, boot2="natural", no_boot5=False, keep=False)
+        self.args = argparse.Namespace(mode=mode, boot2="natural", no_boot5=False, keep=False, grub_password=False)
         self.mode = mode
         self.uefi = mode == "uefi"
         self.conf = labvm.load_conf()
@@ -1770,6 +1770,47 @@ def ssh_result(rc, out="", err=""):
     return argparse.Namespace(rc=rc, out=out, err=err, secs=0.0, ok=rc == 0)
 
 
+class TestGrubPassword(unittest.TestCase):
+    """--grub-password (6.x): the README's recipe, judged by its output,
+    and GRUB's two prompts answered on serial. The boots themselves (and
+    the VGA path in bios) are the lab run's."""
+
+    OK = ("12:menuentry 'Ubuntu' --class ubuntu --class gnu-linux --class gnu --class os --unrestricted "
+          "$menuentry_id_option 'gnulinux-simple-x' {")
+
+    def test_the_recipe(self):
+        for want in ("grub-mkpasswd-pbkdf2", 'set superusers="admin"', "export superusers", "password_pbkdf2 admin ",
+                     "/etc/grub.d/40_custom", "/gnulinux-simple/s/", "--unrestricted", "update-grub",
+                     "grep -n -- --unrestricted /boot/grub/grub.cfg"):
+            self.assertIn(want, e2e.GRUB_RECIPE)
+        subprocess.run(["sh", "-n", "-c", e2e.GRUB_RECIPE], check=True)
+        self.assertEqual(e2e.recipe_problems(0, self.OK + "\n", ""), ([], [self.OK]))
+        for rc, out in ((1, self.OK + "\n"), (0, ""), (0, self.OK + "\n" + self.OK.replace("'Ubuntu'", "'Ubuntu, with Linux 6.8'")),
+                        (0, self.OK.replace("'Ubuntu'", "'SmartConfig rescue'"))):
+            self.assertTrue(e2e.recipe_problems(rc, out, "update-grub: error")[0], (rc, out))
+
+    def test_both_prompts_answered_on_serial(self):
+        con = FakeCon("GNU GRUB\nEnter username: ", typed={"admin\r": "\nEnter password: ", "sclabpw7\r": "\n"})
+        r = fake_run(self, "uefi", con=con)
+        r.grub_login(attempt("6b"), {"enter_pos": 9})
+        self.assertEqual(con.sent, ["admin\r", "sclabpw7\r"])
+        self.assertEqual(r.rows["6.3"].status, "PASS")
+
+    def test_no_prompt_stops(self):
+        # The rescue entry booted without asking: the recipe does not hold.
+        for text, typed in (("GNU GRUB\n[    0.000000] Linux version 6.8.0", {}),
+                            ("GNU GRUB\nEnter username: ", {"admin\r": "\n[    0.000000] Linux version 6.8.0"})):
+            con = FakeCon(text, typed=typed)
+            r = fake_run(self, "uefi", con=con)
+            s = stops(r.grub_login, attempt("6b"), {"enter_pos": 9})
+            self.assertEqual((s.row.id, s.row.status), ("6.3", "FAIL"), text)
+            self.assertNotIn("sclabpw7\r", con.sent)
+
+    def test_the_summary_line_says_so(self):
+        self.assertTrue(e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes", grubpw=True).endswith(" grubpw=yes"))
+        self.assertNotIn("grubpw", e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes"))
+
+
 class TestRebootSsh(unittest.TestCase):
     """A bios run of 9f29ea5: ssh lost the guest (exit 255 after 20 s, no
     answer to its keepalives) on 1.0's reboot, which never happened. A
@@ -2791,7 +2832,7 @@ class TestBoot3Faults(FaultCase):
         r.machine = FakeMachine()
         r.new_boot = lambda ev: ev
 
-        def pick(a, g, target):  # 3.2's keys: console.pick has its own tests (test_lab.py)
+        def pick(a, g, target, cid="3.2"):  # 3.2's keys: console.pick has its own tests (test_lab.py)
             g["keys"], g["enter_pos"] = ["0e", "0e", "0e"], con.size()
             con.t += after
 
@@ -3378,7 +3419,7 @@ class TestGlue(FaultCase):
             con = FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG + UEFI_MENU)
             r = fake_run(self, con=con)
 
-            def pick(a, g, target):
+            def pick(a, g, target, cid="3.2"):
                 g["enter_pos"] = con.size()
                 con.t += said
 
@@ -3557,7 +3598,7 @@ class TestExecute(unittest.TestCase):
         r, rc = self.execute(lambda r: passing(r, "5.1"))
         self.consistent(r, rc, "INCONCLUSIVE")
         notrun = [c for c, cells in r.result.items() if cells[1] == "NOTRUN"]
-        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2"])
+        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5"])
         self.assertEqual(r.result["5.1"][8], "not reached")
         self.assertEqual(r.discards, 0)
         self.assertIn("failing: 5.1\tNOTRUN", r.err)

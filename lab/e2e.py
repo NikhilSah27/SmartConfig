@@ -69,6 +69,31 @@ BAD_TAIL = BAD_UUID[-17:]
 BAD_LINE = "UUID=%s /mnt/backup ext4 defaults 0 2" % BAD_UUID
 
 RESCUE_TITLE = "SmartConfig rescue"
+UBUNTU_TITLE = "Ubuntu"
+# The README's GRUB password recipe (--grub-password, checks 6.x): a
+# superuser and a password GRUB takes with a US layout, as qcodes too.
+GRUB_USER, GRUB_PASSWORD = "admin", "sclabpw7"
+GRUB_USER_RX, GRUB_PASS_RX = r"Enter username:", r"Enter password:"
+# 6.1, as root in the guest: the README's steps, scripted. The lines
+# grub.cfg marks --unrestricted are its output.
+GRUB_RECIPE = r"""set -e
+hash=$(printf '%s\n%s\n' @PW@ @PW@ | grub-mkpasswd-pbkdf2 | sed -n 's/^.* is \(grub\.pbkdf2\.[^ ]*\)$/\1/p')
+[ -n "$hash" ]
+printf 'set superusers="@USER@"\nexport superusers\npassword_pbkdf2 @USER@ %s\n' "$hash" >>/etc/grub.d/40_custom
+sed -i '/gnulinux-simple/s/\${CLASS}/${CLASS} --unrestricted/' /etc/grub.d/10_linux
+update-grub >/dev/null 2>&1
+grep -n -- --unrestricted /boot/grub/grub.cfg
+""".replace("@USER@", GRUB_USER).replace("@PW@", GRUB_PASSWORD)
+
+
+def recipe_problems(rc, out, err):
+    """6.1: the recipe ran (exit 0), and grub.cfg has exactly one
+    --unrestricted line, Ubuntu's menuentry (the README's own check)."""
+    lines = [l for l in out.split("\n") if "--unrestricted" in l]
+    p = [] if rc == 0 else ["the recipe: exit %s: %s" % (rc, err.strip()[-200:])]
+    if len(lines) != 1 or "menuentry 'Ubuntu'" not in lines[0]:
+        p.append("grub.cfg's --unrestricted lines: %s" % (" | ".join(lines) or "none"))
+    return p, lines
 RESCUE_ECHO = "SmartConfig rescue: root read-only, /etc/fstab ignored"
 RESCUE_ARGS = "fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
 DROPIN_LINE = "ExecStartPre=-/usr/local/sbin/sc status --console"
@@ -197,6 +222,11 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("5.1.ok", "M4", "H", "SSH", "the boots file has B5 ok (every attempt, the flag known or not)"),
     ("5.1.notime", "M4", "H", "S", "no bad-device timeout in boot 5 (every attempt)"),
     ("5.2", "M4", "H", "SSH+M", "a delayed poweroff gives SHUTDOWN"),
+    ("6.1", "M4", "H", "SSH", "--grub-password: the README's recipe; grub.cfg has one --unrestricted entry, Ubuntu's"),
+    ("6.2", "M4", "H", "S|V+SSH", "--grub-password: the default boot asks for no password and comes up"),
+    ("6.3", "M4", "H", "S|V", "--grub-password: the rescue entry asks for the superuser and the password"),
+    ("6.4", "M4", "H", "S", "--grub-password: with them it boots (fstab=no), and its shell reboots"),
+    ("6.5", "M4", "H", "S|V+SSH", "--grub-password: Ubuntu from the menu asks for none, and the boot is ok"),
     ("K.1", "lab", "H", "K", "no lone ESC was ever sent (design section 6)"),
     ("T.1", "lab", "H", "host", "nothing of the run is left: QEMU, its port, the reader threads"),
 ))
@@ -922,14 +952,14 @@ def build_problems(bin_sha, fresh):
     return []
 
 
-def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False):
+def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False, grubpw=False):
     """The one line on stdout; make lab-e2e reads boot5=no, dirty=yes and
     boot2=a(forced) from it (forced: --boot2 reset-at-timeout, which
-    leaves 2.5 and 2.6 out)."""
+    leaves 2.5 and 2.6 out). grubpw=yes: --grub-password ran 6.x."""
     goal3 = {"a": "early-only", "b": "multi-user", "c": "multi-user"}.get(outcome, "-")
-    return "%s %s %s boot2=%s%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s" % (
+    return "%s %s %s boot2=%s%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s%s" % (
         v, mode, took, outcome or "-", "(forced)" if forced and outcome else "", goal3, boot5, retries, head, dirty,
-        sc or "-")
+        sc or "-", " grubpw=yes" if grubpw else "")
 
 
 def undo_commands(lines):
@@ -1595,11 +1625,13 @@ class E2E:
             out.append("no QEMU state: %r" % (e,))
         return self.save("stall-%s-%d.txt" % (a.label, a.n), "\n".join(out))
 
-    def grub_phase(self, a, cid, menu, pick=None):
+    def grub_phase(self, a, cid, menu, pick=None, pick_cid="3.2", login=None):
         """The boot from its reset to the kernel: GRUB's observer lines and
         its menu. menu: True (a 30 s menu must show), False (none may) or
         None (not known after a retry: not checked; nothing is pressed).
-        pick: the entry to boot (boot 3); otherwise a menu times out."""
+        pick: the entry to boot (boot 3, and 6.x), its keys checked as
+        pick_cid; otherwise a menu times out. login(a, g), after the
+        Enter: GRUB's password prompts (6.3)."""
         self.at(cid)
         g = {"obs": [], "menu": None, "menu_lines": [], "menu_ev": "", "kernel": None, "enter_pos": None,
              "menu_seen": False, "obs_ev": "", "keys": []}
@@ -1637,8 +1669,11 @@ class E2E:
                             expected="a 30 s menu (smartconfig_pending=1)", source="42_smartconfig's flag block",
                             evidence=g["menu_ev"] or self.sev(a.mark.txt, self.con.size()))
         if pick:
-            self.check_30(a)
-            self.pick(a, g, pick)
+            if pick_cid == "3.2":
+                self.check_30(a)
+            self.pick(a, g, pick, pick_cid)
+            if login is not None:
+                login(a, g)
         start = g["enter_pos"] if g["enter_pos"] is not None else a.mark.txt
         hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX], budget, start=start, what="the kernel")
         if hit is None:
@@ -1649,7 +1684,7 @@ class E2E:
                     "\n".join(a.vga2.all_rows() if a.vga2 is not None else [])
                 err = re.search(r"^\s*error: [^\n]*", after, re.M)
                 if err:
-                    self.record("3.2", problems=["the entry did not boot: %s" % err.group(0).strip()],
+                    self.record(pick_cid, problems=["the entry did not boot: %s" % err.group(0).strip()],
                                 expected="the kernel of %s" % pick, source="scripts/42_smartconfig",
                                 evidence=self.sev(start, self.con.size()) if self.uefi else a.vga2.files(), strength="H")
             raise LabError("no kernel %d s after the %s" % (budget, "Enter" if pick else "reset"))
@@ -1736,9 +1771,9 @@ class E2E:
                     if got else [], seen="%d inputs since input.log entry %d" % (len(got), start),
                     expected="none", source="design 6: nothing is typed in boot 2", evidence="input.log")
 
-    def pick(self, a, g, target):
-        """3.2's keys: move the highlight to target, closed loop, then Enter."""
-        self.at("3.2")
+    def pick(self, a, g, target, cid="3.2"):
+        """cid's keys: move the highlight to target, closed loop, then Enter."""
+        self.at(cid)
         key_timeout = self.b("BUDGET_MENU_KEY")
         if self.uefi:
             read, press = console.serial_menu(self.con, a.mark.txt)
@@ -1755,7 +1790,7 @@ class E2E:
                 raise Retry("grub-prompt", str(e))
             if e.menu is None or e.menu.gone or "did not move" in str(e) or "highlighted" in str(e):
                 raise Retry("menu-missed", str(e))
-            self.record("3.2", problems=[str(e)], seen="keys %s" % e.keys, evidence=g["menu_ev"])
+            self.record(cid, problems=[str(e)], seen="keys %s" % e.keys, evidence=g["menu_ev"])
         g["keys"] = [e.data for e in self.mux.inputs(a.mark.inp)]
         g["enter_pos"] = self.con.size()
         if self.uefi:
@@ -3152,6 +3187,142 @@ class E2E:
         self.stop_on(first + held)
         self.flag = False
 
+    # -- --grub-password: the README's GRUB password recipe (6.x) ------------
+
+    def grub_password(self):
+        """6.1-6.5: the README's GRUB superuser recipe in this guest, then
+        three boots: the default one (no menu, no password), the rescue
+        entry from the menu (the password asked, given, and it boots), and
+        Ubuntu from the menu (none asked; the boot is ok, which clears the
+        flag the rescue boot could not). It tests the README, not sc."""
+        self.at("6.1")
+        r = self.sudo(GRUB_RECIPE, self.b("BUDGET_CMD_SC"))
+        p, lines = recipe_problems(r.rc, r.out, r.err)
+        self.record("6.1", problems=p, seen=" | ".join(lines), expected="one line: menuentry 'Ubuntu' ... --unrestricted",
+                    source="README: To close the menu paths", evidence="ssh.log")
+        self.reboot_ssh("6.2")
+        self.boot("6a", self.boot6a)
+        self.at("6.3")
+        r = self.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1")
+        if r.rc != 0:
+            raise LabError("grub-editenv set smartconfig_pending=1: exit %s %s" % (r.rc, r.err.strip()))
+        self.flag = True
+        self.reboot_ssh("6.3")
+        self.boot("6b", self.boot6b)
+        self.boot("6c", self.boot6c)
+
+    def grub_asked(self, a, start, end):
+        """GRUB's username prompt in this boot between start and end
+        (serial offsets; bios: on any VGA screen of the boot), or None."""
+        if self.uefi:
+            m = re.search(GRUB_USER_RX, self.con.text(start, end))
+            return m.group(0) if m else None
+        rows = [r for w in (a.vga, a.vga2) if w is not None for r in w.all_rows()]
+        return next((r.strip() for r in rows if re.search(GRUB_USER_RX, r)), None)
+
+    def boot6a(self, a):
+        """6.2: the default boot with the password set: no menu, no prompt."""
+        g = self.grub_phase(a, "6.2", menu=a.flag)
+        self.at("6.2")
+        asked = self.grub_asked(a, a.mark.txt, g["kernel"].start)
+        b = self.wait_ssh(a)
+        self.record("6.2", problems=["GRUB asked: %r" % asked] if asked else [], seen="no prompt; ssh in boot %s" % b[:8],
+                    expected="no %r; ssh" % GRUB_USER_RX, source="README: the recipe marks Ubuntu --unrestricted",
+                    evidence=g["obs_ev"])
+
+    def grub_prompt(self, a, g, rx, budget):
+        """GRUB's rx after the last Enter: serial (uefi) or the VGA screen
+        (bios, polled since the Enter). True when it came."""
+        if self.uefi:
+            return self.wait_for(a, [rx], budget, start=g["enter_pos"], what=rx) is not None
+        deadline = time.monotonic() + self.left(budget)
+        while time.monotonic() < deadline:
+            if a.vga2 is not None and a.vga2.first(lambda rows: any(re.search(rx, r) for r in rows)) is not None:
+                return True
+            time.sleep(0.25)
+        return False
+
+    def grub_type(self, text):
+        """text and Enter, as typed at GRUB's prompt: serial (uefi) or
+        the emulated keyboard (bios: a qcode per character)."""
+        if self.uefi:
+            if not self.con.send(text + "\r"):
+                raise LabError("could not type at GRUB's prompt on serial")
+            return
+        for ch in list(text) + ["ret"]:
+            self.mux.note("sendkey", ch)
+            self.machine.sendkey(ch)
+            time.sleep(0.05)
+
+    def grub_login(self, a, g):
+        """6.3: after the Enter on the rescue entry GRUB asks for the
+        superuser, then the password; both are typed."""
+        self.at("6.3")
+        seen = []
+        for rx, answer in ((GRUB_USER_RX, GRUB_USER), (GRUB_PASS_RX, GRUB_PASSWORD)):
+            if not self.grub_prompt(a, g, rx, self.b("BUDGET_MENU")):
+                self.record("6.3", problems=["no %r after %s" % (rx, " and ".join(seen) or "the Enter on " + RESCUE_TITLE)],
+                            expected="%r, then %r" % (GRUB_USER_RX, GRUB_PASS_RX), source="README: every other entry asks",
+                            evidence=self.sev(g["enter_pos"], self.con.size()) if self.uefi else
+                            (a.vga2.files() if a.vga2 else ""))
+            seen.append(rx)
+            g["enter_pos"] = self.con.size()
+            self.grub_type(answer)
+        self.record("6.3", seen=", then ".join(seen), expected="%r, then %r" % (GRUB_USER_RX, GRUB_PASS_RX),
+                    source="README: every entry but Ubuntu asks for the password", evidence="input.log")
+
+    def boot6b(self, a):
+        """6.3, 6.4: the rescue entry from the menu, the password given;
+        it boots with fstab=no, and its shell reboots."""
+        g = self.grub_phase(a, "6.3", menu=True, pick=RESCUE_TITLE, pick_cid="6.3", login=self.grub_login)
+        self.at("6.4")
+        hit = self.kernel_cmdline(a, g, "6.4")
+        line = norm_cmdline(hit.group(1))
+        p = [] if "fstab=no" in line.split() else ["the kernel started without fstab=no: %s" % line[-120:]]
+        pr = self.wait_for(a, [PROMPT_RX], self.b("BUDGET_KERNEL_RESCUE"), start=g["kernel"].start, what="the rescue prompt")
+        if pr is None:
+            p.append("no %r %d s after the kernel" % (PROMPT_RX, self.b("BUDGET_KERNEL_RESCUE")))
+        else:
+            self.at_prompt = True
+            start = self.con.size()
+            if not self.con.send("\r", 0):
+                raise LabError("could not send Enter on serial")
+            h = self.wait_for(a, [SHELL_RX], self.b("BUDGET_CMD"), start=start, what="the root shell")
+            self.at_prompt = False
+            if h is None:
+                p.append("no root shell after Enter")
+        if p:
+            self.record("6.4", problems=p, seen=line[-120:], evidence=self.sev(hit.start, self.con.size()))
+        self.shell = True
+        since = self.qmp.mark()
+        if not self.con.line("systemctl reboot"):
+            raise LabError("could not type systemctl reboot")
+        self.shell = False
+        ev = self.wait_reset(since, self.b("BUDGET_RESET"), ("RESET", "SHUTDOWN"), "RESET after systemctl reboot")
+        if ev["event"] != "RESET":
+            p.append("systemctl reboot gave %s %s" % (ev["event"], json.dumps(ev["data"])))
+        self.new_boot(ev)
+        self.record("6.4", problems=p, seen="%s; %s" % (line[-80:], ev["event"]),
+                    expected="fstab=no, the rescue prompt, a # shell, a RESET", source="scripts/42_smartconfig",
+                    evidence=self.sev(hit.start, hit.end))
+
+    def boot6c(self, a):
+        """6.5: the menu again (the rescue boot cannot clear the flag);
+        Ubuntu from it asks for no password, and the boot's verdict is ok."""
+        g = self.grub_phase(a, "6.5", menu=True, pick=UBUNTU_TITLE, pick_cid="6.5")
+        self.at("6.5")
+        asked = self.grub_asked(a, g["enter_pos"], g["kernel"].start) if self.uefi else \
+            next((r.strip() for r in (a.vga2.all_rows() if a.vga2 else []) if re.search(GRUB_USER_RX, r)), None)
+        b = self.wait_ssh(a)
+        boots = self.poll(lambda: (lambda t: t if ok_line_rx(b).search(t) else "")(self.boots_text()),
+                          self.b("BUDGET_POLL")) or self.boots_text(strict=True)
+        ok = ok_line_rx(b).search(boots or "")
+        p = (["GRUB asked: %r" % asked] if asked else []) + ([] if ok else ["no '%s ok ...' line" % b])
+        self.record("6.5", problems=p, seen="%s; %s" % ("no prompt" if not asked else asked, ok.group(0) if ok else "no ok line"),
+                    expected="no %r; %s ok ..." % (GRUB_USER_RX, b[:8]), source="README: Ubuntu is --unrestricted",
+                    evidence="input.log ssh.log")
+        self.flag = False
+
     # -- the whole mode -------------------------------------------------------
 
     def flow(self):
@@ -3169,7 +3340,7 @@ class E2E:
         self.boot("3", self.boot3)
         self.boot("4", self.boot4)
         if self.args.no_boot5:
-            for cid in [c for c in REGISTRY if c.startswith("5.")]:
+            for cid in [c for c in REGISTRY if c.startswith("5.") or c.startswith("6.")]:
                 self.skip(cid, "--no-boot5")
             return
         self.reboot_ssh("5.1")
@@ -3179,6 +3350,11 @@ class E2E:
             self.reboot_ssh("5.1")
             self.boot("5b", self.boot5)
         self.decided("5.1")
+        if self.args.grub_password:
+            self.grub_password()
+        else:
+            for cid in [c for c in REGISTRY if c.startswith("6.")]:
+                self.skip(cid, "no --grub-password")
         self.at("5.2")
         ev = self.reboot_ssh("5.2", "poweroff")
         rc = self.machine.wait_exit(60)
@@ -3319,7 +3495,8 @@ class E2E:
         self.save_ledger(v)
         line = summary_line(v, self.mode, took, self.v.get("outcome"), self.retries, self.head,
                             "yes" if self.dirty else "no", self.sha.get("sc", "")[:12],
-                            "no" if self.args.no_boot5 else "yes", self.args.boot2 == "reset-at-timeout")
+                            "no" if self.args.no_boot5 else "yes", self.args.boot2 == "reset-at-timeout",
+                            getattr(self.args, "grub_password", False) and not self.args.no_boot5)
         if v != "PASS":
             failing = [r for r in rows if r.status == "FAIL"] or [r for r in rows if r.status == "NOTRUN"][:1]
             sys.stderr.write("\n%s: %s\nrun directory: %s\n" % (self.mode, v, self.run))
@@ -3346,6 +3523,8 @@ def main(argv=None):
     ap.add_argument("--boot2", choices=("natural", "reset-at-timeout"), default="natural",
                     help="reset-at-timeout: reset boot 2 right at the device timeout (forces outcome a)")
     ap.add_argument("--no-boot5", action="store_true", help="leave out boot 5 (while iterating)")
+    ap.add_argument("--grub-password", action="store_true",
+                    help="after boot 5, the README's GRUB password recipe and three more boots (checks 6.x)")
     ap.add_argument("--keep", action="store_true", help="keep disk.qcow2 and VARS.fd after a PASS too")
     args = ap.parse_args(argv)
     labvm.install_signal_handlers()

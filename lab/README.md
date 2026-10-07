@@ -28,6 +28,7 @@ with the VGA text screen) runs six boots on one overlay disk:
 | 3 rescue | the menu shows by itself; "SmartConfig rescue" is picked; the report matches the golden Go renders; Enter gives `#`; the report's commands restore fstab and reboot | 3.0-3.9 |
 | 4 healthy | the menu once more, left to time out; an ok verdict clears it | 4.1-4.6 |
 | 5 normal | no menu again; poweroff (`--no-boot5` leaves it out) | 5.1-5.2 |
+| 6a-6c GRUB password | `--grub-password` only, before the poweroff: the README's GRUB superuser recipe; the default boot asks for nothing; the rescue entry asks for the user and the password, and boots with them; Ubuntu from the menu asks for nothing | 6.1-6.5 |
 
 Every check has a class and a strength. **[M4]** checks SmartConfig;
 **[lab]** checks the lab itself (tools, QEMU, the VGA channel, keys). **H**
@@ -106,6 +107,7 @@ make lab-image LAB_IMAGE_FROM=~/smartconfig-work/m4lab/noble-server-cloudimg-amd
 make lab-image LAB_FORCE=1     # after an ovmf update (P.5): the reference image again
 make lab-e2e                   # both modes, ~25 min each under TCG
 make lab-e2e LAB_MODES=uefi LAB_E2E_ARGS=--no-boot5     # while iterating
+make lab-e2e LAB_E2E_ARGS=--grub-password                 # the README's GRUB password recipe too (6.x)
 make lab-test                  # the unit tests and sh -n (no QEMU, seconds)
 make lab-clean                 # old runs, stale reference images
 
@@ -117,7 +119,9 @@ python3 lab/vm.py stop
 ```
 
 `--boot2 reset-at-timeout` resets boot 2 right at the device timeout,
-which forces outcome a. `--keep` keeps the run's disk after a PASS too.
+which forces outcome a. `--grub-password` runs the README's GRUB password
+recipe after boot 5 and three more boots (6.x; the summary line ends
+`grubpw=yes`); without it 6.x are skipped. `--keep` keeps the run's disk after a PASS too.
 
 ## Stalls
 
