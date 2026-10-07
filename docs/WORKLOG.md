@@ -149,7 +149,9 @@ worklog line, push and CI; where an item has a real choice, you pick.
 Out: M4 follow-up 8 (LUKS, a non-goal), and the items that are yours
 (below). Order, severity first, in three chunks, each closed by a
 review:
-- **Chunk F, M3's checkers:** M3 1 (unit drop-ins, the one medium),
+- **Chunk F, M3's checkers (done 2026-10-07, reviewed:
+  [reviews/2026-10-07-m3-followups-chunk-f.md](reviews/2026-10-07-m3-followups-chunk-f.md),
+  fixes `cfb704e`):** M3 1 (unit drop-ins, the one medium),
   2 and 3 (sshd: `ListenAddress`, a drop-in with its main file), 4 (raw
   lines for `-v`), 5 (Ctrl-C or SIGTERM to `sc check`), 7 (a check's row
   lookup), 8 (cosmetics).
@@ -2251,3 +2253,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `~/smartconfig-work/review-m3fu-f/`): A the `internal/check` changes, B
   the CLI, signals, scd's checker, `accept-m3.sh` and the docs. No code
   change until it is closed. Your picks for chunk G and M4 4 are in "Now".
+- **The chunk F review is closed**
+  ([reviews/2026-10-07-m3-followups-chunk-f.md](reviews/2026-10-07-m3-followups-chunk-f.md),
+  fixes `cfb704e`). Two reviewers on `4f90bbc`: A (`internal/check`) 8
+  findings, one high: a drop-in for a template alias (`autovt@.service.d`,
+  getty@'s alias on Ubuntu) was not checked, so the autologin drop-in
+  without its `ExecStart=` reset passed; B (the CLI, signals, scd, docs)
+  nothing high, the worst a stop signal that left a scratch copy when
+  `sc check` had more files (8 of 20 runs). All fixed, with a test each
+  (each failing tests the reviewers wrote reran first); 28 of 30 fixes,
+  undone one at a time, made a test fail (two are reasoned only, named in
+  the write-up). Full checks passed (race uncached).
+  - Next: chunk G (`sc status` and restore), with your picks in "Now".
