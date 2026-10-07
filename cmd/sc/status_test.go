@@ -68,6 +68,27 @@ func newestRow(t *testing.T) int64 {
 	return n
 }
 
+// created writes data to p and records it as scd records a file it saw
+// being created: "did not exist", then the file. It returns the file's id.
+func created(t *testing.T, p, data string) string {
+	t.Helper()
+	os.WriteFile(p, []byte(data), 0o644)
+	st, err := fsutil.ReadState(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(os.Getenv("SC_HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	res, err := s.Record([]store.Obs{{Path: p, State: &st, Created: true, Origin: store.OriginAuto}})
+	if err != nil || len(res) != 1 || !res[0].Recorded {
+		t.Fatalf("record %s: %v %+v", p, err, res)
+	}
+	return res[0].Change.ID
+}
+
 const goodLine, badLine = "/dev/null /data ext4 defaults 0 2\n", "/dev/sc-no-such-disk /data ext4 defaults 0 2\n"
 
 // After a healthy boot, a change that added a blocker, and a boot that
@@ -292,7 +313,7 @@ func TestStatusNewAndDeleted(t *testing.T) {
 	other := filepath.Join(filepath.Dir(fstab), "other")
 	snap(t, other, "x\n")
 	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
-	snap(t, fstab, badLine) // new since
+	created(t, fstab, badLine) // new since
 	r := sc(t, "status")
 	if r.code != 2 || !strings.Contains(r.stdout, "\nTo undo "+fstab+", which is new, move it aside:\n  mv "+fstab+" "+fstab+".sc-off\n  sync\n  systemctl daemon-reload\n  systemctl reboot\n") ||
 		!strings.Contains(r.stdout, "(emergency)") {
@@ -312,6 +333,61 @@ func TestStatusNewAndDeleted(t *testing.T) {
 	r = sc(t, "status")
 	if r.code != 2 || !strings.Contains(r.stdout, "error: deleted") || !strings.Contains(r.stdout, "  sc restore "+good+"\n") {
 		t.Errorf("deleted: %+v", r)
+	}
+}
+
+// Without a healthy boot, the newest rows are compared with the version
+// before the oldest of them: the edit that added the blocker may be that
+// oldest row, its good version older than the list (the M4 final review,
+// B2: "no problem found", no undo).
+func TestStatusNoHealthyBoot(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro", false)
+	good := snap(t, fstab, goodLine)
+	snap(t, fstab, badLine)
+	for i := 0; i < 8; i++ {
+		snap(t, filepath.Join(dir, fmt.Sprintf("f%02d", i)), "x\n")
+	}
+	snap(t, fstab, "# a comment\n"+badLine)
+	boot.Seen(home, "bbbbbbbb-2", time.Now().Add(-time.Minute))
+	for _, args := range [][]string{{"status"}, {"status", "--console"}} {
+		r := sc(t, args...)
+		if r.code != 2 || !strings.Contains(r.stdout, "blocker fstab-source-missing, line 2") || !strings.Contains(r.stdout, "  sc restore "+good+"\n") {
+			t.Errorf("%v: %+v", args, r)
+		}
+		if len(args) == 2 && !strings.Contains(r.stdout, "\nThe newest changes, worst first (no healthy boot is recorded):\n") {
+			t.Errorf("%v: title:\n%s", args, r.stdout)
+		}
+	}
+}
+
+// A path with no version before the line is new only with proof of
+// absence ("did not exist"). One first seen after it (scd's baseline, a
+// snapshot) is compared with its first version, and with only that one,
+// gets no undo: moving fstab aside was the undo (the M4 final review, B2).
+func TestStatusFirstSeenIsNotNew(t *testing.T) {
+	_, fstab, home := statusEnv(t, "ro fstab=no systemd.unit=rescue.target", true)
+	snap(t, fstab, goodLine+badLine) // fstab's first row: scd's baseline
+	boot.Seen(home, "bbbbbbbb-2", time.Now().Add(-time.Minute))
+	for _, args := range [][]string{{"status"}, {"status", "--console"}} {
+		r := sc(t, args...)
+		if r.code != 2 || !strings.Contains(r.stdout, "blocker fstab-source-missing") || strings.Contains(r.stdout, "mv ") ||
+			!strings.Contains(r.stdout, "is recorded: fix it by hand.\n") || strings.Contains(r.stdout, "remount") {
+			t.Errorf("no healthy boot, %v: %+v", args, r)
+		}
+	}
+
+	// A healthy verdict given before the baseline reached fstab (row 0,
+	// or scd still starting): fstab first seen good after the line, then
+	// the bad edit. The first version is the one to put back.
+	_, fstab, home = statusEnv(t, "ro fstab=no systemd.unit=rescue.target", true)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	first := snap(t, fstab, goodLine)
+	snap(t, fstab, badLine)
+	for _, args := range [][]string{{"status"}, {"status", "--console"}} {
+		r := sc(t, args...)
+		if r.code != 2 || !strings.Contains(r.stdout, "blocker fstab-source-missing") || !strings.Contains(r.stdout, "  sc restore "+first+"\n") || strings.Contains(r.stdout, "mv ") {
+			t.Errorf("first seen after the line, %v: %+v", args, r)
+		}
 	}
 }
 
@@ -436,7 +512,7 @@ func TestStatusConsoleFits(t *testing.T) {
 		os.Symlink("/usr/lib/systemd/system/a-very-long-unit-name-indeed-"+fmt.Sprint(i)+".service", l)
 		mustSC(t, "snapshot", l)
 	}
-	snap(t, fstab, badLine) // new since the healthy boot
+	created(t, fstab, badLine) // new since the healthy boot
 	// The rescue entry picked by hand after the healthy boot: no flag.
 	if r := sc(t, "status", "--console"); r.code != 2 || strings.Contains(r.stdout, "The menu shows once more") {
 		t.Errorf("rescue after a healthy boot: %+v", r)

@@ -251,7 +251,7 @@ func consoleProblem(e entry) string {
 // entry is one changed file of sc status.
 type entry struct {
 	row     store.Row
-	before  *store.Change // the version to compare with and put back; nil: new since
+	before  *store.Change // the version to compare with and put back; deleted: new since; nil: none known
 	problem string
 	sev     check.Severity
 }
@@ -356,10 +356,8 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	if err != nil {
 		return err
 	}
-	// One entry per path, its newest row. Without a healthy boot, it is
-	// compared with the oldest version of the path among the rows listed
-	// (a blocker added by an earlier edit in them is not missed), or, with
-	// one row, the version before it.
+	// One entry per path, its newest row, and the oldest row of the path
+	// listed.
 	oldest := map[string]store.Row{}
 	var entries []entry
 	for _, r := range rows {
@@ -401,16 +399,25 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	var worst check.Severity
 	for i := range entries {
 		e := &entries[i]
-		switch o := oldest[e.row.Path]; {
-		case bounded:
-			e.before, err = s.AsOf(e.row.Path, from.RowID)
-		case o.RowID != e.row.RowID:
-			e.before = &o.Change
-		default:
-			e.before, err = s.AsOf(e.row.Path, e.row.RowID-1)
+		// Compared with the version at the line: the last healthy boot's,
+		// or without one, the version before the oldest row listed (a
+		// blocker added by the first edit in them is not missed). A path
+		// with no version before that is new only with proof of absence
+		// ("did not exist"); one first seen after the line, by scd's
+		// baseline or a snapshot, is compared with its first version, and
+		// with only that, with nothing (the M4 final review, B2: such an
+		// fstab was called new, and the undo moved it aside).
+		o := oldest[e.row.Path]
+		line := o.RowID - 1
+		if bounded {
+			line = from.RowID
 		}
+		e.before, err = s.AsOf(e.row.Path, line)
 		if err != nil {
 			return err
+		}
+		if e.before == nil && (o.Kind == store.KindDeleted || o.RowID != e.row.RowID) {
+			e.before = &o.Change
 		}
 		e.problem, e.sev = statusProblem(ctx, c, s, e.row, e.before)
 		worst = max(worst, e.sev)
@@ -445,6 +452,9 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, menuSet)
 		}
 		title := fmt.Sprintf("\nChanged since %s, worst first:\n", since)
+		if !bounded {
+			title = "\nThe newest changes, worst first (no healthy boot is recorded):\n"
+		}
 		// 20 rows of 25: systemd's prompt takes the other five. The rows
 		// already written, the title, the undo and a "more" line first.
 		rows := min(consoleRows, max(1, 20-screenRows(report.String()+title)-screenRows(undoText.String())-1))
@@ -560,7 +570,13 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 		}
 		return path
 	}
-	if e.before == nil || e.before.Kind == store.KindDeleted {
+	if e.before == nil {
+		// Never "move it aside": without proof that it is new, it may be
+		// a file the boot needs (fstab).
+		fmt.Fprintf(out, "\nNo earlier version of %s is recorded: fix it by hand.\n", shown("No earlier version of  is recorded: fix it by hand."))
+		return
+	}
+	if e.before.Kind == store.KindDeleted {
 		fmt.Fprintf(out, "\nTo undo %s, which is new, move it aside:\n", shown("To undo , which is new, move it aside:"))
 	} else {
 		fmt.Fprintf(out, "\nTo put %s back%s:\n", shown("To put  back"+as+":"), as)
@@ -569,11 +585,11 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 		fmt.Fprintln(out, "  mount -o remount,rw /")
 	}
 	switch {
-	case (e.before == nil || e.before.Kind == store.KindDeleted) && console:
+	case e.before.Kind == store.KindDeleted && console:
 		// Short lines: a console line that wraps pushes the top off.
 		dir, name := filepath.Split(path)
 		fmt.Fprintf(out, "  cd %s\n  mv %s %s.sc-off\n", dir, name, name)
-	case e.before == nil || e.before.Kind == store.KindDeleted:
+	case e.before.Kind == store.KindDeleted:
 		// Every reader of a directory sc checks skips this name: *.yaml,
 		// *.conf, *.rules, units, and sudoers.d's names with a dot.
 		fmt.Fprintf(out, "  mv %s %s.sc-off\n", path, path)
