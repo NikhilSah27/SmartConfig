@@ -135,11 +135,36 @@ no retries, boot 5. `accept-m4` as root PASS on that build, and that
 build is installed on this VM (`sc`, both units, `42_smartconfig`,
 `update-grub`; the S1 build is kept as `sc-2c58f8b`). The annotated tag
 `m4` is on `59203a3` and pushed. No VM is running.
-**At the next session:** the next boot of this VM is the first with the
-new units and rescue entry. Read-only first: its verdict (ok, flag
-clear, grubenv empty), `sc-boot-seen` and `sc-boot-ok` done, `sudo sc
-status` exit 0, no failed units; log them. **Next: the M5 plan** (the
-package), for your approval; nothing of M5 is started.
+**At the next session after a reboot:** the next boot of this VM is the
+first with the new units and rescue entry. Read-only first: its verdict
+(ok, flag clear, grubenv empty), `sc-boot-seen` and `sc-boot-ok` done,
+`sudo sc status` exit 0, no failed units; log them.
+
+**Now: the M3 and M4 follow-ups, then the M5 plan** (your call,
+2026-10-07: "if you have finished everything from v1 to v4 then only
+start the M5 plan", then "All follow-ups"). Every open item of the M3
+and M4 follow-up lists and the actionable "Open from the reviews" notes
+in MILESTONES, one at a time, each with its tests, checks, commit,
+worklog line, push and CI; where an item has a real choice, you pick.
+Out: M4 follow-up 8 (LUKS, a non-goal), and the items that are yours
+(below). Order, severity first, in three chunks, each closed by a
+review:
+- **Chunk F, M3's checkers:** M3 1 (unit drop-ins, the one medium),
+  2 and 3 (sshd: `ListenAddress`, a drop-in with its main file), 4 (raw
+  lines for `-v`), 5 (Ctrl-C or SIGTERM to `sc check`), 7 (a check's row
+  lookup), 8 (cosmetics).
+- **Chunk G, `sc status` and restore:** M4 1 (a restore under an
+  unmounted `/boot`), 2 (a file replaced by a symlink), 9 (a torn verdict
+  line), 7 (cosmetics); the notes: the mount hint for `/usr/local` and
+  `/boot`, SIGHUP before `signal.Notify`, edits recorded after the
+  healthy boot's row, the report held until `sc` returns.
+- **Chunk H, boot units, GRUB and the lab:** M4 3 (`GRUB_TOP_LEVEL`),
+  4 (soft-reboot), 5 (the units' hardening, the test knob), 6 (the test
+  gaps); the notes: lab check 1.8, the GRUB password recipe in the lab,
+  the lab's own items, the `cmd/sc` flake.
+- **Then:** all checks, `make lab-e2e` in both modes, `accept-m3` and
+  `accept-m4` as root and one install of the new build (you run them, as
+  for step 3), your reboot and its read-only check; then the M5 plan.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -2079,3 +2104,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     build was made from, and pushed.
   - The next boot is the first with the new units and rescue entry; its
     verdict is read at the next session.
+- **Your call: all M3 and M4 follow-ups before the M5 plan** ("if you
+  have finished everything from v1 to v4 then only start the M5 plan";
+  asked which, "All follow-ups"). M1 and M2 have nothing open (M2's 8
+  follow-ups are in; its soak was closed by you); M3 has 7 follow-ups
+  open, M4 9 and 8 review notes. The order and the chunks are in "Now".
+  Out: M4 follow-up 8 (LUKS, a non-goal) and your own items.
