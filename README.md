@@ -340,8 +340,12 @@ grep -shE '^GRUB_(DEFAULT|SAVEDEFAULT|DISABLE_SUBMENU)=' /etc/default/grub /etc/
 
 With a saved default, a default under "Advanced options",
 `GRUB_SAVEDEFAULT`, `GRUB_DISABLE_SUBMENU` or a ZFS root, every boot
-would stop at GRUB's password prompt. The recipe is not tested in
-SmartConfig's lab yet (BIOS or UEFI): try it on a VM snapshot first.
+would stop at GRUB's password prompt. SmartConfig's lab runs the recipe
+in BIOS and UEFI mode (`make lab-e2e LAB_E2E_ARGS=--grub-password`):
+the default boot asks for nothing, the rescue entry asks and boots with
+the password (Ubuntu's signed EFI GRUB takes `password_pbkdf2`), and
+Ubuntu from the menu asks for nothing. Try it on a VM snapshot first all
+the same: your machine's GRUB settings are not the lab's.
 
 ```sh
 grub-mkpasswd-pbkdf2                     # prints grub.pbkdf2.sha512.10000.…

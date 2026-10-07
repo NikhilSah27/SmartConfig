@@ -2388,3 +2388,20 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   burners). A test for each change, each failing without it. Full
   checks and `make lab-test` passed (a first run stopped at `gofmt` on
   the test's stubs).
+- **The GRUB password recipe in the lab, done `818dace`** (chunk H; the
+  chunk E note). `--grub-password` adds checks 6.1-6.5 after boot 5: the
+  README's recipe scripted as root (one `--unrestricted` line,
+  Ubuntu's), the default boot asks for nothing, the rescue entry from
+  the menu asks for the user and the password (serial in UEFI, the VGA
+  screen and qcodes in BIOS) and boots with them (`fstab=no`, its shell
+  reboots), Ubuntu from the menu asks for nothing and is ok. Lab tests
+  for the recipe's judging, the two prompts and the summary tag; full
+  checks and `make lab-test` passed. Then `make lab-e2e
+  LAB_E2E_ARGS=--grub-password` on `818dace` (clean tree), log
+  `~/smartconfig-work/signoff/lab-e2e-20261007T212317Z-818dace.log`,
+  run files in `signoff/lab-e2e-818dace/`: **PASS** both modes, UEFI
+  27m03s (outcome b), BIOS 26m06s (outcome a), 0 retries, `grubpw=yes`.
+  It also ran chunk H's hardened boot units through the broken boot 2
+  (seen line and menu as before) and the new check 1.8 (seen's
+  `Before=` has no target but `shutdown.target`). The README now says
+  the lab runs the recipe.

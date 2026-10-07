@@ -309,9 +309,10 @@ snapshot.
   follows only units that became active, and the boot units are oneshots
   that never do (final review, A8). It now reads `sc-boot-seen`'s
   `Before=`: no target but `shutdown.target`.
-- The GRUB password recipe in the README is not tested in the lab yet,
-  in BIOS or UEFI mode (whether Ubuntu's signed EFI GRUB takes
-  `password_pbkdf2` included) (chunk E).
+- Done (`818dace`): the GRUB password recipe in the README was not
+  tested in the lab (chunk E). `make lab-e2e LAB_E2E_ARGS=--grub-password`
+  runs it (checks 6.1-6.5); it passed in both modes on 2026-10-07, and
+  Ubuntu's signed EFI GRUB takes `password_pbkdf2`.
 - Done (`845b395`): `sc status` puts `mount /boot` (each unmounted mount point of
   fstab the file is under, the outermost first, since the chunk G review)
   in its undo (chunk E, C7); `/usr/local` is
