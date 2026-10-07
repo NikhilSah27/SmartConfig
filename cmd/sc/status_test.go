@@ -1116,3 +1116,28 @@ func TestSeconds(t *testing.T) {
 		}
 	}
 }
+
+// A checked file that a symlink replaced is not judged by its checker: an
+// error, whose undo restores the file (M4 follow-up 2, the M4 final
+// review B9: "now a symlink", no undo, exit 0). A link that was a link
+// before stays as it was.
+func TestStatusFileNowLink(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "", false)
+	good := snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	os.Remove(fstab)
+	os.Symlink(filepath.Join(dir, "elsewhere"), fstab)
+	mustSC(t, "snapshot", fstab)
+	r := sc(t, "status")
+	if r.code != 2 || !strings.Contains(r.stdout, "error: now a symlink to "+filepath.Join(dir, "elsewhere")+", not checked") ||
+		!strings.Contains(r.stdout, "\n  sc restore "+good+"\n") {
+		t.Errorf("%+v", r)
+	}
+	os.Remove(fstab)
+	os.Symlink(filepath.Join(dir, "other"), fstab)
+	mustSC(t, "snapshot", fstab)
+	boot.Record(home, "aaaaaaaa-2", "ok", time.Now(), newestRow(t)-1, "local-fs=active")
+	if r := sc(t, "status"); r.code != 0 || !strings.Contains(r.stdout, "now a symlink to "+filepath.Join(dir, "other")) || strings.Contains(r.stdout, "error:") {
+		t.Errorf("a link that was a link: %+v", r)
+	}
+}

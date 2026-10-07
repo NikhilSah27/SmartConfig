@@ -525,6 +525,12 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 		}
 		return "deleted", 0
 	case store.KindLink:
+		// A checked file a link replaced: its checker does not judge what
+		// the boot reads now (the M4 final review, B9), so an error, whose
+		// undo puts the file back.
+		if checked && before != nil && before.Kind == store.KindFile {
+			return "error: now a symlink to " + show(r.Target) + ", not checked", check.Error
+		}
 		return "now a symlink to " + show(r.Target), 0
 	case store.KindDigest:
 		return "changed (fingerprint only)", 0
