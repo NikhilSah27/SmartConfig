@@ -174,8 +174,12 @@ review:
   the lab's own items, the `cmd/sc` flake.
 - **Then:** all checks, `make lab-e2e` in both modes, `accept-m2`,
   `accept-m3` and `accept-m4` as root (`accept-m2` too, as `scd.service`
-  changed) and one install of the new build (you run them, as for step
-  3), your reboot and its read-only check; then the M5 plan.
+  changed) and one install of the new build, the reboot and its
+  read-only check; then M5. Your calls (2026-10-07): Claude runs these
+  itself, with sudo ("Permissions are granted to you"); a step that
+  still needs you (auto mode refusing sudo) is skipped, written under
+  "Still waiting for you" with what is left, and the work goes on; after
+  the follow-ups M5 starts either way.
   The install puts in `scd.service` too (`Type=notify` since `32cc097`):
   `sc` first, then the unit, `daemon-reload`, `restart scd`.
 
@@ -2345,3 +2349,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   test chunk D noted, a chunk H item; the rerun passed). Chunk G is
   done; chunk H is next. `accept-m2` joins the sign-off runs
   (`scd.service` changed).
+- **M4 follow-up 3, `GRUB_TOP_LEVEL`, done `af23c2e`** (chunk H). The rescue
+  entry boots the kernel `GRUB_TOP_LEVEL` names, as `10_linux` puts it
+  first, when it has an initrd; else the newest with one, and a word on
+  stderr. `TestGrubScriptTopLevel` (fails without the change). Full
+  checks passed.
