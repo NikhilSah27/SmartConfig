@@ -2297,3 +2297,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   restore` now refuses there. `TestStatusUndoMounts`. Full checks
   passed (a first run's root pass used the system's Go 1.22, as the path
   to the toolchain was taken outside the repo; rerun right).
+- **The console header first, done `7fdb494`** (chunk G, your pick for the
+  chunk C review's note). A rescue report not ready after 2 s shows its
+  header (This boot, Last healthy, Failed since, scd), then the rest or
+  the stop. Not at once, as asked: a report in time stays one write,
+  which other console lines cannot cut, and the M4 lab matches it whole;
+  a hung one still shows the header long before the 60 s stop.
+  `TestConsoleStatusHeaderFirst`. Full checks passed.

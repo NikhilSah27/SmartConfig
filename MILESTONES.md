@@ -280,7 +280,7 @@ snapshot.
 - Edits made while scd was down can be recorded after the healthy boot's
   row, if scd's startup rescan still runs when the verdict is given; the
   undo then names an older, still good, version (chunk B).
-- Done (your pick): a report that is slow shows its header first (after
+- Done (`7fdb494`, your pick): a report that is slow shows its header first (after
   2 s: This boot, Last healthy, Failed since, scd), so a hung `sc` still
   says which boot was healthy before the 60 s stop; one in time is one
   write, as the lab matches it whole (chunk C, C6).
