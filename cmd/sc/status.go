@@ -238,11 +238,15 @@ func screenRows(text string) int {
 }
 
 // consoleProblem is e's PROBLEM in the console's column: a symlink's
-// target is left out, anything else cut to 40 columns.
+// target is left out (its "error:" kept: the chunk G review), anything
+// else cut to 40 columns.
 func consoleProblem(e entry) string {
 	p := e.problem
 	if e.row.Kind == store.KindLink {
 		p = "now a symlink"
+		if e.sev >= check.Error {
+			p = "error: now a symlink"
+		}
 	}
 	if len(p) > 40 {
 		p = p[:37] + "..."
@@ -285,19 +289,26 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		// M4 lab matches the report as one block).
 		var mu sync.Mutex
 		var head []byte
-		headShown, final := false, false
-		headTimer := time.AfterFunc(consoleHead, func() {
-			mu.Lock()
-			defer mu.Unlock()
-			if !final && head != nil {
+		headDue, headShown, final := false, false, false
+		show := func() { // mu held
+			if headDue && head != nil && !headShown && !final {
 				writeConsoles(real, head, until)
 				headShown = true
 			}
+		}
+		headTimer := time.AfterFunc(consoleHead, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			headDue = true
+			show()
 		})
+		// A header known only after its time (a slow /var, systemctl) is
+		// shown at once (the chunk G review: it was then never shown).
 		headKnown = func() {
 			mu.Lock()
+			defer mu.Unlock()
 			head = append([]byte(nil), report.Bytes()...)
-			mu.Unlock()
+			show()
 		}
 		// Then one of the two writes, never both: the report (its rest),
 		// or the word that it was stopped.
@@ -424,9 +435,19 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		}
 		return nil
 	}
-	since := "the last healthy boot"
-	if healthy && last.ID == cur && from.ID == cur {
+	since, during := "the last healthy boot", "the last healthy boot"
+	switch {
+	case healthy && last.ID == cur && from.ID == cur:
 		since = "this boot came up"
+	case bounded && from.ID != last.ID:
+		// The last healthy boot's verdict has no row (the store could
+		// not be read then): the changes and the undo are those of an
+		// earlier one, which they name (the chunk G review).
+		since = "the healthy boot of " + when(from.At)
+		during = since
+	}
+	if !bounded {
+		during = ""
 	}
 	switch {
 	case len(entries) == 0 && bounded:
@@ -502,10 +523,12 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		sort.SliceStable(shown, func(i, j int) bool { return shown[i].sev > shown[j].sev })
 		var undoText bytes.Buffer
 		if undo != nil {
-			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, menuSet)
+			statusUndo(&undoText, c, *undo, during, mode, ro, console, menuSet)
 		}
 		title := fmt.Sprintf("\nChanged since %s, worst first:\n", since)
 		switch {
+		case !bounded && bootsErr != nil:
+			title = "\nThe newest changes, worst first (the boots file cannot be read):\n"
 		case !bounded && healthy:
 			// Its verdict was given while the store could not be read
 			// (M4 follow-up 7: "no healthy boot" under "Last healthy").
@@ -539,8 +562,11 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		switch {
 		case bounded:
 			fmt.Fprintf(out, "\nChanged since %s, newest first:\n", since)
+		case bootsErr != nil:
+			fmt.Fprintln(out, "\nThe newest changes, newest first (the boots file cannot be read):")
 		case healthy:
-			fmt.Fprintln(out, "\nThe newest changes (which came after the last healthy boot is not known), newest first:")
+			// 80 columns (the chunk G review).
+			fmt.Fprintln(out, "\nThe newest changes, newest first (not known which came after it):")
 		default:
 			fmt.Fprintln(out, "\nThe newest changes (no healthy boot is recorded), newest first:")
 		}
@@ -552,7 +578,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		tw.Flush()
 	}
 	if undo != nil {
-		statusUndo(out, c, *undo, bounded, mode, ro, console, menuSet)
+		statusUndo(out, c, *undo, during, mode, ro, console, menuSet)
 	}
 	return exit(worst)
 }
@@ -629,12 +655,13 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 // statusUndo prints the commands that undo e's change: put back the
 // version e.before (or move a new file aside), then, in the rescue or
 // emergency boot, reboot. After an fstab failure a plain reboot waits for
-// the missing disk again: daemon-reload first (the M4 lab).
-func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode string, ro, console, menuSet bool) {
+// the missing disk again: daemon-reload first (the M4 lab). during names
+// the healthy boot whose version is put back, "" when none is known.
+func statusUndo(out io.Writer, c *check.Checks, e entry, during, mode string, ro, console, menuSet bool) {
 	path := show(e.row.Path)
 	as := " as it was before this change"
-	if bounded {
-		as = " as it was during the last healthy boot"
+	if during != "" {
+		as = " as it was during " + during
 	}
 	if console {
 		as = "" // 80 columns: the version is the one named below
@@ -651,6 +678,12 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 		fmt.Fprintf(out, "\nNo earlier version of %s is recorded: fix it by hand.\n", shown("No earlier version of  is recorded: fix it by hand."))
 		return
 	}
+	if fstabMountsFile(e.row.Path) {
+		// Bind-mounted from elsewhere: sc restore refuses it, mounted or
+		// not (the chunk G review).
+		fmt.Fprintf(out, "\n%s is a mount point in /etc/fstab: fix the file mounted on it by hand.\n", shown(" is a mount point in /etc/fstab: fix the file mounted on it by hand."))
+		return
+	}
 	if e.before.Kind == store.KindDeleted {
 		fmt.Fprintf(out, "\nTo undo %s, which is new, move it aside:\n", shown("To undo , which is new, move it aside:"))
 	} else {
@@ -661,9 +694,10 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 	}
 	// A separate /boot the rescue boot did not mount: sc restore refuses
 	// to write under it (M4 follow-up 1), so it is mounted first (the
-	// chunk E review, C7: only the README said so).
-	if mp := unmountedMount(e.row.Path); mp != "" {
-		fmt.Fprintf(out, "  mount %s\n", shellQuote(mp))
+	// chunk E review, C7: only the README said so); each one it is
+	// under, the outermost first (the chunk G review).
+	if mps := unmountedMounts(e.row.Path); len(mps) > 0 {
+		fmt.Fprintf(out, "  %s\n", mountCommands(mps, "\n  "))
 	}
 	switch {
 	case e.before.Kind == store.KindDeleted && console:

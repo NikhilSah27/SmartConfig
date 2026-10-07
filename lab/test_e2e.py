@@ -1957,6 +1957,29 @@ class TestBoot2Probe(unittest.TestCase):
             self.assertEqual((row.status, row.strength), ("PASS", "F"), (name, row.notes))
             if note:
                 self.assertIn(note, row.notes, name)
+        # A slow report: its header, the getty, then the rest (sc shows
+        # the header first after 2 s; the chunk G review). The getty's
+        # lines are taken out, with or without its blank line before them.
+        cut = report.index("\n\nChanged since") + 1
+        header, rest = report[:cut], report[cut:]
+        for name, order in (("header, getty, rest, shell", head + header + getty + rest + shell),
+                            ("header, blank, getty, rest, shell", head + header + "\n" + getty + rest + shell),
+                            ("header, status, getty, rest, shell",
+                             head + header + "[  OK  ] Started polkit.service - Authorization Manager.\n\n" + getty + rest + shell)):
+            blk, got = e2e.emergency_report(order)
+            self.assertEqual(got, "shell", name)
+            self.assertEqual(blk.lines[:5], report.split("\n")[:5], name)
+            row = self.before_shell_row(order)
+            self.assertIn(row.status, ("PASS", "WARN") if "status" in name else ("PASS",), (name, row.cause, row.notes))
+            self.assertIn("between the report's header and its rest", row.notes, name)
+        # The header and the getty so far: the rest is waited for; when the
+        # wait is over, the header alone is a cut report.
+        for partial in (head + header + "\n" + getty, head + header + "\n" + getty[:getty.index("\n")] + "\n"):
+            self.assertEqual(e2e.emergency_report(partial), (None, None))
+        blk, got = e2e.emergency_report(head + header + "\n" + getty, final=True)
+        self.assertEqual(blk.lines[-1], "scd:           running (pid 629)")
+        row = self.before_shell_row(head + header + "\n" + getty)
+        self.assertEqual((row.status, row.strength, row.cause), ("FAIL", "F", "M4"))
         # getty, report, and the shell's line not there yet: no block
         # until the wait for one is over; then it ends with the text.
         early = head + getty + "\n" + report

@@ -1105,3 +1105,69 @@ func TestReadyAfterBaseline(t *testing.T) {
 		t.Errorf("Ready called %d times; the log then:\n%s", calls, logAtCall)
 	}
 }
+
+// A startup path held back (the free-space floor, a store that cannot be
+// written) does not keep scd from being ready, or systemd would stop it
+// at TimeoutStartSec and start it again, for good (the chunk G review).
+// The baseline line says how many wait; they are recorded when they can be.
+func TestReadyWhileHeld(t *testing.T) {
+	for _, name := range []string{"floor", "store"} {
+		t.Run(name, func(t *testing.T) {
+			if name == "store" && os.Geteuid() == 0 {
+				t.Skip("root writes to a 0500 SC_HOME")
+			}
+			e := newEnv(t)
+			os.WriteFile(filepath.Join(e.root, "a"), []byte("x\n"), 0o644)
+			if name == "floor" {
+				e.cfg.FloorBytes = 1 << 62
+			}
+			var ready atomic.Bool
+			e.cfg.Ready = func() { ready.Store(true) }
+			w, err := New(e.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "store" {
+				os.Chmod(e.home, 0o500) // SQLite cannot make its journal
+				defer os.Chmod(e.home, 0o700)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- w.Run(ctx) }()
+			defer func() { cancel(); <-done }()
+			e.waitFor("Ready", ready.Load)
+			if log := e.log.String(); !strings.Contains(log, "while not watching") || !strings.Contains(log, "; 1 more held back") {
+				t.Errorf("the baseline does not say one waits:\n%s", log)
+			}
+		})
+	}
+}
+
+// A live event on a path the startup rescan found (edited while scd was
+// down, written again at boot) explains the change, but Ready still waits
+// until that path is recorded (the chunk G review).
+func TestReadyWaitsForTouchedStartupPath(t *testing.T) {
+	e := newEnv(t)
+	p := filepath.Join(e.root, "a")
+	os.WriteFile(p, []byte("edited while down\n"), 0o644)
+	e.cfg.Quiet = 2 * time.Second
+	e.cfg.Cap = 4 * time.Second
+	var once sync.Once
+	testHookBeforeRecord = func() {
+		once.Do(func() {
+			os.WriteFile(p, []byte("edited again at boot\n"), 0o644)
+			time.Sleep(300 * time.Millisecond) // the reader marks it
+		})
+	}
+	defer func() { testHookBeforeRecord = nil }()
+	var mu sync.Mutex
+	var logAtReady string
+	e.cfg.Ready = func() { mu.Lock(); logAtReady = e.log.String(); mu.Unlock() }
+	e.start()
+	e.waitFor("Ready", func() bool { mu.Lock(); defer mu.Unlock(); return logAtReady != "" })
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(logAtReady, p) {
+		t.Errorf("Ready before %s was recorded; the log then:\n%s", p, logAtReady)
+	}
+}

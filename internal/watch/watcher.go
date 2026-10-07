@@ -124,6 +124,10 @@ type entry struct {
 	moved      int       // consecutive Moved results
 	notBefore  time.Time // a backoff no new event may cut short
 	limited    bool      // waited for the file's row budget: marked (rate-limited)
+	// startup: the startup rescan found it. A live event explains the
+	// change but does not clear this: scd is ready (Config.Ready) once
+	// every such path is recorded or on hold.
+	startup bool
 }
 
 // watchRef is one watched directory.
@@ -638,6 +642,7 @@ func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 	if reason == reasonEvent {
 		e.reason = reasonEvent // a live event explains the change
 	}
+	e.startup = e.startup || reason == reasonStartup
 	e.created = e.created || created
 	due := now.Add(w.cfg.Quiet)
 	if reason != reasonEvent {
@@ -1217,6 +1222,7 @@ func (w *Watcher) remarkLocked(d due, t time.Time) {
 		cur.created = cur.created || e.created
 		cur.self = cur.self || e.self
 		cur.limited = cur.limited || e.limited
+		cur.startup = cur.startup || e.startup
 		if t.Before(cur.due) && !t.Before(cur.notBefore) {
 			cur.due = t
 		}
@@ -1264,7 +1270,10 @@ func (w *Watcher) expandPrefix(dir string) {
 }
 
 // maybeLogBaseline logs the startup summary once the startup rescan's
-// paths are all handled.
+// paths are all handled: recorded, or on hold. One held back by the
+// free-space floor, a store error or its row budget is recorded when it
+// can be; waiting for it would keep scd from ever being ready (the chunk
+// G review: under the floor, systemd killed it every 5 minutes).
 func (w *Watcher) maybeLogBaseline() {
 	w.mu.Lock()
 	b := w.baseline
@@ -1272,15 +1281,24 @@ func (w *Watcher) maybeLogBaseline() {
 		w.mu.Unlock()
 		return
 	}
+	now, held := time.Now(), 0
 	for _, e := range w.dirty {
-		if e.reason == reasonStartup {
+		switch {
+		case !e.startup:
+		case e.notBefore.After(now):
+			held++
+		default:
 			w.mu.Unlock()
 			return
 		}
 	}
 	w.baseline = nil
-	w.logLine(prioInfo, fmt.Sprintf("baseline: %d first seen, %d changed and %d deleted while not watching (%s)",
-		b.first, b.changed, b.gone, time.Since(b.start).Round(time.Millisecond)))
+	line := fmt.Sprintf("baseline: %d first seen, %d changed and %d deleted while not watching (%s)",
+		b.first, b.changed, b.gone, time.Since(b.start).Round(time.Millisecond))
+	if held > 0 {
+		line += fmt.Sprintf("; %d more held back (low space, the store or a row budget), recorded when they can be", held)
+	}
+	w.logLine(prioInfo, line)
 	w.mu.Unlock()
 	if w.cfg.Ready != nil {
 		w.cfg.Ready()

@@ -245,6 +245,21 @@ func TestCheckCLIScratchFallback(t *testing.T) {
 		strings.Count(r.stderr, "permission denied") != 2 || strings.Count(r.stderr, "\n") != 1 {
 		t.Errorf("none writable: %+v", r)
 	}
+	// A $SC_HOME/tmp this user may not write (scd made it), or that is
+	// not a directory: the private directory again (the chunk G review:
+	// no test had one).
+	scratchParents = func() []string { return []string{shm} }
+	for name, mk := range map[string]func(string){
+		"read-only": func(p string) { os.Mkdir(p, 0o500) },
+		"a file":    func(p string) { os.WriteFile(p, nil, 0o600) },
+	} {
+		home := t.TempDir()
+		mk(filepath.Join(home, "tmp"))
+		t.Setenv("SC_HOME", home)
+		if r := sc(t, "check", fstab); r.code != 0 || !strings.Contains(r.stdout, "no problems found in 1 file") {
+			t.Errorf("%s tmp: %+v", name, r)
+		}
+	}
 }
 
 // With no argument, sc check looks only at files sc keeps: an editor's

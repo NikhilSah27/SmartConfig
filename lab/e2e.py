@@ -796,6 +796,24 @@ GETTY_BANNER_M = re.compile(GETTY_BANNER_RX.pattern, re.M)
 SHELL_LINE = "You are in emergency mode"
 
 
+# The first line of the report's rest, after its header (This boot, Last
+# healthy, Failed since, scd): a report slower than 2 s writes the header
+# first and this later (cmd/sc/status.go consoleHead), so the getty can
+# come between the two.
+REPORT_REST_RX = re.compile(r"^(Changed since |The newest changes|Nothing recorded has changed|Nothing is recorded|sc: )", re.M)
+
+# The getty's banner and its login prompt, from the banner's line (or
+# the prompt's, without one) on.
+GETTY_PIECE_RX = re.compile(r"(?:%s\n+)?.*%s" % (GETTY_BANNER_RX.pattern, LOGIN_RX), re.M)
+
+
+def report_ends(text, pos):
+    """What can end the report on the console, from pos: [(offset, kind)]."""
+    return [(m.start(), kind) for kind, m in (("shell", re.compile(SHELL_LINE).search(text, pos)),
+                                              ("banner", GETTY_BANNER_M.search(text, pos)),
+                                              ("login", re.compile(LOGIN_RX).search(text, pos))) if m]
+
+
 def emergency_report(text, final=False):
     """2.5: boot 2's report and how it ended: (console.Block, kind), or
     (None, None). It starts at the last "This boot:" above the emergency
@@ -803,21 +821,44 @@ def emergency_report(text, final=False):
     at the earliest of what can follow it on the console: that line
     ("shell"), the getty's banner ("banner") or its login prompt
     ("login"). The getty starts when it likes (plan A2): before the
-    report, after it, or between it and the shell's line. With none of
-    them after the report yet there is no block, unless final (the wait
-    for one is over): then it ends with the text ("end")."""
+    report, after it, or between it and the shell's line; or between the
+    report's header and its rest, when sc wrote the header first (the
+    chunk G review). The getty's lines are then taken out, with the blank
+    lines it put before them; with the header alone so far, the rest is
+    waited for. With none of them after the report yet there is no block,
+    unless final (the wait for one is over): then it ends with the text
+    ("end")."""
     shell = text.find(SHELL_LINE)
     s = text.rfind("This boot:", 0, shell) if shell >= 0 else text.find("This boot:")
     if s < 0:
         return None, None
-    ends = [(m.start(), kind) for kind, m in (("shell", re.compile(SHELL_LINE).search(text, s)),
-                                              ("banner", GETTY_BANNER_M.search(text, s)),
-                                              ("login", re.compile(LOGIN_RX).search(text, s))) if m]
+    cuts, pos = [], s  # cuts: (start, end) of getty lines inside the report
+    while True:
+        ends = report_ends(text, pos)
+        if not ends or min(ends)[1] == "shell" or REPORT_REST_RX.search(text, s, min(ends)[0]):
+            break  # the shell's line, or the report came whole before the getty
+        line = text.rfind("\n", 0, min(ends)[0]) + 1
+        piece = GETTY_PIECE_RX.match(text, line)
+        rest = REPORT_REST_RX.search(text, piece.end()) if piece else None
+        if rest is None or 0 <= shell < rest.start():
+            if final:
+                break  # the report is the header alone
+            return None, None  # the header so far: wait for the getty's prompt and the rest
+        while line - 2 > s and text[line - 1] == text[line - 2] == "\n":
+            line -= 1  # the getty's blank lines before its banner
+        cuts.append((line, piece.end()))
+        pos = piece.end()
+    ends = report_ends(text, pos)
     if not ends and not final:
         return None, None
     e, kind = min(ends) if ends else (len(text), "end")
+    body, at = [], s
+    for a, b in cuts:
+        body.append(text[at:a])
+        at = b
+    body.append(text[at:e])
     kept, stripped = [], []
-    for line in text[s:e].split("\n"):
+    for line in "".join(body).split("\n"):
         (stripped if console.STATUS_LINE.match(line) else kept).append(line)
     if kind != "shell":
         while kept and not kept[-1].strip():
@@ -2613,6 +2654,10 @@ class E2E:
             why.append("the getty's banner came between the report and the shell's first line; the report ends at it")
         elif kind == "end":
             why.append("nothing came after the report in %d s; it ends with the console's text" % REPORT_WAIT)
+        if blk is not None and (GETTY_BANNER_M.search(text, blk.start, blk.end) or
+                                re.compile(LOGIN_RX).search(text, blk.start, blk.end)):
+            why.append("the getty's banner or prompt came between the report's header and its rest "
+                       "(sc shows the header first when it is slow); taken out")
         if blk is None:
             self.record("2.5", problems=died + ["no report above 'You are in emergency mode'"], notes=why,
                         expected="console-emergency.golden", source="cmd/sc/status.go via TestStatusConsoleLab",

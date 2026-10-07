@@ -141,20 +141,27 @@ func appendLine(home, line string) error {
 // tornMark ends a line a crash cut short; Read skips such a line.
 const tornMark = " #torn"
 
-// trim rewrites f, which is locked, with its last keepLines lines.
+// trim rewrites f, which is locked, with its last keepLines lines; a last
+// line a crash left unfinished gets tornMark, as appendLine gives it (the
+// chunk G review: trim used to end it plainly, and it read whole).
 func trim(f *os.File) error {
 	data, err := io.ReadAll(io.NewSectionReader(f, 0, 1<<62))
 	if err != nil {
 		return fmt.Errorf("boots: %w", err)
 	}
+	torn := len(data) > 0 && data[len(data)-1] != '\n'
 	lines := bytes.SplitAfter(bytes.TrimSuffix(data, []byte("\n")), []byte("\n"))
 	if len(lines) > keepLines {
 		lines = lines[len(lines)-keepLines:]
 	}
+	kept := bytes.Join(lines, nil)
+	if torn {
+		kept = append(kept, tornMark...)
+	}
 	if err := f.Truncate(0); err != nil {
 		return fmt.Errorf("boots: %w", err)
 	}
-	if _, err := f.Write(append(bytes.Join(lines, nil), '\n')); err != nil { // O_APPEND: at 0 now
+	if _, err := f.Write(append(kept, '\n')); err != nil { // O_APPEND: at 0 now
 		return fmt.Errorf("boots: %w", err)
 	}
 	return nil

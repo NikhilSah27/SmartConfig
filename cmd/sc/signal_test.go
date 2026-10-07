@@ -723,6 +723,12 @@ func TestConsoleStatusHeaderFirst(t *testing.T) {
 		!strings.Contains(out, "sc: the report took over 1 s and was stopped") || strings.Contains(out, "\nThe newest changes") {
 		t.Errorf("a hung report: exit %d, stdout %q", code, out)
 	}
+	// The header known only after its time: shown when known (the chunk G
+	// review: it was then never shown).
+	out, code = run("SC_TEST_IN_STATUS=500ms", "SC_TEST_STATUS_CHECKS=20s", "SC_TEST_CONSOLE_HEAD=100ms", "SC_TEST_CONSOLE_LIMIT=2s")
+	if code != 1 || !strings.HasPrefix(out, "This boot:") || !strings.Contains(out, "sc: the report took over 2 s and was stopped") {
+		t.Errorf("a header known late, then a hung report: exit %d, stdout %q", code, out)
+	}
 	out, code = run("SC_TEST_STATUS_CHECKS=300ms", "SC_TEST_CONSOLE_HEAD=100ms", "SC_TEST_CONSOLE_LIMIT=30s")
 	if code != 0 || strings.Count(out, "This boot:") != 1 || !strings.Contains(out, "\nThe newest changes") || strings.Contains(out, "stopped") {
 		t.Errorf("a slow report in time: exit %d, stdout %q", code, out)

@@ -104,8 +104,11 @@ sed -e "s|^ExecStart=.*|ExecStart=$SC watch|" \
 	-e "s|^\[Service\]|[Service]\nEnvironment=SC_HOME=$SC_HOME|" scripts/scd.service >"$UNITFILE"
 systemd-analyze verify "$UNITFILE" || fail "systemd-analyze verify"
 systemctl daemon-reload
-systemctl start "$UNIT"
-INV=$(inv)
+# Type=notify: a plain start returns once the startup rescan is recorded,
+# too late for step 3's kill; --no-block returns at once.
+systemctl start --no-block "$UNIT"
+started() { INV=$(inv); [ -n "$INV" ]; }
+wait_for 20 "$UNIT to start" started
 
 # --- 3. Kill during the startup rescan ----------------------------------
 step "3. kill -9 during the startup rescan"
@@ -123,7 +126,11 @@ EOF
 	fi
 	systemctl kill -s KILL "$UNIT"
 	old=$INV
-	new_inv() { INV=$(inv); [ -n "$INV" ] && [ "$INV" != "$old" ] && systemctl is-active --quiet "$UNIT"; }
+	# Activating is enough: it is active only once its rescan is recorded.
+	new_inv() {
+		INV=$(inv)
+		[ -n "$INV" ] && [ "$INV" != "$old" ] && case $(systemctl is-active "$UNIT") in active | activating) true ;; *) false ;; esac
+	}
 	wait_for 20 "systemd to restart $UNIT" new_inv
 else
 	note "skipped (no python3)"
@@ -351,14 +358,16 @@ if jr -p notice | grep -q "$D2"; then fail "a tier-4 line above info"; fi
 if journalctl -q -u "$UNIT" --since "@$T0" | grep -q "SC-SECRET-$$"; then fail "file content in the journal"; fi
 
 # --- 18. Nothing excluded, nothing written, nothing ordered after scd --------
-step "18. nothing excluded recorded, nothing written, nothing after scd"
+step "18. nothing excluded recorded, nothing written, nothing after scd but sc-boot-ok"
 if "$SC" log -n 0 | awk 'NR>1{print $5}' | grep -Eq '\.sc-tmp-|\.swp$|~$|/sed[^/]{6}$'; then
 	fail "an excluded name was recorded"
 fi
 [ "$(sum /etc/fstab)" = "$SUM_FSTAB" ] && [ "$(sum /etc/hosts)" = "$SUM_HOSTS" ] && [ "$(sum /etc/machine-id)" = "$SUM_MID" ] ||
 	fail "a watched file changed"
 # Read errors must not hide a match (grep exits 2 then), so test the text.
-hits=$(grep -rEs '^(After|Requires|Requisite|BindsTo|PartOf)=.*\bscd(-accept)?\.service' /etc/systemd /run/systemd/system /usr/lib/systemd | grep -v "^$UNITFILE:" || true)
+# sc-boot-ok's verdict waits for scd's startup rescan (After= only, M4).
+hits=$(grep -rEs '^(After|Requires|Requisite|BindsTo|PartOf)=.*\bscd(-accept)?\.service' /etc/systemd /run/systemd/system /usr/lib/systemd |
+	grep -v "^$UNITFILE:" | grep -Ev '/sc-boot-ok\.service:After=' || true)
 [ -z "$hits" ] || fail "a unit is ordered after or bound to scd: $hits"
 
 step "19. PASS"

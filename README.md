@@ -99,9 +99,11 @@ sudo journalctl -u scd -p warning   # boot- and access-critical changes (needs s
 
 `scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. It
 counts as started (`Type=notify`) once its startup rescan is recorded, which
-boot does not wait for. To update, run the same lines, `sc` first, then
-`sudo systemctl restart scd`: an older `sc` (the `m4` tag's or before)
-never says it is ready, and this unit gives it up after 5 minutes. What is
+boot does not wait for; a file held back (low space, a store error) is
+counted in the `baseline:` line and recorded later. To update, run the
+same lines, `sc` first, then `sudo systemctl restart scd`: an older `sc`
+(the `m4` tag's or before) never says it is ready, and this unit gives it
+up after 5 minutes. What is
 watched is the built-in scope (`internal/scope/default.scope`): all of `/etc`
 minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 `custom.cfg`, and each login's `authorized_keys`, `rc` and `environment`.
@@ -301,13 +303,16 @@ to mount, the menu after a failed boot depends on Ubuntu's own
 `/usr/local` on a filesystem of its own, run `mount /var` (or `mount
 /usr/local`) and then `sc status`; with a separate `/boot`, run `mount
 /boot` before restoring a file under `/boot/grub`. `sc restore` refuses
-to write under a mount point of `/etc/fstab` that is not mounted, and
-says which to mount: the file would land on the root filesystem's copy.
-`sc status` puts that `mount` in its undo. `systemctl soft-reboot` keeps
-the kernel and its boot id, so to sc the new session is the boot before
-it, verdict and all: a failure in it brings no menu at the next boot
-(systemd 255, Ubuntu 24.04's, does not count soft reboots). To have a
-change to fstab or a unit judged, reboot in full.
+to write under a mount point of `/etc/fstab` that is not mounted (or
+another mount covers), and says which to mount, the outermost first: the
+file would land on the root filesystem's copy. `sc status` puts those
+`mount` lines in its undo. A file that is itself a mount point in fstab
+(a bind mount) is not put back; fix the file mounted on it.
+`systemctl soft-reboot` keeps the kernel and its boot id, so to sc the
+new session is the boot before it, verdict and all: a failure in it
+brings no menu at the next boot (systemd 255, Ubuntu 24.04's, does not
+count soft reboots). To have a change to fstab or a unit judged, reboot
+in full.
 
 **The rescue entry is a root shell from a menu item.** While root is
 locked, as it is on Ubuntu by default, it asks for no password; if root

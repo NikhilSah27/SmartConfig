@@ -72,6 +72,18 @@ func TestTrim(t *testing.T) {
 	if len(lines) != keepLines+1 || !strings.HasPrefix(lines[len(lines)-1], "new seen ") {
 		t.Errorf("%d lines, last %q", len(lines), lines[len(lines)-1])
 	}
+	// A verdict cut in its row when the file is due a trim: trim marks it
+	// as appendLine does (the chunk G review: it read as row 12).
+	b.WriteString("bbbb seen 3\nbbbb ok 4 12")
+	os.WriteFile(filepath.Join(home, FileName), []byte(b.String()), 0o600)
+	if err := Seen(home, "cccc", t0); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(filepath.Join(home, FileName))
+	bs, _ := Read(home)
+	if last := bs[len(bs)-2]; last.ID != "bbbb" || last.Verdict != "" || !strings.HasSuffix(string(data), fmt.Sprintf("bbbb ok 4 12%s\ncccc seen %d\n", tornMark, t0.Unix())) {
+		t.Errorf("a torn verdict at a trim: %+v\n%q", last, data[len(data)-60:])
+	}
 }
 
 // The last healthy boot is the last "ok" one, this boot included; a boot

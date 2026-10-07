@@ -228,4 +228,14 @@ func TestReadOnlyWALCLI(t *testing.T) {
 	if r := sc(t, "log", p); r.code != 1 || r.stderr != want {
 		t.Errorf("read-only: %+v", r)
 	}
+	// SQLite's other code for it, "unable to open database file (14)" on
+	// a read-only root: here a directory where its WAL file goes (the
+	// chunk G review: no test reached that code).
+	os.Chmod(home, 0o700)
+	os.RemoveAll(filepath.Join(home, "changes.db-wal"))
+	os.Mkdir(filepath.Join(home, "changes.db-wal"), 0o700)
+	os.Chmod(home, 0o500)
+	if r := sc(t, "log", p); r.code != 1 || r.stderr != want {
+		t.Errorf("cannot open: %+v", r)
+	}
 }

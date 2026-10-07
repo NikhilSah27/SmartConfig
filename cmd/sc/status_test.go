@@ -1142,6 +1142,67 @@ func TestStatusFileNowLink(t *testing.T) {
 	}
 }
 
+// On the console too, a checked file a link replaced is an error (the
+// chunk G review: the row said "now a symlink" alone); a file sc does not
+// check, replaced by a link, is not.
+func TestStatusFileNowLinkConsole(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro fstab=no systemd.unit=rescue.target", true)
+	snap(t, fstab, goodLine)
+	other := filepath.Join(dir, "notes.txt")
+	snap(t, other, "x\n")
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	os.Remove(other)
+	os.Symlink(filepath.Join(dir, "elsewhere"), other)
+	mustSC(t, "snapshot", other)
+	if r := sc(t, "status"); r.code != 0 || !strings.Contains(r.stdout, "  now a symlink to ") || strings.Contains(r.stdout, "error:") {
+		t.Errorf("a file sc does not check: %+v", r)
+	}
+	os.Remove(fstab)
+	os.Symlink(filepath.Join(dir, "elsewhere"), fstab)
+	mustSC(t, "snapshot", fstab)
+	if r := sc(t, "status", "--console"); r.code != 2 || !regexp.MustCompile(`\n[0-9a-f]{6} \d\d-\d\d \d\d:\d\d  error: now a symlink  `).MatchString(r.stdout) {
+		t.Errorf("console: %+v", r)
+	}
+}
+
+// When the last healthy boot's row is not known but an earlier healthy
+// boot's is, the changes are those since the earlier one, and the titles
+// and the undo name it, not "the last healthy boot" (the chunk G review).
+func TestStatusHealthyRowUnknownAfterKnown(t *testing.T) {
+	_, fstab, home := statusEnv(t, "", false)
+	w := snap(t, fstab, goodLine)
+	at := time.Date(2026, 10, 7, 18, 9, 0, 0, time.Local)
+	boot.Record(home, "aaaaaaaa-1", "ok", at, newestRow(t), "local-fs=active")
+	snap(t, fstab, goodLine+"# x\n")
+	boot.Record(home, "bbbbbbbb-2", "ok", at.Add(time.Hour), -1, "local-fs=active")
+	snap(t, fstab, badLine)
+	r := sc(t, "status")
+	if !strings.Contains(r.stdout, "Last healthy:  2026-10-07 19:09, boot bbbbbbbb\n") ||
+		!strings.Contains(r.stdout, "\nChanged since the healthy boot of 2026-10-07 18:09, newest first:\n") ||
+		!strings.Contains(r.stdout, " back as it was during the healthy boot of 2026-10-07 18:09:\n  sc restore "+w+"\n") {
+		t.Errorf("%+v", r)
+	}
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "\nChanged since the healthy boot of 2026-10-07 18:09, worst first:\n") {
+		t.Errorf("console: %+v", r)
+	}
+}
+
+// A boots file that cannot be read says so in the titles, not "no healthy
+// boot is recorded" under its own error (the chunk G review).
+func TestStatusBootsUnreadable(t *testing.T) {
+	_, fstab, home := statusEnv(t, "", false)
+	snap(t, fstab, goodLine)
+	snap(t, fstab, badLine)
+	os.Mkdir(filepath.Join(home, boot.FileName), 0o700)
+	if r := sc(t, "status"); !strings.Contains(r.stdout, "Last healthy:  unknown (") ||
+		!strings.Contains(r.stdout, "\nThe newest changes, newest first (the boots file cannot be read):\n") || strings.Contains(r.stdout, "no healthy boot") {
+		t.Errorf("%+v", r)
+	}
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "\nThe newest changes, worst first (the boots file cannot be read):\n") {
+		t.Errorf("console: %+v", r)
+	}
+}
+
 // A healthy boot whose verdict was given while the store could not be read
 // (row -1) is the last healthy one, but which change came after it is not
 // known: the titles say that, not "no healthy boot is recorded" under
@@ -1153,7 +1214,7 @@ func TestStatusHealthyRowUnknown(t *testing.T) {
 	snap(t, fstab, badLine)
 	r := sc(t, "status")
 	if !strings.Contains(r.stdout, "Last healthy:  ") || strings.Contains(r.stdout, "no healthy boot") ||
-		!strings.Contains(r.stdout, "\nThe newest changes (which came after the last healthy boot is not known), newest first:\n") {
+		!strings.Contains(r.stdout, "\nThe newest changes, newest first (not known which came after it):\n") {
 		t.Errorf("%+v", r)
 	}
 	r = sc(t, "status", "--console")
@@ -1181,5 +1242,16 @@ func TestStatusUndoMounts(t *testing.T) {
 	fakeMounts(t, mounts, rootMount+"40 22 8:1 / "+dir+" rw - ext4 /dev/sda1 rw\n")
 	if r := sc(t, "status"); !strings.Contains(r.stdout, "  mount -o remount,rw /\n  sc restore "+good+"\n") {
 		t.Errorf("mounted: %+v", r)
+	}
+	// Under two, neither mounted: the outer one first (the chunk G review).
+	fakeMounts(t, mounts+"UUID=c "+filepath.Dir(dir)+" ext4 defaults 0 2\n", rootMount)
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "  mount -o remount,rw /\n  mount "+filepath.Dir(dir)+"\n  mount "+dir+"\n  sc restore "+good+"\n") {
+		t.Errorf("nested: %+v", r)
+	}
+	// The file itself a mount point: no restore, which would refuse.
+	fakeMounts(t, "/srv/fstab "+fstab+" none bind 0 0\n", rootMount)
+	if r := sc(t, "status"); !strings.Contains(r.stdout, "\n"+fstab+" is a mount point in /etc/fstab: fix the file mounted on it by hand.\n") ||
+		strings.Contains(r.stdout, "sc restore") {
+		t.Errorf("a file mount point: %+v", r)
 	}
 }
