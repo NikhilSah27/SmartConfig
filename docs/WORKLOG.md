@@ -157,7 +157,13 @@ review:
   unmounted `/boot`), 2 (a file replaced by a symlink), 9 (a torn verdict
   line), 7 (cosmetics); the notes: the mount hint for `/usr/local` and
   `/boot`, SIGHUP before `signal.Notify`, edits recorded after the
-  healthy boot's row, the report held until `sc` returns.
+  healthy boot's row, the report held until `sc` returns. Your picks
+  (2026-10-07): M4 1 refuses (nothing written, "mount it first"); the
+  verdict waits for scd's startup rescan (scd `Type=notify` once the
+  rescan is done, `sc-boot-ok` after it); the console prints its header
+  at once and the changes when ready; the early SIGHUP stays a
+  documented limit. M4 4 (soft-reboot, chunk H) is documented as a
+  limit (systemd 255 has no soft-reboot count).
 - **Chunk H, boot units, GRUB and the lab:** M4 3 (`GRUB_TOP_LEVEL`),
   4 (soft-reboot), 5 (the units' hardening, the test knob), 6 (the test
   gaps); the notes: lab check 1.8, the GRUB password recipe in the lab,
@@ -2241,3 +2247,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Tests: `TestShQuoteOpen`, `TestFstabHeadings`; 7 mutations, each
     caught. Full checks passed.
   - Next: the chunk F review (two reviewers), once CI is green.
+- **The chunk F review runs** (two reviewers, clones of `4f90bbc` in
+  `~/smartconfig-work/review-m3fu-f/`): A the `internal/check` changes, B
+  the CLI, signals, scd's checker, `accept-m3.sh` and the docs. No code
+  change until it is closed. Your picks for chunk G and M4 4 are in "Now".
