@@ -27,8 +27,8 @@ problems in a config file that stop a boot or lock you out, `sc edit`
 checks an edit before it replaces the file, scd checks every change it
 records, and `sc scope` explains what SmartConfig does with a path.
 
-**Milestone 4 is built; sign-off S1 to S3 passed, and its final review
-is in** (plan [docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
+**Milestone 4 is done** (tag `m4`, 2026-10-07; plan
+[docs/M4_PLAN.md](docs/M4_PLAN.md)): the rescue path. A boot menu entry,
 **SmartConfig rescue**, opens a root shell however broken `/etc/fstab`
 is, `sc status` says above its prompt what changed since the last
 healthy boot and how to put it back, and the menu comes back by itself

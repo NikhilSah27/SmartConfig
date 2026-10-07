@@ -125,22 +125,21 @@ closed** (your OK, 2026-10-07 06:45 UTC, "go ahead with S4";
 [reviews/2026-10-07-m4-final.md](reviews/2026-10-07-m4-final.md), plan
 change C8): three reviewers, 2 high, 6 medium, all fixed, and 13 low
 (`69ea585` … `d9c8817`, log); the rest is the M4 follow-up list in
-MILESTONES. **Paused at your word** (2026-10-07 09:31 UTC, "stop and
-save the state"): the `make lab-e2e` run on `87c6636` was stopped in
-UEFI mode at check 3.5, after 41 rows passed (0.5 on the new rescue
-command line, the failing boot, 3.2 the rescue kernel with `fstab=no`);
-it does not count (log). No VM, agent or check-in job is running.
-**At the next session, in order:**
-1. `git fetch`, compare with `origin/main` (`87c6636` + this worklog
-   commit), `uptime`, `pgrep qemu-system`; the tree must be clean.
-2. `make lab-e2e` on the fixed tree, detached, with
-   `LAB_REQUIRE_CLEAN=1` (CLAUDE.md's command; ~75 min, both modes; no
-   commit while it runs). Needed because the rescue entry's command line
-   and both units changed. It needs no sudo, so no OK.
-3. With your word (asked 2026-10-07, no answer yet): `make accept-m4`
-   as root on the fixed build; then its install on this VM (`sc`, both
-   units, `42_smartconfig`, `update-grub`; the S1 build `cafca151…` is
-   installed now); then the tag `m4`.
+MILESTONES. A lab run on `87c6636` was stopped at your word (09:31 UTC)
+and does not count (log). **S4 is closed and M4 is done: tag `m4`**
+(your OK, 2026-10-07 13:20 UTC, "yes, go ahead after it passes"; no
+snapshot, your call; log). `make lab-e2e` on `59203a3`, clean tree,
+one `sc` build (`1dce09f5ff12`): UEFI PASS (19m35s) and, in a BIOS-only
+rerun of the same tree after a `[lab]` ssh timeout, BIOS PASS (19m59s);
+no retries, boot 5. `accept-m4` as root PASS on that build, and that
+build is installed on this VM (`sc`, both units, `42_smartconfig`,
+`update-grub`; the S1 build is kept as `sc-2c58f8b`). The annotated tag
+`m4` is on `59203a3` and pushed. No VM is running.
+**At the next session:** the next boot of this VM is the first with the
+new units and rescue entry. Read-only first: its verdict (ok, flag
+clear, grubenv empty), `sc-boot-seen` and `sc-boot-ok` done, `sudo sc
+status` exit 0, no failed units; log them. **Next: the M5 plan** (the
+package), for your approval; nothing of M5 is started.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -2024,3 +2023,59 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - Stopped: the 30-minute check-in job and the run's waiter. QEMU is
     gone. The reviewers' clones and reports stay in
     `~/smartconfig-work/review-m4final/`.
+- **M4 sign-off S4 closed; M4 done, tag `m4`** (your OK, 13:20 UTC,
+  "yes, go ahead after it passes"; then "i don't need snapshot, go
+  ahead" and "don't wait start the work. Approved").
+  - Session start, 13:10 UTC: up 10 min (boot `c95d3ab6`); HEAD and
+    `origin/main` both `59203a3`, clean; no QEMU; CI green.
+  - `make lab-e2e` on `59203a3`, detached, `LAB_REQUIRE_CLEAN=1` (log
+    `~/smartconfig-work/signoff/lab-e2e-20261007T131334Z-59203a3.log`):
+    - UEFI **PASS**, 19m35s, boot2=a, boot 5, 0 retries, `dirty=no`, sc
+      `1dce09f5ff12` (run `20261007T131337Z-uefi-59203a3`).
+    - BIOS INCONCLUSIVE at 0.4 after 3m14s: `[lab]` ssh exit 255 while
+      `install.sh` ran (24.2 s; the lab's ssh gives up after about 15 s
+      without an answer). The guest's console was quiet at its login
+      prompt, no panic or reboot. This VM's desktop was busy in that
+      minute (Chrome: WebGL and H.264 encoding in the journal). Not sc
+      (run `20261007T133312Z-bios-59203a3`).
+    - BIOS-only rerun of the same tree, no commit between (log
+      `lab-e2e-20261007T133745Z-59203a3-bios.log`): **PASS**, 19m59s,
+      boot2=a, boot 5, 0 retries, `dirty=no`, the same sc (run
+      `20261007T133747Z-bios-59203a3`).
+    - Both modes took about 20 min, against 37 to 45 min on 2026-10-06.
+    - Evidence: `~/smartconfig-work/signoff/lab-e2e-59203a3/` (both
+      modes, and the inconclusive BIOS run as `bios-inconclusive-*`).
+  - Step 3, run by you: Claude Code's auto mode refused sudo to Claude,
+    so you ran `sudo sh ~/smartconfig-work/signoff/step3-m4-59203a3.sh`
+    (log `step3-m4-20261007T142427Z-59203a3.log`). It runs
+    `scripts/accept-m4.sh` itself, not `make accept-m4` (which rebuilds
+    `bin/sc`), and checks before and after it that HEAD is `59203a3`,
+    the tree is clean and `bin/sc` is `1dce09f5ff12`.
+    - A first try (14:21 UTC) stopped at that clean-tree check, before
+      anything ran: root's git does not read the user's
+      `~/.config/git/ignore`, which ignores `.claude/settings.local.json`.
+      The script now runs git as the user.
+    - `accept-m4`: **PASS**, exit 0. Step 7 noted that this machine's
+      grub.cfg was not what grub-mkconfig made today (the S1
+      `42_smartconfig` was still installed); step 8: healthy, exit 0.
+    - Before: boot `c95d3ab6`, scd pid 903 with 0 restarts, both units
+      enabled, grubenv empty, no failed units, `/usr/local/sbin/sc` the
+      S1 build `cafca151…`. New in `/var/backups/smartconfig`:
+      `sc-2c58f8b` (that build), `manifest-pre-m4inst.txt` and
+      `sha256-pre-m4inst.txt` (`/etc` and `/boot/grub`).
+    - Installed with the README's commands, each exit 0, then
+      `update-grub`.
+    - After: `/usr/local/sbin/sc` is `1dce09f5ff12`; scd restarted on
+      it (pid 13382, 0 restarts); both units enabled, `systemd-analyze
+      verify` clean; `grub-script-check` ok. grub.cfg: Ubuntu still
+      entry 0, "SmartConfig rescue" last, on 7.0.0-38 with
+      `systemd.mask=grub-initrd-fallback.service ro fstab=no
+      systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`; grubenv empty.
+    - `/etc` and `/boot/grub` against the manifest: exactly grub.cfg,
+      `42_smartconfig` and the two units (the drop-ins were already
+      these). scd recorded the four. `sudo sc status`: healthy, exit 0.
+      No failed units.
+  - The annotated tag `m4` is on `59203a3`, the commit the installed
+    build was made from, and pushed.
+  - The next boot is the first with the new units and rescue entry; its
+    verdict is read at the next session.

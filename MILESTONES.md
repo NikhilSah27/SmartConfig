@@ -6,21 +6,18 @@
       — done 2026-10-02 (tag `m2`); the 24-hour soak is deferred to the next session
 - [x] M3 file graph + checkers: tiers, real validators, regex rules with canned
       explanations, sc edit and sc check — done 2026-10-03 (tag `m3`)
-- [ ] M4 rescue path: GRUB entry, rescue.target service printing sc status,
-      boot-ok verification, restore from read-only root — built 2026-10-06
-      (13 steps, five chunk reviews); sign-off S1 to S3 passed 2026-10-06/07,
-      the final review (S4) is in
+- [x] M4 rescue path: GRUB entry, rescue.target service printing sc status,
+      boot-ok verification, restore from read-only root — done 2026-10-07
+      (tag `m4`)
 - [ ] M5 package: .deb with nfpm, install on a clean VM
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M4, the rescue path ([docs/M4_PLAN.md](docs/M4_PLAN.md)). All
-13 steps are built and the five chunk reviews closed; sign-off S1 to S3
-passed, and the final review (S4) is in, its follow-ups below. Left:
-`accept-m4` and `make lab-e2e` on the fixed build, its install, and the
-tag, each with your OK. M3 is done (tag `m3`, 2026-10-03); its
-follow-ups are listed below. The M2 soak was closed after 5.6 h (your
-call).
+Current: M5, the package; its plan is drafted next, for your approval.
+M4 is done (tag `m4`, 2026-10-07; [docs/M4_PLAN.md](docs/M4_PLAN.md)):
+13 steps, five chunk reviews and sign-off S1 to S4; its follow-ups are
+listed below. M3 is done (tag `m3`, 2026-10-03); its follow-ups are
+listed below too. The M2 soak was closed after 5.6 h (your call).
 
 ## M1 notes
 
