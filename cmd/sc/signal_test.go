@@ -689,3 +689,42 @@ func TestSignalKeepsGrubEditenv(t *testing.T) {
 		t.Errorf("grubenv after a SIGTERM to sc boot seen: size %d %v, want 1024 (grub-editenv was killed mid-write)", fi.Size(), err)
 	}
 }
+
+// A slow report on the rescue console shows its header first, so a hung sc
+// still says which boot was healthy before the stop (your pick for the
+// chunk C review's note); one in time is the report once, whole.
+func TestConsoleStatusHeaderFirst(t *testing.T) {
+	bin := scBinary(t)
+	home := t.TempDir()
+	conf := filepath.Join(t.TempDir(), "conf")
+	os.WriteFile(conf, []byte("x\n"), 0o644)
+	env := append(os.Environ(), "SC_HOME="+home)
+	for _, args := range [][]string{{"init"}, {"snapshot", conf}} {
+		c := exec.Command(bin, args...)
+		c.Env = env
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("sc %v: %v %s", args, err, out)
+		}
+	}
+	run := func(extra ...string) (string, int) {
+		cmd := exec.Command(bin, "status", "--console")
+		cmd.Env = append(env, extra...)
+		out, err := cmd.Output()
+		code := 0
+		if ws, ok := exitStatus(err); ok {
+			code = ws.ExitStatus()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), code
+	}
+	out, code := run("SC_TEST_STATUS_CHECKS=20s", "SC_TEST_CONSOLE_HEAD=100ms", "SC_TEST_CONSOLE_LIMIT=1s")
+	if code != 1 || !strings.HasPrefix(out, "This boot:") || !strings.Contains(out, "\nscd:") ||
+		!strings.Contains(out, "sc: the report took over 1 s and was stopped") || strings.Contains(out, "\nThe newest changes") {
+		t.Errorf("a hung report: exit %d, stdout %q", code, out)
+	}
+	out, code = run("SC_TEST_STATUS_CHECKS=300ms", "SC_TEST_CONSOLE_HEAD=100ms", "SC_TEST_CONSOLE_LIMIT=30s")
+	if code != 0 || strings.Count(out, "This boot:") != 1 || !strings.Contains(out, "\nThe newest changes") || strings.Contains(out, "stopped") {
+		t.Errorf("a slow report in time: exit %d, stdout %q", code, out)
+	}
+}

@@ -258,10 +258,15 @@ type entry struct {
 	sev     check.Severity
 }
 
+// consoleHead is how long the rescue console waits for the whole report
+// before it shows the header so far; tests change it.
+var consoleHead = 2 * time.Second
+
 func runStatus(cmd *cobra.Command, console bool) (err error) {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	var report bytes.Buffer
+	var headKnown func() // console: the header is in report
 	if console {
 		ignoreHangup.Store(true)
 		until := time.Now().Add(consoleDeadline)
@@ -273,8 +278,29 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		oldNote := noteOut
 		noteOut = &report
 		defer func() { noteOut = oldNote }()
-		// One of the two writes, never both: the report, or the word that
-		// it was stopped.
+		// A report that is slow shows its header first (This boot, Last
+		// healthy, Failed since, scd), so a hung sc still says which boot
+		// was healthy before the stop (your pick, 2026-10-07). One in time
+		// is one write, which other console lines cannot cut in two (the
+		// M4 lab matches the report as one block).
+		var mu sync.Mutex
+		var head []byte
+		headShown, final := false, false
+		headTimer := time.AfterFunc(consoleHead, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			if !final && head != nil {
+				writeConsoles(real, head, until)
+				headShown = true
+			}
+		})
+		headKnown = func() {
+			mu.Lock()
+			head = append([]byte(nil), report.Bytes()...)
+			mu.Unlock()
+		}
+		// Then one of the two writes, never both: the report (its rest),
+		// or the word that it was stopped.
 		var once sync.Once
 		stop := time.AfterFunc(consoleLimit, func() {
 			once.Do(func() {
@@ -290,6 +316,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		})
 		defer func() {
 			stop.Stop()
+			headTimer.Stop()
 			// An error goes into the report, on every console, not to
 			// stderr, which is the last console= one only.
 			var code exitCode
@@ -297,7 +324,16 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 				fmt.Fprintf(&report, "sc: %v\n", err)
 				err = exitCode(1)
 			}
-			once.Do(func() { writeConsoles(real, report.Bytes(), until) })
+			once.Do(func() {
+				mu.Lock()
+				final = true
+				b := report.Bytes()
+				if headShown {
+					b = b[len(head):]
+				}
+				mu.Unlock()
+				writeConsoles(real, b, until)
+			})
 		}()
 	}
 	testHookInStatus()
@@ -348,6 +384,9 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		fmt.Fprintf(out, "Failed since:  %s, last %s: %s\n", count(len(failed), "boot"), at.Local().Format("01-02 15:04"), why)
 	}
 	fmt.Fprintf(out, "scd:           %s\n", scdState())
+	if headKnown != nil {
+		headKnown()
+	}
 
 	s, err := openStore()
 	var none *store.NotInitialisedError

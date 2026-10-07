@@ -280,9 +280,10 @@ snapshot.
 - Edits made while scd was down can be recorded after the healthy boot's
   row, if scd's startup rescan still runs when the verdict is given; the
   undo then names an older, still good, version (chunk B).
-- The console report is held until `sc` returns: a hung `sc` shows only,
-  after 60 s, that the report was stopped; the shell then starts (chunk
-  C, C6).
+- Done (your pick): a report that is slow shows its header first (after
+  2 s: This boot, Last healthy, Failed since, scd), so a hung `sc` still
+  says which boot was healthy before the 60 s stop; one in time is one
+  write, as the lab matches it whole (chunk C, C6).
 - A SIGHUP in the first milliseconds of `sc status --console`, before
   `signal.Notify` runs, ends sc by the kernel's default (chunk D, B5).
 - One `go test ./cmd/sc/` run of 14 failed right after three lab-test

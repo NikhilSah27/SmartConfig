@@ -16,7 +16,8 @@ import (
 // anything (it says "sctest: in status" on stderr first), so a test can
 // send a signal in that window.
 // SC_TEST_STATUS_CHECKS holds it back once its store and scratch are
-// open. SC_TEST_CONSOLE_LIMIT is sc status --console's limit.
+// open. SC_TEST_CONSOLE_LIMIT is sc status --console's limit,
+// SC_TEST_CONSOLE_HEAD how long it waits before it shows the header.
 // SC_TEST_TOOLS is the one directory validators are looked up in,
 // SC_TEST_BOOT_TOOLS sc boot's tools, SC_TEST_GRUBENV its grubenv.
 func init() {
@@ -34,6 +35,9 @@ func init() {
 	}
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_CONSOLE_LIMIT")); err == nil {
 		consoleLimit = d
+	}
+	if d, err := time.ParseDuration(os.Getenv("SC_TEST_CONSOLE_HEAD")); err == nil {
+		consoleHead = d
 	}
 	if d := os.Getenv("SC_TEST_BOOT_TOOLS"); d != "" {
 		bootRunner.Dirs = []string{d}
