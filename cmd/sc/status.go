@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+	"unicode"
 	"unicode/utf8"
 	"unsafe"
 
@@ -21,6 +22,7 @@ import (
 
 	"smartconfig/internal/boot"
 	"smartconfig/internal/check"
+	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
 )
 
@@ -278,6 +280,10 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 			once.Do(func() {
 				writeConsoles(real, []byte(fmt.Sprintf("sc: the report took over %s and was stopped, so that the shell can start.\n"+
 					"Run it from the shell: sc status\n", seconds(consoleLimit))), until)
+				// The store's repaired copy and the checks' scratch, in
+				// /run: os.Exit runs no deferred cleanup (the M4 final
+				// review, B6).
+				fsutil.RemovePending()
 				os.Exit(1)
 			})
 		})
@@ -396,6 +402,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		return err
 	}
 	defer cleanup()
+	testHookStatusChecks()
 	if console {
 		// The rescue console: sc's own rules only. They need no validator
 		// and are fast, so no change goes unjudged for want of time, and
@@ -596,12 +603,12 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 	switch {
 	case e.before.Kind == store.KindDeleted && console:
 		// Short lines: a console line that wraps pushes the top off.
-		dir, name := filepath.Split(path)
-		fmt.Fprintf(out, "  cd %s\n  mv %s %s.sc-off\n", dir, name, name)
+		dir, name := filepath.Split(e.row.Path)
+		fmt.Fprintf(out, "  cd %s\n  mv %s %s\n", shellQuote(dir), shellQuote(name), shellQuote(name+".sc-off"))
 	case e.before.Kind == store.KindDeleted:
 		// Every reader of a directory sc checks skips this name: *.yaml,
 		// *.conf, *.rules, units, and sudoers.d's names with a dot.
-		fmt.Fprintf(out, "  mv %s %s.sc-off\n", path, path)
+		fmt.Fprintf(out, "  mv %s %s\n", shellQuote(e.row.Path), shellQuote(e.row.Path+".sc-off"))
 	default:
 		fmt.Fprintf(out, "  sc restore %s\n", e.before.ID)
 	}
@@ -621,6 +628,40 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 	} else if a := c.GraphInUse().Apply(e.row.Path); a != "" {
 		fmt.Fprintf(out, "It takes effect %s.\n", a)
 	}
+}
+
+// shellQuote is s as a shell word that the owner can type as shown: as
+// it is when nothing in it is special, else in single quotes, or as $'...'
+// with control characters escaped (the M4 final review, B7: a name with a
+// space or a ";" broke the command, or ran another).
+func shellQuote(s string) string {
+	plain := s != ""
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._/+-:@%,=", r)) {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return s
+	}
+	if !utf8.ValidString(s) || strings.ContainsFunc(s, unicode.IsControl) {
+		var b strings.Builder
+		b.WriteString("$'")
+		for i := 0; i < len(s); i++ {
+			switch c := s[i]; {
+			case c == '\\' || c == '\'':
+				b.WriteByte('\\')
+				b.WriteByte(c)
+			case c < 0x20 || c >= 0x7f: // C1 controls are two bytes of UTF-8
+				fmt.Fprintf(&b, "\\x%02x", c)
+			default:
+				b.WriteByte(c)
+			}
+		}
+		return b.String() + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // badWhy is a "bad" verdict's reason in words.

@@ -118,6 +118,23 @@ func TestReadOnlyCopyConsole(t *testing.T) {
 	}
 }
 
+// The rescue report stopped at its limit: the store's repaired copy and
+// the checks' scratch, both in $XDG_RUNTIME_DIR here (/run as root), are
+// removed, though os.Exit runs no deferred cleanup (the M4 final review,
+// B6).
+func TestReadOnlyCopyConsoleStopped(t *testing.T) {
+	_, copies := readOnlyHotStore(t, 3)
+	cmd := exec.Command(scBinary(t), "status", "--console")
+	cmd.Env = append(os.Environ(), "SC_TEST_STATUS_CHECKS=20s", "SC_TEST_CONSOLE_LIMIT=500ms")
+	out, err := cmd.Output()
+	if ws, ok := exitStatus(err); !ok || ws.ExitStatus() != 1 || !strings.Contains(string(out), "was stopped") {
+		t.Fatalf("%v: %q", err, out)
+	}
+	if left, _ := os.ReadDir(copies); len(left) != 0 {
+		t.Errorf("left in %s: %v", copies, left)
+	}
+}
+
 // A reader that goes away (sc log | head) or a stop signal ends sc as
 // usual, and its repaired copy of the store is gone (the chunk A review:
 // every such run left a full copy in /run).

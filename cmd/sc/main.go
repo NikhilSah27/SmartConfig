@@ -77,12 +77,14 @@ var watchRescan atomic.Pointer[func()]
 // watchStopped is set when a signal ended sc watch through watchCancel.
 var watchStopped atomic.Bool
 
-// testHookAfterRun runs in main after the command has returned, and
-// testHookInStatus in sc status once it has set itself up; the signal
-// tests' build (-tags sctest) sets them.
+// testHookAfterRun runs in main after the command has returned,
+// testHookInStatus in sc status once it has set itself up, and
+// testHookStatusChecks once it has its store and its checks' scratch;
+// the signal tests' build (-tags sctest) sets them.
 var (
-	testHookAfterRun = func() {}
-	testHookInStatus = func() {}
+	testHookAfterRun     = func() {}
+	testHookInStatus     = func() {}
+	testHookStatusChecks = func() {}
 )
 
 // consoleStatus reports whether args are sc status --console, as the

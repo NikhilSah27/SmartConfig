@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -415,6 +416,51 @@ func TestStatusDeletedFlag(t *testing.T) {
 	s.Close()
 	if r := sc(t, "status"); r.code != 0 || !strings.Contains(r.stdout, "  deleted\n") || strings.Contains(r.stdout, "sc restore") {
 		t.Errorf("%+v", r)
+	}
+}
+
+// Each word shellQuote gives is, typed into bash, the name itself.
+func TestShellQuote(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash")
+	}
+	for _, s := range []string{"/etc/fstab", "/etc/netplan/my net.yaml", "/etc/sudoers.d/semi;reboot", "/x/$(id>&2);y",
+		"it's", `back\slash`, "/etc/a\x1b[2Jb", "new\nline", "/etc/\xc2\x9b31m", "bad\xffutf8", "café", "*", "a b'c\x07"} {
+		q := shellQuote(s)
+		out, err := exec.Command(bash, "-c", "printf %s "+q).Output()
+		if err != nil || string(out) != s {
+			t.Errorf("%q: quoted %s, bash gave %q %v", s, q, out, err)
+		}
+		if strings.ContainsFunc(q, func(r rune) bool { return r < 0x20 || r >= 0x7f && r < 0xa0 }) {
+			t.Errorf("%q: quoted %q holds a control character", s, q)
+		}
+	}
+	if q := shellQuote("/etc/fstab"); q != "/etc/fstab" {
+		t.Errorf("plain: %s", q)
+	}
+}
+
+// The commands for a new file are typed as shown: its name quoted (the
+// M4 final review, B7).
+func TestStatusUndoQuoted(t *testing.T) {
+	dir, _, home := statusEnv(t, "systemd.unit=rescue.target", true)
+	odd := filepath.Join(dir, "fs$(id);tab")
+	g, err := check.ParseGraph("check fstab " + odd + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Graph = g }
+	t.Cleanup(func() { testHookChecks = hook })
+	snap(t, filepath.Join(dir, "other"), "x\n")
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	created(t, odd, badLine)
+	if r := sc(t, "status"); !strings.Contains(r.stdout, "  mv '"+odd+"' '"+odd+".sc-off'\n") {
+		t.Errorf("%+v", r)
+	}
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "  cd "+dir+"/\n  mv 'fs$(id);tab' 'fs$(id);tab.sc-off'\n") {
+		t.Errorf("console: %+v", r)
 	}
 }
 
