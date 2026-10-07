@@ -108,21 +108,20 @@ S1 tested), the two boot units, the drop-ins and `42_smartconfig` are
 installed on this VM, `update-grub` has run; the reboot's verdict ok,
 flag clear, 23.5 s, sc off the critical chain, the menu hidden, `sc
 status` healthy. You reset the two boots after it (a black desktop;
-your answer). **S3 runs** (your OK and a fresh snapshot, 21:05 UTC,
-"Yes, taken — go"; log): the bad line is in `/etc/fstab` (line 10,
-row `053fdf`, scd: blocker), and this VM reboots into the failing boot.
-Two failing boots are behind us, the rescue boot not yet (2026-10-07
-05:58 UTC, as the user; log): flag set, fstab still the bad one, this
-boot "emergency" with the desktop up. You are booting "SmartConfig
-rescue" now. You drive the console: the failed boot (a photo: the report above
-"Press Enter"? `#` or `login:`?), a reset, the menu by itself, "SmartConfig
-rescue", the report (a photo), Enter, its commands, then Ubuntu at the
-menu once more. **At the next session:** the verdicts (the failed boot
-bad or never reached, the rescue boot none, the boot after ok), the
-flag clear after it, `/etc/fstab` = `fb5cf4` (sha256 `9d71ab60…`),
-`sc log` with the pre-restore and restore rows, `sc status` healthy,
-exit 0; your photos and what you saw. Then S4 (final review, docs, tag
-`m4`), with your OK.
+your answer). **Sign-off S3 passed** (your OK and a fresh snapshot,
+2026-10-06 21:05 UTC, "Yes, taken — go"; your "s3 done" and two
+photos, 2026-10-07 06:27 UTC; log): the bad line in `/etc/fstab` (row
+`053fdf`, scd: blocker); two failed boots, both verdict bad, each with
+the login screen up over emergency mode (on a desktop gdm takes the
+screen, so the way in is the next boot's menu); the rescue boot with
+the report above "Press Enter" (your photos); your `sc restore fb5cf4`;
+and the boot after it: verdict ok, flag clear, `/etc/fstab` back
+(sha256 `9d71ab60…`), `sc status` healthy, exit 0. New on a desktop,
+for S4 (log): a red `[FAILED] grub-initrd-fallback.service` right above
+the report (Ubuntu's unit, which cannot write grubenv on the read-only
+root), `sc boot seen` twice in each failed boot (harmless here), and
+the README's "stops in emergency mode". **Next: S4** (final review,
+docs, tag `m4`), with your OK.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -1876,3 +1875,60 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     the same (both boots). No rescue boot yet.
   - Next: you boot "SmartConfig rescue" from the menu, run the report's
     commands, then Ubuntu; then the checks as root.
+- **M4 sign-off S3: the rescue boot and the restore; S3 passed** (your
+  "s3 done" and two photos, 2026-10-07 06:27 UTC; checks as root,
+  `~/smartconfig-work/signoff/post-s3-20261007T062818Z.txt`, photos in
+  `~/smartconfig-work/signoff/s3-photos/`).
+  - The failed boots (`928e5ac3`, `f11e5522`): verdict bad both
+    (`local-fs=inactive emergency=active`, newest row 1566, the bad
+    edit). Each waited 90 s for the missing disk (the device timed out
+    at 92.4 and 93.9 s), reached emergency.target at 95.2 and 94.8 s,
+    and started gdm about 1.5 s later: on this desktop the login screen
+    comes up over the emergency shell and the report printed there (the
+    tty1-versus-gdm question of plan section 7: gdm). 1 min 42 s and
+    1 min 40 s to "Startup finished". `f11e5522` ended with a clean
+    reboot at 06:14:05.
+  - The rescue boot (`7ce2c935`, your photos): "SmartConfig rescue" from
+    the menu, and the report above "Press Enter" as in the README: this
+    boot (rescue), root read-only; last healthy `94783975`; failed since
+    2 boots, "a mount failed, emergency mode"; scd not running; `053fdf`
+    blocker fstab-source-missing, line 10; the five commands; "The menu
+    shows once more". You ran `mount -o remount,rw /` and `sc restore
+    fb5cf4`: "restored /etc/fstab from fb5cf4 (mode 0644 root:root),
+    previous state saved as 8f7c6e"; then the rest. As designed it has
+    no seen line and no verdict (`/var/lib` read-only), and no journal
+    (volatile on a read-only root); `last -x` has its shutdown.
+  - The boot after (`8438a7f4`, Ubuntu's entry by its command line):
+    verdict ok at 9.9 s (`local-fs=active`, newest row 1568, the
+    restore), grubenv empty after it, 9.95 s to "Startup finished", no
+    failed units, `is-system-running` running. `/etc/fstab` 446 bytes,
+    0644 root:root, sha256 `9d71ab60…` (= `fb5cf4`). `sc log
+    /etc/fstab`: `8f7c6e` pre-restore (518 bytes, the bad file) and
+    `c8c9bd` "restored from fb5cf4". `sc status`: healthy this boot,
+    nothing changed since, exit 0. scd running, 0 restarts; `sc` still
+    `cafca151…`.
+  - The clock: each boot of this VM starts minutes behind (this one
+    8.5 min: the kernel at 06:11:25, NTP set 06:20:45 at 47 s), and the
+    rescue boot has no network to fix it, so its rows say 06:13. sc does
+    not mind: the line between "came up with" and "changed since" is the
+    row id in the verdict, not a time.
+  - New on a desktop, not seen in the lab; for S4:
+    - A red `[FAILED] Failed to start grub-initrd-fallback.service`
+      right above the report (photo). Ubuntu's unit is in
+      `rescue.target.wants` on this install (not in the lab's cloud
+      image) and runs `grub-editenv … unset initrdfail`, which cannot
+      write on the read-only root. Harmless: the boot after ran it ok.
+      The README's rescue section could say to expect it.
+    - `sc boot seen` ran twice in each failed boot (2.3 and 5.0 s; two
+      seen lines in `boots`), once in every normal boot and in the lab's
+      failed boot. sysinit.target waited 90 s for local-fs there; a
+      second start job for it in that window starts the finished oneshot
+      again. Harmless here: both before the verdict, and `sc status`
+      counts boots by id ("2 boots"). Whether the unit wants
+      `RemainAfterExit=yes` is for the final review.
+    - The README says such a boot may "stop in emergency mode" and prints
+      the report there; on a desktop the login screen comes up over it,
+      the mount missing (`maintenance`). The next boot's menu is the way
+      in, as plan section 8 says ("M4 does not depend on emergency
+      mode"); the README could say so.
+  - **S3 passed.** Next: S4 (final review, docs, tag `m4`), with your OK.
