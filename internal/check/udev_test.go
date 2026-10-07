@@ -123,8 +123,8 @@ func TestUdevNotChecked(t *testing.T) {
 		want, note     string
 	}{
 		{"unreadable", "\n1 udev rules files have been checked.\n  Success: 0\n  Fail:    1\n",
-			"Failed to parse rules file /SCRATCH/70-local.rules: Permission denied\n", 1, "", "udevadm could not read the file (Permission denied)"},
-		{"usage", "", "udevadm: unrecognized option '--no-style'\n", 1, "", "udevadm could not check the file (udevadm: unrecognized option '--no-style')"},
+			"Failed to parse rules file /SCRATCH/70-local.rules: Permission denied\n", 1, "", "udevadm could not read the file said: Failed to parse rules file /etc/udev/rules.d/70-local.rules: Permission denied"},
+		{"usage", "", "udevadm: unrecognized option '--no-style'\n", 1, "", "udevadm could not check the file (exit 1) said: udevadm: unrecognized option '--no-style'"},
 		{"silent", "", "", 1, "", "udevadm could not check the file (exit 1)"},
 		// A file it passes over is counted as 0 checked, with exit 0.
 		{"none checked", summary(0), "", 0, "", "udevadm verify did not report checking the file; it was not checked"},
@@ -137,7 +137,7 @@ func TestUdevNotChecked(t *testing.T) {
 		c, _ := fakeMachine(t, nil, "", "", 0)
 		goldenTool(t, c, "udevadm", writeGolden(t, "g", tc.out, tc.err), tc.code)
 		rep, err := c.Check(context.Background(), udevPath, []byte(udevGood))
-		if err != nil || brief(rep.Findings) != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if err != nil || brief(rep.Findings) != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s: %q %q %v", tc.name, brief(rep.Findings), rep.Notes, err)
 		}
 	}
@@ -169,13 +169,13 @@ func TestUdevKeys(t *testing.T) {
 func TestUdevVerifyBroken(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	rep, err := c.Check(context.Background(), udevPath, []byte(udevGood))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "no validator found (udevadm); only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "no validator found (udevadm); only sc's own rules ran" {
 		t.Errorf("no tool: %+v %v", rep, err)
 	}
 	tool := filepath.Join(c.Run.Dirs[0], "udevadm")
 	os.WriteFile(tool, []byte("#!/bin/sh\necho \"$3:1 Invalid key 'X'.\" >&2\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), udevPath, []byte(udevGood))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "udevadm was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "udevadm was killed; only sc's own rules ran" {
 		t.Errorf("killed: %+v %v", rep, err)
 	}
 	os.WriteFile(tool, []byte("#!/bin/sh\nsleep 60\n"), 0o755)

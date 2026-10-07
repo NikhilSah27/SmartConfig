@@ -36,7 +36,7 @@ const (
 	sshdDropIn  = "/etc/ssh/sshd_config.d/50-local.conf"
 	noteNoKeys  = "sshd found no host key it may read (the machine's are root's); the file was not checked to the end"
 	badLines    = "Port 22\nPermitRootLogn no\nPermitRootLogin maybe\nPort abc\n"
-	noteInclude = "sshd reports a problem in another file: /etc/ssh/sshd_config.d/50-bad.conf: line 1: Bad configuration option: PermitRootLogn"
+	noteInclude = "sshd reports a problem in another file, /etc/ssh/sshd_config.d/50-bad.conf said: /etc/ssh/sshd_config.d/50-bad.conf: line 1: Bad configuration option: PermitRootLogn"
 )
 
 // sshd's output, as captured on the dev VM (OpenSSH 9.6p1) from fabricated
@@ -67,7 +67,7 @@ func TestSshdGolden(t *testing.T) {
 		{"an error in an included file", "include.user", 255, sshdConfig, "Port 22\nInclude /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin no\n", "", noteInclude},
 		{"errors here and in an included file", "mainandinclude.user", 255, sshdConfig, "FooBar x\nInclude /etc/ssh/sshd_config.d/*.conf\n", "1 sshd-invalid blocker", noteInclude},
 		{"a fatal error in an included file", "includefatal.user", 255, sshdConfig, "Port 22\nInclude /etc/ssh/sshd_config.d/*.conf\n", "",
-			"sshd reports a problem in another file: /etc/ssh/sshd_config.d/50-fatal.conf line 1: unsupported option \"maybe\"."},
+			"sshd reports a problem in another file, /etc/ssh/sshd_config.d/50-fatal.conf said: /etc/ssh/sshd_config.d/50-fatal.conf line 1: unsupported option \"maybe\"."},
 		{"a drop-in checked alone", "good.user", 0, sshdDropIn, "PasswordAuthentication no\n", "", ""},
 		{"a drop-in with a bad value", "badvalue.user", 255, sshdDropIn, "Port 22\nPermitRootLogin maybe\n", "2 sshd-invalid blocker", ""},
 		// Refused without a line number.
@@ -78,14 +78,14 @@ func TestSshdGolden(t *testing.T) {
 		{"a HostKey that is unreadable (not root)", "nokey.keyboth.user", 1, sshdConfig, "HostKey " + keyFile + "\nHostKey /nonexistent/key\n", "", noteNoKeys},
 		{"a HostKey that exists elsewhere", "nokey.keymissing.user", 1, sshdDropIn, "Port 22\n", "", "sshd reports a problem in another file: host key /nonexistent/key does not exist"},
 		{"a HostKey that does not exist, with others", "keymissing.user", 0, sshdConfig, "HostKey /nonexistent/key\n", "", ""},
-		{"the file could not be read", "nofile.user", 1, sshdConfig, "Port 22\n", "", "sshd could not check the file (No such file or directory)"},
+		{"the file could not be read", "nofile.user", 1, sshdConfig, "Port 22\n", "", "sshd could not check the file said: /etc/ssh/sshd_config: No such file or directory"},
 	} {
 		c, args := sshdMachine(t, []string{keyFile}, "testdata/sshd/"+tc.golden, tc.code)
 		rep, err := c.Check(context.Background(), tc.path, []byte(tc.data))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 			continue
 		}
@@ -239,19 +239,19 @@ func TestSshdEnvironment(t *testing.T) {
 		note         string
 	}{
 		{"privsep dir", "Missing privilege separation directory: /run/sshd\n", 255,
-			"sshd did not finish checking the file (Missing privilege separation directory: /run/sshd)"},
+			"sshd did not finish checking the file said: Missing privilege separation directory: /run/sshd"},
 		{"privsep user", "Privilege separation user sshd does not exist\n", 255,
-			"sshd did not finish checking the file (Privilege separation user sshd does not exist)"},
+			"sshd did not finish checking the file said: Privilege separation user sshd does not exist"},
 		{"privsep mode", "/run/sshd must be owned by root and not group or world-writable.\n", 255,
-			"sshd did not finish checking the file (/run/sshd must be owned by root and not group or world-writable.)"},
+			"sshd did not finish checking the file said: /run/sshd must be owned by root and not group or world-writable."},
 		{"silent", "", 1, "sshd failed (exit 1) without naming a problem; the file was not checked"},
-		{"an exit 1 sc has not seen", "something new\n", 1, "sshd could not check the file (something new)"},
+		{"an exit 1 sc has not seen", "something new\n", 1, "sshd could not check the file said: something new"},
 	} {
 		os.WriteFile(filepath.Join(dir, "g.out"), nil, 0o644)
 		os.WriteFile(filepath.Join(dir, "g.err"), []byte(tc.errOut), 0o644)
 		c, _ := sshdMachine(t, nil, filepath.Join(dir, "g"), tc.code)
 		rep, err := c.Check(context.Background(), sshdConfig, []byte("Port 22\n"))
-		if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != tc.note {
+		if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != tc.note {
 			t.Errorf("%s: %q %q %v", tc.name, brief(rep.Findings), rep.Notes, err)
 		}
 	}
@@ -263,12 +263,12 @@ func TestSshdBroken(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	data := []byte("PermitRootLogn no\n")
 	rep, err := c.Check(context.Background(), sshdConfig, data)
-	if err != nil || rep.Checker != "sshd" || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "no validator found (sshd); only sc's own rules ran" {
+	if err != nil || rep.Checker != "sshd" || len(rep.Findings) != 0 || notesSaid(rep) != "no validator found (sshd); only sc's own rules ran" {
 		t.Errorf("missing: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte("#!/bin/sh\necho \"$3: line 1: Bad configuration option: PermitRootLogn\" >&2\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), sshdConfig, data)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "sshd was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "sshd was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte("#!/bin/sh\nsleep 60\n"), 0o755)
@@ -299,7 +299,7 @@ func TestSshdReal(t *testing.T) {
 	// clean file is then a note, not a clean run.
 	cleanNotes := ""
 	if _, err := os.Stat("/run/sshd"); err != nil && os.Geteuid() == 0 {
-		cleanNotes = "sshd did not finish checking the file (Missing privilege separation directory: /run/sshd)"
+		cleanNotes = "sshd did not finish checking the file said: Missing privilege separation directory: /run/sshd"
 	}
 	for _, tc := range []struct {
 		path, data, want string
@@ -317,7 +317,7 @@ func TestSshdReal(t *testing.T) {
 		if tc.want == "" {
 			wantNotes = cleanNotes
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != wantNotes {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != wantNotes {
 			t.Errorf("%q:\n%s\nwant:\n%s\nnotes %q", tc.data, got, tc.want, rep.Notes)
 		}
 		if tc.want != "" && !strings.HasPrefix(rep.Findings[0].Raw, tc.path) {
@@ -329,7 +329,7 @@ func TestSshdReal(t *testing.T) {
 	}
 	c.sshdHostKey = ""
 	rep, err := c.Check(context.Background(), sshdConfig, []byte("Port 22\n"))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != noteNoKeys {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != noteNoKeys {
 		t.Errorf("no key, as a user: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	// Its parse comes first: a bad line is found without a key.
@@ -365,7 +365,7 @@ func TestSshdListen(t *testing.T) {
 		if got := brief(rep.Findings); got != tc.want {
 			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
 		}
-		if strings.Join(rep.Notes, "|") != "no validator found (sshd); only sc's own rules ran" {
+		if notesSaid(rep) != "no validator found (sshd); only sc's own rules ran" {
 			t.Errorf("%s: notes %q", tc.name, rep.Notes)
 		}
 		for _, f := range rep.Findings {
@@ -445,9 +445,9 @@ func TestSshdTogether(t *testing.T) {
 	other := map[string]string{"40-other.conf": "PasswordAuthentication no\n"}
 	alone := "; the drop-in was checked alone"
 	// As root sshd checks /run/sshd after the files (see TestSshdReal).
-	clean := ""
+	clean, cleanSaid := "", ""
 	if _, err := os.Stat("/run/sshd"); err != nil && os.Geteuid() == 0 {
-		clean = "sshd did not finish checking the file (Missing privilege separation directory: /run/sshd)"
+		clean, cleanSaid = "sshd did not finish checking the file", " said: Missing privilege separation directory: /run/sshd"
 	}
 	for _, tc := range []struct {
 		name, main string
@@ -455,15 +455,15 @@ func TestSshdTogether(t *testing.T) {
 		data, want string
 		note       string
 	}{
-		{"a setting whose partner is in sshd_config", include + "AuthorizedKeysCommandUser nobody\n", other, akc, "", clean},
-		{"the same, the Include relative", "Include sshd_config.d/*.conf\nAuthorizedKeysCommandUser nobody\n", other, akc, "", clean},
+		{"a setting whose partner is in sshd_config", include + "AuthorizedKeysCommandUser nobody\n", other, akc, "", clean + cleanSaid},
+		{"the same, the Include relative", "Include sshd_config.d/*.conf\nAuthorizedKeysCommandUser nobody\n", other, akc, "", clean + cleanSaid},
 		{"the drop-in's own line", include, other, "Port 22\nPermitRootLogn no\n", "2 sshd-invalid blocker", ""},
 		{"a refusal it causes", include, other, akc, "0 sshd-invalid blocker", ""},
 		{"sshd_config refused without it too", include + akc, other, "Port 22\n", "",
-			"sshd refuses the configuration without the drop-in too (AuthorizedKeysCommand set without AuthorizedKeysCommandUser); the drop-in was not checked to the end"},
+			"sshd refuses the configuration without the drop-in too; the drop-in was not checked to the end said: AuthorizedKeysCommand set without AuthorizedKeysCommandUser"},
 		// Alone, the drop-in is clean: as root without /run/sshd, that note.
 		{"another drop-in refused", include, map[string]string{"40-other.conf": "PermitRootLogn no\n"}, "Port 22\n", "",
-			strings.TrimPrefix(clean+"|", "|") + "sshd stops at a problem in another file, maybe before the drop-in" + alone},
+			strings.TrimPrefix(clean+"|", "|") + "sshd stops at a problem in another file, maybe before the drop-in" + alone + cleanSaid},
 		{"not included", "Port 22\n", other, akc, "0 sshd-invalid blocker", sshdMain + " does not include it" + alone},
 		{"no sshd_config", "", other, akc, "0 sshd-invalid blocker", ""},
 	} {
@@ -472,7 +472,7 @@ func TestSshdTogether(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		for _, f := range rep.Findings {
@@ -506,13 +506,16 @@ func TestSshdTogetherOther(t *testing.T) {
 	c.sshdRoot = sshdRootWith(t, "Port 22\nInclude /etc/ssh/sshd_config.d/*.conf /etc/ssh/extra.conf\nUsePAM yes\n",
 		map[string]string{"40-other.conf": "PasswordAuthentication no\n", "50-local.conf": "the old version\n", "README": "not read\n"})
 	script := fmt.Sprintf("#!/bin/sh\nf=$3\n{ cat \"$f\"; ls \"$(dirname \"$f\")/d\"; } >> %s\n"+
-		"if [ -s \"$(dirname \"$f\")/d/50-local.conf\" ]; then echo \"$f line 3: Directive 'UsePAM' is not allowed within a Match block\" >&2; exit 255; fi\nexit 0\n", args)
+		"echo 'Missing privilege separation directory: /run/sshd' >&2\n"+
+		"if [ -s \"$(dirname \"$f\")/d/50-local.conf\" ]; then echo \"$f line 3: Directive 'UsePAM' is not allowed within a Match block\" >&2; exit 255; fi\nexit 255\n", args)
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte(script), 0o755)
 	rep, err := c.Check(context.Background(), sshdDropIn, []byte("Match User bob\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if brief(rep.Findings) != "0 sshd-invalid blocker" || len(rep.Notes) != 0 ||
+	// The line about the machine, said by both runs: one note, its words
+	// from the run whose result is kept, once.
+	if brief(rep.Findings) != "0 sshd-invalid blocker" || notesSaid(rep) != "sshd did not finish checking the file said: Missing privilege separation directory: /run/sshd" ||
 		rep.Findings[0].Raw != sshdMain+" line 3: Directive 'UsePAM' is not allowed within a Match block" ||
 		rep.Findings[0].Text != "with this drop-in, sshd refuses another file's line" {
 		t.Errorf("%q %+v %q", brief(rep.Findings), rep.Findings, rep.Notes)

@@ -44,6 +44,16 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 var fakeAddrs = []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("::1"),
 	netip.MustParseAddr("10.0.2.15"), netip.MustParseAddr("fe80::5054:ff:fe12:3456")}
 
+// notesSaid is the notes, then " said: " and the validator's words behind
+// them (Report.Said), when it said any.
+func notesSaid(rep Report) string {
+	s := strings.Join(rep.Notes, "|")
+	if len(rep.Said) > 0 {
+		s += " said: " + strings.Join(rep.Said, "|")
+	}
+	return s
+}
+
 // brief is "line rule severity" for each finding.
 func brief(fs []Finding) string {
 	var out []string
@@ -208,7 +218,7 @@ func TestFstabFindmnt(t *testing.T) {
 			"/dev/sda3 /data ext4 defaults,nofail 0 2\n", 1, "1 fstab-verify warning", ""},
 		// A findmnt that did not check the file is not a clean run.
 		{"usage error", "testdata/findmnt/usage.user", "/dev/sda3 /data ext4 defaults 0 2\n", 1, "",
-			"findmnt could not check the file (unrecognized option '--no-such-option'); only sc's own rules ran"},
+			"findmnt could not check the file; only sc's own rules ran said: findmnt: unrecognized option '--no-such-option'"},
 	} {
 		golden, _ := filepath.Abs(tc.golden)
 		c, args := fakeMachine(t, []string{rootUUID, "/dev/sda3"}, "findmnt", golden, tc.code)
@@ -216,7 +226,7 @@ func TestFstabFindmnt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		// findmnt was given exactly the check-only form, on a scratch copy
@@ -271,7 +281,7 @@ func TestFstabFindmntBroken(t *testing.T) {
 	fstab := []byte("/dev/sdz9 /data ext4 defaults 0 2\n")
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "findmnt"), []byte("#!/bin/sh\necho /data\necho '   [E] half a messa'\nkill -9 $$\n"), 0o755)
 	rep, err := c.Check(context.Background(), "/etc/fstab", fstab)
-	if err != nil || brief(rep.Findings) != "1 fstab-source-missing blocker" || strings.Join(rep.Notes, "|") != "findmnt was killed; only sc's own rules ran" {
+	if err != nil || brief(rep.Findings) != "1 fstab-source-missing blocker" || notesSaid(rep) != "findmnt was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "findmnt"), []byte("#!/bin/sh\nhead -c 5000 /dev/zero | tr '\\0' x\n"), 0o755)
@@ -305,7 +315,7 @@ func TestFstabRealFindmnt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	notes := strings.Join(rep.Notes, "|")
+	notes := notesSaid(rep)
 	if got := brief(rep.Findings); got != "1 fstab-source-missing blocker\n2 fstab-fields error" || (notes != "" && notes != noteUnread) {
 		t.Errorf("findings:\n%s\nnotes %q", got, rep.Notes)
 	}

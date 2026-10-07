@@ -127,7 +127,7 @@ sudo systemctl daemon-reload
 ./bin/sc check /etc/fstab                  # one file as it is now
 sudo ./bin/sc check 2c6901                 # a saved version (sc log lists them)
 ./bin/sc check --as /etc/fstab new.fstab   # a file you are about to copy there
-./bin/sc check -v /etc/fstab               # with each rule's explanation
+./bin/sc check -v /etc/fstab               # with each rule's explanation and the validators' own words
 sudo ./bin/sc edit /etc/fstab              # edit a copy, checked before it is saved
 ./bin/sc scope /etc/fstab                  # recorded? tier? checker? applied when?
 ```
@@ -147,7 +147,8 @@ sc check -v explains; sc log FILE lists the versions to restore.
 `sc check` exits 2 when a file has a blocker or an error, 1 when a file
 could not be checked (run it with sudo for files only root may read), and
 0 otherwise. With no argument it checks the files scd records that have a
-checker.
+checker. A note says, in sc's words, when a file was not fully checked;
+what the validator said, which may quote a file, is shown with `-v`.
 
 What is checked, each with the system's own validator in a check-only form
 plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers

@@ -135,7 +135,7 @@ func checkUdev(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		}
 		if reason, isParse := strings.CutPrefix(raw, "Failed to parse rules file "+in.path+": "); isParse {
 			if reason != "No buffer space available" {
-				return nil, append(notes, "udevadm could not read the file ("+reason+")"), nil
+				return nil, append(notes, in.say("udevadm could not read the file", raw)), nil
 			}
 			// A line longer than udev reads (16 KiB): udevd skips the file.
 			out = append(out, Finding{Rule: "udev-invalid", Severity: Error, Raw: raw, Key: reason,
@@ -166,11 +166,11 @@ func checkUdev(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 	switch {
 	case len(out) > 0:
 	case res.Exit != 0:
-		msg := fmt.Sprintf("exit %d", res.Exit)
+		note := fmt.Sprintf("udevadm could not check the file (exit %d)", res.Exit)
 		if len(unknown) > 0 {
-			msg = unknown[0]
+			note = in.say(note, unknown[0])
 		}
-		return nil, append(notes, "udevadm could not check the file ("+msg+")"), nil
+		return nil, append(notes, note), nil
 	case udevChecked.FindSubmatch(res.Out) == nil || string(udevChecked.FindSubmatch(res.Out)[1]) != "1":
 		// It counts the files it checked: 0 for one it passed over.
 		return nil, append(notes, "udevadm verify did not report checking the file; it was not checked"), nil

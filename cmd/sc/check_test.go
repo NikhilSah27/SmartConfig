@@ -335,3 +335,24 @@ func TestCheckCLIAs(t *testing.T) {
 		t.Fatal("sc check --as waited on a FIFO")
 	}
 }
+
+// A validator's words behind a note may quote a file, as a finding's raw
+// lines may: sc check shows them with -v only, and says so without (M3
+// follow-up 4).
+func TestCheckCLISaid(t *testing.T) {
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\necho \"findmnt: unrecognized option '--x'\" >&2\nexit 1\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs = []string{tools} }
+	note := "note: " + fstab + ": findmnt could not check the file; only sc's own rules ran\n"
+	r := sc(t, "check", fstab)
+	if !strings.HasPrefix(r.stdout, note+"sc check -v shows what the validators said.\n") || strings.Contains(r.stdout, "unrecognized") {
+		t.Errorf("without -v: %+v", r)
+	}
+	r = sc(t, "check", "-v", fstab)
+	if !strings.HasPrefix(r.stdout, note+"\nbehind the notes, from the validators:\n  "+fstab+": findmnt: unrecognized option '--x'\n") {
+		t.Errorf("with -v: %+v", r)
+	}
+}

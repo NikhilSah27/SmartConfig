@@ -138,7 +138,7 @@ func TestNetplanGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); rep.Checker != "netplan" || got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); rep.Checker != "netplan" || got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		if tc.text != "" && (len(rep.Findings) == 0 || rep.Findings[0].Text != tc.text) {
@@ -189,7 +189,7 @@ func TestNetplanTree(t *testing.T) {
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "generate"), []byte(script), 0o755)
 	rep, err := c.Check(context.Background(), netplanPath, []byte("candidate\n"))
 	if err != nil || len(rep.Findings) != 0 ||
-		strings.Join(rep.Notes, "|") != "netplan reads /run/netplan/60-local.yaml instead of this file while it exists; this file was checked in its place" {
+		notesSaid(rep) != "netplan reads /run/netplan/60-local.yaml instead of this file while it exists; this file was checked in its place" {
 		t.Fatalf("%+v %v", rep, err)
 	}
 	b, _ := os.ReadFile(list)
@@ -214,7 +214,7 @@ func TestNetplanUnreadable(t *testing.T) {
 	}
 	goldenTool(t, c, "generate", "testdata/netplan/mergeok", 0)
 	rep, err := c.Check(context.Background(), netplanPath, []byte(npBridge))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != strings.Join(want, "|") {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != strings.Join(want, "|") {
 		t.Errorf("%+v %v\nwant %q", rep, err, want)
 	}
 	// A directory netplan reads that sc cannot list.
@@ -252,12 +252,12 @@ func TestNetplanUnreadableMerge(t *testing.T) {
 		}
 		if tc.want != "" {
 			if len(rep.Findings) != 1 || fmt.Sprintf("%d %s %s", rep.Findings[0].Line, rep.Findings[0].Rule, rep.Findings[0].Severity) != tc.want ||
-				strings.Join(rep.Notes, "|") != unread {
+				notesSaid(rep) != unread {
 				t.Errorf("%s: %+v, want %s", tc.golden, rep, tc.want)
 			}
 			continue
 		}
-		if len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != unread+"|"+partial {
+		if len(rep.Findings) != 0 || notesSaid(rep) != unread+"|"+partial {
 			t.Errorf("%s: %+v", tc.golden, rep)
 		}
 	}
@@ -309,7 +309,7 @@ func TestNetplanGenerateFailed(t *testing.T) {
 		c := netplanMachine(t, nil)
 		goldenTool(t, c, "generate", writeGolden(t, "g", "", tc.err), tc.code)
 		rep, err := c.Check(context.Background(), netplanPath, []byte(npGood))
-		if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != tc.note {
+		if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != tc.note {
 			t.Errorf("%s: %+v %v", tc.name, rep, err)
 		}
 	}
@@ -357,13 +357,13 @@ func TestNetplanKeys(t *testing.T) {
 func TestNetplanGenerateBroken(t *testing.T) {
 	c := netplanMachine(t, nil)
 	rep, err := c.Check(context.Background(), netplanPath, []byte(npGood))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != npNoCheck {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != npNoCheck {
 		t.Errorf("no tool: %+v %v", rep, err)
 	}
 	gen := filepath.Join(c.Run.Dirs[0], "generate")
 	os.WriteFile(gen, []byte("#!/bin/sh\necho \"$2/etc/netplan/60-local.yaml:1:1: Invalid YAML: x:\" >&2\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), netplanPath, []byte(npGood))
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "/usr/libexec/netplan/generate was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "/usr/libexec/netplan/generate was killed; only sc's own rules ran" {
 		t.Errorf("killed: %+v %v", rep, err)
 	}
 	os.WriteFile(gen, []byte("#!/bin/sh\nsleep 60\n"), 0o755)

@@ -358,3 +358,18 @@ func TestEditValidatorRuns(t *testing.T) {
 		t.Errorf("new file: validator runs %q, want one", got)
 	}
 }
+
+// sc edit shows a validator's words behind a note under it, as it shows a
+// finding's (M3 follow-up 4): the file is the one being edited.
+func TestEditSaid(t *testing.T) {
+	_, fstab := editEnv(t, "", okEdit)
+	os.WriteFile(fstab, []byte(goodFstab), 0o644)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\necho \"findmnt: unrecognized option '--x'\" >&2\nexit 1\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs = []string{tools} }
+	r := sc(t, "edit", fstab)
+	if r.code != 0 || !strings.Contains(r.stdout, "note: findmnt could not check the file; only sc's own rules ran\n  findmnt: unrecognized option '--x'\n") {
+		t.Fatalf("%+v", r)
+	}
+}

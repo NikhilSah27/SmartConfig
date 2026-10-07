@@ -33,7 +33,7 @@ func TestShSyntax(t *testing.T) {
 		{"an if without fi", "testdata/sh/ifnofi", "GRUB_DEFAULT=0\nif true; then\nGRUB_TIMEOUT=0\n", 2,
 			"4 grub-default-syntax blocker", "", `the line is not valid shell (end of file unexpected (expecting "fi"))`},
 		{"cannot open", writeGolden(t, "cannotopen", "", "sh: 0: cannot open /SCRATCH/grub: No such file\n"), grubDefault, 2,
-			"", "sh could not check the file (sh: 0: cannot open /etc/default/grub: No such file)", ""},
+			"", "sh could not check the file said: sh: 0: cannot open /etc/default/grub: No such file", ""},
 		{"exit 2 and nothing said", writeGolden(t, "silent", "", ""), grubDefault, 2,
 			"", "sh could not check the file (exit 2, no message)", ""},
 	} {
@@ -43,7 +43,7 @@ func TestShSyntax(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note || rep.Checker != "shsyntax" {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note || rep.Checker != "shsyntax" {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		if tc.text != "" && (len(rep.Findings) == 0 || rep.Findings[0].Text != tc.text) {
@@ -95,13 +95,13 @@ func TestShSyntaxBroken(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	file := []byte(grubDefault)
 	rep, err := c.Check(context.Background(), "/etc/default/grub", file)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "no validator found (sh); only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "no validator found (sh); only sc's own rules ran" {
 		t.Errorf("no tool: %+v %v", rep, err)
 	}
 	tool := filepath.Join(c.Run.Dirs[0], "sh")
 	os.WriteFile(tool, []byte("#!/bin/sh\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), "/etc/default/grub", file)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "sh was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "sh was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(tool, []byte("#!/bin/sh\nsleep 60\n"), 0o755)
@@ -150,7 +150,7 @@ func TestGrubCfg(t *testing.T) {
 			"0 grubcfg-syntax blocker", "", "the file has no commands, so GRUB has no menu to boot from"},
 		{"cannot open", writeGolden(t, "cannotopen", "", "cannot open `/SCRATCH/grub.cfg': No such file or directoryUsage: grub-script-check [OPTION...] [PATH]\n"+
 			"Try 'grub-script-check --help' or 'grub-script-check --usage' for more\ninformation.\n"), "grub.cfg", grubCfg, 1,
-			"", "grub-script-check could not check the file (cannot open `/boot/grub/grub.cfg': No such file or directoryUsage: grub-script-check [OPTION...] [PATH])", ""},
+			"", "grub-script-check could not check the file (exit 1) said: cannot open `/boot/grub/grub.cfg': No such file or directoryUsage: grub-script-check [OPTION...] [PATH]", ""},
 		{"exit 1 and nothing said", writeGolden(t, "silent", "", ""), "grub.cfg", grubCfg, 1,
 			"", "grub-script-check could not check the file (exit 1, no message)", ""},
 	} {
@@ -160,7 +160,7 @@ func TestGrubCfg(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note || rep.Checker != "grubcfg" {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note || rep.Checker != "grubcfg" {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		if tc.text != "" && (len(rep.Findings) == 0 || rep.Findings[0].Text != tc.text) {
@@ -196,13 +196,13 @@ func TestGrubCfgBroken(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	file := []byte(grubCfg)
 	rep, err := c.Check(context.Background(), "/boot/grub/grub.cfg", file)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "no validator found (grub-script-check); only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "no validator found (grub-script-check); only sc's own rules ran" {
 		t.Errorf("no tool: %+v %v", rep, err)
 	}
 	tool := filepath.Join(c.Run.Dirs[0], "grub-script-check")
 	os.WriteFile(tool, []byte("#!/bin/sh\necho 'error: syntax error.' >&2\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), "/boot/grub/grub.cfg", file)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "grub-script-check was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "grub-script-check was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(tool, []byte("#!/bin/sh\nsleep 60\n"), 0o755)

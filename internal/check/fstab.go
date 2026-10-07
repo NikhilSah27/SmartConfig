@@ -250,7 +250,7 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 		// Its parse errors are fstab-fields above; anything else it says
 		// about itself means it did not check the file.
 		if msg, isOwn := strings.CutPrefix(l, "findmnt: "); isOwn && !strings.Contains(msg, "parse error at line") {
-			return out, append(notes, "findmnt could not check the file ("+strings.ReplaceAll(msg, in.file, in.path)+"); only sc's own rules ran"), nil
+			return out, append(notes, in.say("findmnt could not check the file; only sc's own rules ran", "findmnt: "+strings.ReplaceAll(msg, in.file, in.path))), nil
 		}
 	}
 	// stdout is one heading per mount point that has messages, each

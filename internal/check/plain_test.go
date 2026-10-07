@@ -25,7 +25,7 @@ func runPlain(t *testing.T, path string, have []string, cases []plainCase) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		for _, f := range rep.Findings {

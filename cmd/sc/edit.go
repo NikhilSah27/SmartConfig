@@ -166,6 +166,11 @@ func runEdit(cmd *cobra.Command, arg string) (err error) {
 		for _, note := range rep.Notes {
 			fmt.Fprintln(out, "note: "+note)
 		}
+		// The validators' words behind the notes, as explain shows a
+		// finding's: the file is the one being edited.
+		for _, s := range rep.Said {
+			fmt.Fprintln(out, "  "+show(s))
+		}
 		if check.Worst(added) < check.Error {
 			break // nothing new, or warnings only: save
 		}

@@ -171,7 +171,7 @@ func checkSysctl(ctx context.Context, c *Checks, in input) ([]Finding, []string,
 		}
 	}
 	if len(unknown) > 0 {
-		notes = append(notes, "sysctl printed something sc does not understand ("+unknown[0]+"); the file may not have been checked")
+		notes = append(notes, in.say("sysctl printed something sc does not understand; the file may not have been checked", unknown[0]))
 	} else if res.Exit != 0 && !said {
 		notes = append(notes, fmt.Sprintf("sysctl exited %d without a message sc understands; the file was not checked", res.Exit))
 	}

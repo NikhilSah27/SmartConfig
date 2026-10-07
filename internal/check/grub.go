@@ -44,7 +44,7 @@ func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []strin
 		m := shSyntax.FindStringSubmatch(l)
 		if m == nil || m[1] != in.file {
 			// "sh: 0: cannot open ...", or anything else about itself.
-			return out, append(notes, "sh could not check the file ("+strings.ReplaceAll(l, in.file, in.path)+")"), nil
+			return out, append(notes, in.say("sh could not check the file", strings.ReplaceAll(l, in.file, in.path))), nil
 		}
 		n, _ := strconv.Atoi(m[2])
 		out = append(out, Finding{Rule: "grub-default-syntax", Severity: Blocker, Line: n, Key: lineKey(in.data, n),
@@ -156,11 +156,11 @@ func checkGrubCfg(ctx context.Context, c *Checks, in input) ([]Finding, []string
 			return []Finding{{Rule: "grubcfg-syntax", Severity: Blocker, Text: "the file has no commands, so GRUB has no menu to boot from"}}, notes, nil
 		}
 	case res.Exit != 0:
-		msg := fmt.Sprintf("exit %d, no message", res.Exit)
+		note := fmt.Sprintf("grub-script-check could not check the file (exit %d, no message)", res.Exit)
 		if len(other) > 0 {
-			msg = other[0]
+			note = in.say(fmt.Sprintf("grub-script-check could not check the file (exit %d)", res.Exit), other[0])
 		}
-		return nil, append(notes, "grub-script-check could not check the file ("+msg+")"), nil
+		return nil, append(notes, note), nil
 	}
 	return nil, notes, nil
 }

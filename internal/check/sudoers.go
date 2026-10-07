@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -250,7 +251,9 @@ func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string
 					continue
 				}
 			}
-			notes = append(notes, "visudo could not read everything ("+msg+"); the included files were not all checked")
+			if note := in.say("visudo could not read everything; the included files were not all checked", "visudo: "+msg); !slices.Contains(notes, note) {
+				notes = append(notes, note)
+			}
 		}
 	}
 	if res.Exit != 0 && !said {

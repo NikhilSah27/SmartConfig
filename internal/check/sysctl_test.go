@@ -129,9 +129,9 @@ func TestSysctlBroken(t *testing.T) {
 		{"killed", "kill -9 $$\n", "", "sysctl was killed; only sc's own rules ran"},
 		{"hung", "sleep 60\n", "", "sysctl did not finish in time; only sc's own rules ran"},
 		{"no --dry-run", "echo \"sysctl: unrecognized option '--dry-run'\" >&2\necho Usage:\nexit 0\n", "",
-			"sysctl printed something sc does not understand (sysctl: unrecognized option '--dry-run'); the file may not have been checked"},
+			"sysctl printed something sc does not understand; the file may not have been checked said: sysctl: unrecognized option '--dry-run'"},
 		{"cannot open", "echo \"sysctl: cannot open \\\"$3\\\": Permission denied\" >&2\nexit 1\n", "",
-			`sysctl printed something sc does not understand (sysctl: cannot open "` + sysctlDropIn + `": Permission denied); the file may not have been checked`},
+			`sysctl printed something sc does not understand; the file may not have been checked said: sysctl: cannot open "` + sysctlDropIn + `": Permission denied`},
 		{"exit 1, nothing said", "exit 1\n", "", "sysctl exited 1 without a message sc understands; the file was not checked"},
 		{"a key sysctl names that is on no line", "echo 'sysctl: cannot stat /proc/sys/net/sc/x: No such file or directory' >&2\nexit 1\n",
 			"0 sysctl-unknown-key warning", ""},
@@ -142,7 +142,7 @@ func TestSysctlBroken(t *testing.T) {
 			os.WriteFile(filepath.Join(c.Run.Dirs[0], "sysctl"), []byte("#!/bin/sh\n"+tc.script), 0o755)
 		}
 		rep, err := c.Check(context.Background(), sysctlDropIn, data)
-		if err != nil || brief(rep.Findings) != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if err != nil || brief(rep.Findings) != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s: %q %q %v", tc.name, brief(rep.Findings), rep.Notes, err)
 		}
 		if tc.want != "" && rep.Findings[0].Text != "net.sc.x is not a setting of this kernel (a typo, or a module that is not loaded): systemd-sysctl skips the line" {

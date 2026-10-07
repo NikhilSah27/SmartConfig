@@ -117,9 +117,9 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		return nil, notes, err
 	}
 	name, instance := unitName(in.file)
-	out, problem, _ := readVerify(res, in.data, in.file, in.path, name, instance)
+	out, problem, said, _ := readVerify(res, in.data, in.file, in.path, name, instance)
 	if problem != "" {
-		return nil, append(notes, problem), nil
+		return nil, append(notes, in.say(problem, said)), nil
 	}
 	return out, notes, nil
 }
@@ -195,13 +195,13 @@ func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []str
 	if err != nil || !ok {
 		return nil, notes, err
 	}
-	out, problem, notFound := readVerify(res, in.data, file, in.path, names...)
+	out, problem, said, notFound := readVerify(res, in.data, file, in.path, names...)
 	switch {
-	case notFound != "":
-		return []Finding{{Rule: "unit-dropin-orphan", Severity: Warning, Raw: notFound,
+	case notFound:
+		return []Finding{{Rule: "unit-dropin-orphan", Severity: Warning, Raw: said,
 			Text: unit + " is not on this machine, so systemd does not read the drop-in"}}, notes, nil
 	case problem != "":
-		return nil, append(notes, problem), nil
+		return nil, append(notes, in.say(problem, said)), nil
 	}
 	own := func(f Finding) bool { return strings.HasPrefix(f.Raw, in.path+":") }
 	if !slices.ContainsFunc(out, func(f Finding) bool { return !own(f) }) {
@@ -213,7 +213,7 @@ func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []str
 	}
 	var before []Finding
 	if ok {
-		before, _, _ = readVerify(res, in.data, file, in.path, names...)
+		before, _, _, _ = readVerify(res, in.data, file, in.path, names...)
 	} else {
 		// No baseline: what is said about the unit is not known to be
 		// the drop-in's doing.
@@ -232,8 +232,9 @@ func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []str
 // called one of names (its name, a template's instance, the unit it is an
 // alias of), read from file, which is path on the machine; data is that
 // file's content. problem, when set, is why it says nothing about the
-// unit, as a note; notFound is then the line saying no unit has the name.
-func readVerify(res Result, data []byte, file, path string, names ...string) (out []Finding, problem, notFound string) {
+// unit, as a note, and said the line of verify's behind it; notFound is
+// set when that line says no unit has the name.
+func readVerify(res Result, data []byte, file, path string, names ...string) (out []Finding, problem, said string, notFound bool) {
 	syntax := -1        // index in out of the unit-syntax finding the summary lines belong to
 	recognized := false // a line about some unit was read
 	var unknown []string
@@ -244,14 +245,14 @@ func readVerify(res Result, data []byte, file, path string, names ...string) (ou
 			syntax = len(out) - 1
 		}
 	}
-	said := map[string]bool{}
+	seen := map[string]bool{}
 	for _, l := range strings.Split(string(res.Err), "\n") {
 		// A line said twice is one problem: a template's drop-in is read
 		// for the template and again for its instance.
-		if l == "" || said[l] {
+		if l == "" || seen[l] {
 			continue
 		}
-		said[l] = true
+		seen[l] = true
 		// The scratch path is the real one from here on: findings never
 		// carry it, and nothing but this file can be at that path.
 		raw := strings.ReplaceAll(l, file, path)
@@ -319,7 +320,7 @@ func readVerify(res Result, data []byte, file, path string, names ...string) (ou
 				continue // Documentation= names a man page that is not installed: no problem with the unit
 			case strings.HasPrefix(msg, "Failed to open "):
 				// It never read the file; "Unit NAME not found." follows.
-				return nil, "systemd-analyze could not load the unit (" + raw + ")", ""
+				return nil, "systemd-analyze could not load the unit", raw, false
 			case unitStart.MatchString(msg):
 				reason := unitStart.FindStringSubmatch(msg)[1]
 				if d := unitDep.FindStringSubmatch(reason); d != nil && d[2] == "not found" {
@@ -369,7 +370,7 @@ func readVerify(res Result, data []byte, file, path string, names ...string) (ou
 			case strings.HasPrefix(msg, "not found"):
 				// It never loaded the file (unreadable, or a name it rejects),
 				// or no unit has the name.
-				return nil, "systemd-analyze could not load the unit (" + raw + ")", raw
+				return nil, "systemd-analyze could not load the unit", raw, true
 			case strings.HasPrefix(msg, "failed to load properly") && len(remarks) > 0 && syntax < 0:
 				// It did not load: its remarks were the reasons.
 				for _, i := range remarks {
@@ -396,11 +397,10 @@ func readVerify(res Result, data []byte, file, path string, names ...string) (ou
 	}
 	if res.Exit != 0 && !recognized && len(out) == 0 {
 		// It said nothing about any unit: it did not get as far as the file.
-		msg := fmt.Sprintf("exit %d", res.Exit)
 		if len(unknown) > 0 {
-			msg = unknown[0]
+			said = unknown[0]
 		}
-		return nil, "systemd-analyze could not check the unit (" + msg + ")", ""
+		return nil, fmt.Sprintf("systemd-analyze could not check the unit (exit %d)", res.Exit), said, false
 	}
-	return out, "", ""
+	return out, "", "", false
 }

@@ -326,11 +326,11 @@ func TestAccountsToolBroken(t *testing.T) {
 			{"killed", "echo 'invalid password file entry'\nkill -9 $$\n", "", tool + " was killed; only sc's own rules ran"},
 			{"hung", "sleep 60\n", "", tool + " did not finish in time; only sc's own rules ran"},
 			{"cannot open", "for a in \"$@\"; do f=$a; done\necho \"" + tool + ": cannot open $f\" >&2\nexit 3\n", "",
-				tool + " could not check the file (" + tool + ": cannot open " + map[string]string{"pwck": "/etc/shadow", "grpck": "/etc/gshadow"}[tool] + ")"},
+				tool + " could not check the file (exit 3) said: " + tool + ": cannot open " + map[string]string{"pwck": "/etc/shadow", "grpck": "/etc/gshadow"}[tool]},
 			{"usage", "exit 1\n", "", tool + " could not check the file (exit 1)"},
 			{"exit 2, nothing said", "exit 2\n", "", tool + " exited 2 without a message sc understands; the file was not checked"},
 			{"exit 2, only its last line", "echo '" + tool + ": no changes'\nexit 2\n", "", tool + " exited 2 without a message sc understands; the file was not checked"},
-			{"something on stderr", "echo 'a new remark' >&2\nexit 0\n", "", tool + " printed something sc does not understand (a new remark)"},
+			{"something on stderr", "echo 'a new remark' >&2\nexit 0\n", "", tool + " printed something sc does not understand said: a new remark"},
 			{"a message sc does not know", "echo 'a check pwck learns later'\necho \"delete line '" + strings.TrimSuffix(data[tool], "\n") + "'? No\"\nexit 2\n",
 				"1 " + map[string]string{"pwck": "passwd-invalid", "grpck": "group-invalid"}[tool] + " warning", ""},
 		} {
@@ -340,7 +340,7 @@ func TestAccountsToolBroken(t *testing.T) {
 				os.WriteFile(filepath.Join(c.Run.Dirs[0], tool), []byte("#!/bin/sh\n"+tc.script), 0o755)
 			}
 			rep, err := c.Check(context.Background(), path[tool], []byte(data[tool]))
-			if err != nil || brief(rep.Findings) != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+			if err != nil || brief(rep.Findings) != tc.want || notesSaid(rep) != tc.note {
 				t.Errorf("%s %s: %q %q %v", tool, tc.name, brief(rep.Findings), rep.Notes, err)
 			}
 			for _, f := range rep.Findings {

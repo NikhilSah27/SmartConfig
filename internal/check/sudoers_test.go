@@ -79,8 +79,8 @@ func TestSudoersVisudo(t *testing.T) {
 		// Includes. As a user the real drop-ins cannot be opened: not a
 		// clean run.
 		{name: "includedir, user", golden: "testdata/visudo/incdir.user", sudoers: "root ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n",
-			note: "visudo could not read everything (/etc/sudoers.d/90-vboxuser-nopasswd: Permission denied); the included files were not all checked|" +
-				"visudo could not read everything (/etc/sudoers.d/README: Permission denied); the included files were not all checked"},
+			note: "visudo could not read everything; the included files were not all checked said: " +
+				"visudo: /etc/sudoers.d/90-vboxuser-nopasswd: Permission denied|visudo: /etc/sudoers.d/README: Permission denied"},
 		{name: "include of a missing file", golden: "testdata/visudo/incmissing", sudoers: "root ALL=(ALL:ALL) ALL\n@include /etc/sudoers.d/no-such-file\n", code: 1,
 			want: "2 sudoers-syntax error", text: "includes a file that does not exist", raw: "visudo: /etc/sudoers.d/no-such-file: No such file or directory"},
 		{name: "relative include, file exists", golden: "testdata/visudo/increl", sudoers: "root ALL=(ALL:ALL) ALL\n@include sudoers.local\n", have: []string{"/etc/sudoers.local"}, code: 1,
@@ -91,7 +91,7 @@ func TestSudoersVisudo(t *testing.T) {
 			want: "3 sudoers-syntax blocker", note: noteOther, text: "syntax error at column 13"},
 		{name: "error in a drop-in only", golden: "testdata/visudo/incotheronly.root", sudoers: "root ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n", code: 1, note: noteOther},
 		{name: "include of a device", golden: "testdata/visudo/incdevnull", sudoers: "root ALL=(ALL:ALL) ALL\n@include /dev/null\n", code: 1,
-			note: "visudo could not read everything (/dev/null is not a regular file); the included files were not all checked"},
+			note: "visudo could not read everything; the included files were not all checked said: visudo: /dev/null is not a regular file"},
 		// A drop-in is checked alone, under its own name.
 		{name: "drop-in", golden: "testdata/visudo/dropin", path: "/etc/sudoers.d/90-local", sudoers: "alice ALL=(ALL) NOPASSWD ALL\n", code: 1,
 			want: "1 sudoers-syntax blocker", raw: "/etc/sudoers.d/90-local:1:26: syntax error\nalice ALL=(ALL) NOPASSWD ALL\n                         ^~~"},
@@ -113,7 +113,7 @@ func TestSudoersVisudo(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		if len(rep.Findings) > 0 {
@@ -242,7 +242,7 @@ func TestSudoersMode(t *testing.T) {
 		if tc.note != "" {
 			notes = tc.note + "|" + notes
 		}
-		if got := brief(rep.Findings); got != want || strings.Join(rep.Notes, "|") != notes {
+		if got := brief(rep.Findings); got != want || notesSaid(rep) != notes {
 			t.Errorf("%s: %q %q", tc.name, got, rep.Notes)
 		}
 		if tc.want != "" && (rep.Findings[0].Text != tc.want || rep.Findings[0].Path != "/etc/sudoers.d/90-local") {
@@ -267,13 +267,13 @@ func TestSudoersVisudoBroken(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "visudo"), []byte("#!/bin/sh\necho '/x/sudoers:2:19: syntax error' >&2\nkill -9 $$\n"), 0o755)
 	rep, err := c.Check(context.Background(), "/etc/sudoers", []byte(sudoersOne))
-	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || strings.Join(rep.Notes, "|") != "visudo was killed; only sc's own rules ran" {
+	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || notesSaid(rep) != "visudo was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(filepath.Join(c.Run.Dirs[0], "visudo"), []byte("#!/bin/sh\nsleep 60\n"), 0o755)
 	c.Run.Timeout = 200 * time.Millisecond
 	rep, err = c.Check(context.Background(), "/etc/sudoers", []byte(sudoersOne))
-	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || strings.Join(rep.Notes, "|") != "visudo did not finish in time; only sc's own rules ran" {
+	if err != nil || brief(rep.Findings) != "0 sudoers-mode blocker" || notesSaid(rep) != "visudo did not finish in time; only sc's own rules ran" {
 		t.Errorf("hung: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	var zero fakeInfo

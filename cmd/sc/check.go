@@ -201,6 +201,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, notes []string, unchecked int, verbose bool) error {
 	out := cmd.OutOrStdout()
 	var rows []findingRow
+	var said []string        // the validators' words behind the notes, for -v
 	checked, partial := 0, 0 // partial: a validator was cut short (its note says so)
 	for _, t := range targets {
 		check := c.Check
@@ -225,6 +226,9 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 		for _, n := range rep.Notes {
 			notes = append(notes, show(t.label)+": "+n)
 		}
+		for _, s := range rep.Said {
+			said = append(said, show(t.label)+": "+show(s))
+		}
 	}
 
 	n, err := findingsTable(out, rows)
@@ -233,6 +237,17 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 	}
 	for _, note := range notes {
 		fmt.Fprintln(out, "note: "+note)
+	}
+	// Like a finding's raw lines, a validator's words behind a note may
+	// quote a file: with -v only (M3 follow-up 4).
+	switch {
+	case len(said) > 0 && verbose:
+		fmt.Fprintln(out, "\nbehind the notes, from the validators:")
+		for _, s := range said {
+			fmt.Fprintln(out, "  "+s)
+		}
+	case len(said) > 0 && len(rows) == 0:
+		fmt.Fprintln(out, "sc check -v shows what the validators said.")
 	}
 	// A file that was not checked is not a clean file: exit 1, unless a
 	// finding already makes it 2.

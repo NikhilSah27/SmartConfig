@@ -33,6 +33,11 @@ type Report struct {
 	Checker  string    // "" when no checker reads the file
 	Findings []Finding // sorted by line
 	Notes    []string  // what could not be checked, e.g. "no validator found (findmnt)"
+	// Said is what a validator printed behind a note, in its own words:
+	// sc check shows it with -v, sc edit under the notes (M3 follow-up 4).
+	// Like a finding's Raw, it may quote a file, so it never goes to the
+	// journal.
+	Said []string
 	// Incomplete: a validator was cut short this time (killed, out of
 	// time, output cut), so findings may be missing. A problem it found
 	// before is then not known to be gone.
@@ -50,6 +55,21 @@ type input struct {
 	// incomplete is set by validate when a validator did not run to the
 	// end (Report.Incomplete).
 	incomplete *bool
+	// said collects Report.Said.
+	said *[]string
+}
+
+// say keeps lines a validator printed for Report.Said and returns note,
+// which is sc's own words only.
+func (in input) say(note string, lines ...string) string {
+	if in.said != nil {
+		for _, l := range lines {
+			if l != "" {
+				*in.said = append(*in.said, l)
+			}
+		}
+	}
+	return note
 }
 
 // checkers maps the graph's checker names to their code.
@@ -112,6 +132,8 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 	in.file = file
 	incomplete := false
 	in.incomplete = &incomplete
+	var said []string
+	in.said = &said
 	fs, notes, err := fn(ctx, c, in)
 	if err != nil {
 		return Report{}, fmt.Errorf("check %s: %w", path, err)
@@ -120,7 +142,7 @@ func (c *Checks) check(ctx context.Context, in input) (Report, error) {
 		fs[i].Path = path
 	}
 	sort.SliceStable(fs, func(i, j int) bool { return fs[i].Line < fs[j].Line })
-	return Report{Checker: name, Findings: fs, Notes: notes, Incomplete: incomplete}, nil
+	return Report{Checker: name, Findings: fs, Notes: notes, Said: said, Incomplete: incomplete}, nil
 }
 
 // pathExists reports whether p exists on this machine.

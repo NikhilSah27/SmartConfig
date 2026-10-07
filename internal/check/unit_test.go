@@ -120,13 +120,13 @@ func TestUnitVerify(t *testing.T) {
 			"0 unit-syntax error", "", "systemd cannot load the unit"},
 		// What verify says when it did not get as far as the unit.
 		{"usage error", writeGolden(t, "usage", "", "systemd-analyze: unrecognized option '--no-such-option'\n"), "my.service", goodUnit, 1,
-			"", "systemd-analyze could not check the unit (systemd-analyze: unrecognized option '--no-such-option')", ""},
+			"", "systemd-analyze could not check the unit (exit 1) said: systemd-analyze: unrecognized option '--no-such-option'", ""},
 		{"unit not found", writeGolden(t, "notfound", "", "my.service: Failed to open /SCRATCH/my.service: Permission denied\nUnit my.service not found.\n"),
-			"my.service", goodUnit, 1, "", "systemd-analyze could not load the unit (my.service: Failed to open /etc/systemd/system/my.service: Permission denied)", ""},
+			"my.service", goodUnit, 1, "", "systemd-analyze could not load the unit said: my.service: Failed to open /etc/systemd/system/my.service: Permission denied", ""},
 		{"unit not found, no reason", writeGolden(t, "notfound2", "", "Unit my.service not found.\n"),
-			"my.service", goodUnit, 1, "", "systemd-analyze could not load the unit (Unit my.service not found.)", ""},
+			"my.service", goodUnit, 1, "", "systemd-analyze could not load the unit said: Unit my.service not found.", ""},
 		{"no manager", writeGolden(t, "nomanager", "", "Failed to initialize manager: Permission denied\n"), "my.service", goodUnit, 1,
-			"", "systemd-analyze could not check the unit (Failed to initialize manager: Permission denied)", ""},
+			"", "systemd-analyze could not check the unit (exit 1) said: Failed to initialize manager: Permission denied", ""},
 		{"exit 1 and nothing said", writeGolden(t, "silent", "", ""), "my.service", goodUnit, 1,
 			"", "systemd-analyze could not check the unit (exit 1)", ""},
 		// Something verify learns to say later about a unit that loads.
@@ -141,7 +141,7 @@ func TestUnitVerify(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		if tc.text != "" && (len(rep.Findings) == 0 || rep.Findings[0].Text != tc.text) {
@@ -225,13 +225,13 @@ func TestUnitVerifyBroken(t *testing.T) {
 	c, _ := fakeMachine(t, nil, "", "", 0)
 	unit := []byte(goodUnit)
 	rep, err := c.Check(context.Background(), unitDir+"my.service", unit)
-	if err != nil || rep.Checker != "unit" || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != unitNoVerif {
+	if err != nil || rep.Checker != "unit" || len(rep.Findings) != 0 || notesSaid(rep) != unitNoVerif {
 		t.Errorf("no tool: %+v %v", rep, err)
 	}
 	tool := filepath.Join(c.Run.Dirs[0], "systemd-analyze")
 	os.WriteFile(tool, []byte("#!/bin/sh\necho 'my.service: Command /usr/bin/x is not exec' >&2\nkill -9 $$\n"), 0o755)
 	rep, err = c.Check(context.Background(), unitDir+"my.service", unit)
-	if err != nil || len(rep.Findings) != 0 || strings.Join(rep.Notes, "|") != "systemd-analyze was killed; only sc's own rules ran" {
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "systemd-analyze was killed; only sc's own rules ran" {
 		t.Errorf("killed: %q %q %v", brief(rep.Findings), rep.Notes, err)
 	}
 	os.WriteFile(tool, []byte("#!/bin/sh\nhead -c 5000 /dev/zero | tr '\\0' x >&2\nexit 1\n"), 0o755)
@@ -380,7 +380,7 @@ func TestUnitDropIn(t *testing.T) {
 		if err != nil || rep.Checker != "unitdropin" {
 			t.Fatalf("%s: %+v %v", tc.name, rep, err)
 		}
-		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+		if got := brief(rep.Findings); got != tc.want || notesSaid(rep) != tc.note {
 			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
 		}
 		for _, f := range rep.Findings {

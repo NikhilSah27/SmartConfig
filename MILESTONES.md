@@ -217,7 +217,7 @@ where nss-systemd supplies root.
 3. Done (`ef2989d`): sshd: a drop-in is checked inside the main file, as
    sshd reads it, not alone (a false blocker when the two only work
    together).
-4. Notes: keep a validator's raw lines for `-v`.
+4. Done: notes keep a validator's raw lines for `-v`.
 5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
    its scratch copy at once (now swept after an hour).
 6. A read-only root (M4's rescue shell): run sc's own rules without a

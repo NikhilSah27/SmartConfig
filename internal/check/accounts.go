@@ -421,13 +421,10 @@ func ckRun(ctx context.Context, c *Checks, in input, tool string, args ...string
 	real := strings.NewReplacer(filepath.Dir(in.file)+"/", filepath.Dir(in.path)+"/")
 	first, _, _ := strings.Cut(strings.TrimSpace(real.Replace(string(res.Err))), "\n")
 	if res.Exit != 0 && res.Exit != 2 {
-		if first == "" {
-			first = fmt.Sprintf("exit %d", res.Exit)
-		}
-		return nil, res.Exit, append(notes, tool+" could not check the file ("+first+")"), false, nil
+		return nil, res.Exit, append(notes, in.say(fmt.Sprintf("%s could not check the file (exit %d)", tool, res.Exit), first)), false, nil
 	}
 	if first != "" {
-		notes = append(notes, tool+" printed something sc does not understand ("+first+")")
+		notes = append(notes, in.say(tool+" printed something sc does not understand", first))
 	}
 	return ckMessages(real.Replace(string(res.Out))), res.Exit, notes, true, nil
 }
