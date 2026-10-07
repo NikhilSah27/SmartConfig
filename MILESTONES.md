@@ -323,7 +323,7 @@ snapshot.
    local-fs or `Conflicts=` with emergency, the row -1 fallback, a
    warning-only change without undo, and the 5-file console cap (A7,
    B section 4).
-7. Done: cosmetics (B): the console's times have their date; a command
+7. Done (`284c381`): cosmetics (B): the console's times have their date; a command
    that only reads makes no `$SC_HOME/tmp`; a WAL store on a read-only
    root says what it says on a writable one ("sc needs delete"), not
    "unable to open database file (14)"; the "Last healthy" boot whose row

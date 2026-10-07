@@ -2283,3 +2283,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   skips it: a verdict cut in its row id can no longer pull the healthy
   boot's line back. Old boots files have no mark and read as before.
   The new case in `TestReadTornLines` failed before. Full checks passed.
+- **M4 follow-up 7, the cosmetics, done `284c381`** (chunk G). The console's
+  rows have their date (the lab's goldens and test reports too); the
+  row -1 healthy boot has its own title; `sc check` and `sc status` make
+  no `$SC_HOME/tmp`; a WAL store on a read-only root gets sc's own
+  "sc needs delete" (a copy was tried and dropped: sc refuses WAL
+  anyway); `FS_IOC_GETFLAGS` is only for the ports sc builds for (mips
+  and sparc were never built: the review's case cannot happen). Tests
+  for each; `make lab-test` 326 and the full checks passed.
