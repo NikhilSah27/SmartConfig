@@ -224,7 +224,7 @@ Failed since:  1 boot, last 10-06 01:29: a mount failed, emergency mode
 scd:           not running
 
 Changed since the last healthy boot, worst first:
-95838f 01:26  blocker fstab-source-missing, line 4  /etc/fstab
+95838f 10-06 01:26  blocker fstab-source-missing, line 4  /etc/fstab
 
 To put /etc/fstab back:
   mount -o remount,rw /

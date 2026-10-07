@@ -754,7 +754,7 @@ func labNormalise(t *testing.T, out string, ids map[string]string) string {
 	}{
 		{`(?m)^(Last healthy:  )\d{4}-\d\d-\d\d \d\d:\d\d, `, "${1}<YYYY-MM-DD HH:MM>, ", true},
 		{`(?m)^(Failed since:  )1 boot, last \d\d-\d\d \d\d:\d\d: `, "${1}<K boots>, last <MM-DD HH:MM>: ", strings.Contains(out, "\nFailed since:")},
-		{`(?m)^<BAD> \d\d:\d\d  (blocker fstab-source-missing, line )4  `, "<BAD> <HH:MM>  ${1}<N>  ", true},
+		{`(?m)^<BAD> \d\d-\d\d \d\d:\d\d  (blocker fstab-source-missing, line )4  `, "<BAD> <MM-DD HH:MM>  ${1}<N>  ", true},
 	} {
 		re := regexp.MustCompile(r.re)
 		if r.need && !re.MatchString(out) {
@@ -796,7 +796,7 @@ func TestStatusConsoleLab(t *testing.T) {
 		}
 		got := labNormalise(t, out, ids)
 		for _, want := range []string{tc.head, "Last healthy:  <YYYY-MM-DD HH:MM>, boot <B1:8>\n",
-			"\n<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab\n", fmt.Sprintf(undo, tc.remount, map[bool]string{true: login}[tc.outcome == "emergency"])} {
+			"\n<BAD> <MM-DD HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab\n", fmt.Sprintf(undo, tc.remount, map[bool]string{true: login}[tc.outcome == "emergency"])} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: lacks %q:\n%s", tc.outcome, want, got)
 			}
@@ -1139,5 +1139,26 @@ func TestStatusFileNowLink(t *testing.T) {
 	boot.Record(home, "aaaaaaaa-2", "ok", time.Now(), newestRow(t)-1, "local-fs=active")
 	if r := sc(t, "status"); r.code != 0 || !strings.Contains(r.stdout, "now a symlink to "+filepath.Join(dir, "other")) || strings.Contains(r.stdout, "error:") {
 		t.Errorf("a link that was a link: %+v", r)
+	}
+}
+
+// A healthy boot whose verdict was given while the store could not be read
+// (row -1) is the last healthy one, but which change came after it is not
+// known: the titles say that, not "no healthy boot is recorded" under
+// "Last healthy:"; the console's rows carry their date (M4 follow-up 7).
+func TestStatusHealthyRowUnknown(t *testing.T) {
+	_, fstab, home := statusEnv(t, "ro", false)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), -1, "local-fs=active")
+	snap(t, fstab, goodLine)
+	snap(t, fstab, badLine)
+	r := sc(t, "status")
+	if !strings.Contains(r.stdout, "Last healthy:  ") || strings.Contains(r.stdout, "no healthy boot") ||
+		!strings.Contains(r.stdout, "\nThe newest changes (which came after the last healthy boot is not known), newest first:\n") {
+		t.Errorf("%+v", r)
+	}
+	r = sc(t, "status", "--console")
+	if !strings.Contains(r.stdout, "\nThe newest changes, worst first (not known which came after it):\n") ||
+		!regexp.MustCompile(`\n[0-9a-f]{6} \d\d-\d\d \d\d:\d\d  blocker`).MatchString(r.stdout) {
+		t.Errorf("console: %+v", r)
 	}
 }

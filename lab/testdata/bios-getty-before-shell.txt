@@ -13,7 +13,7 @@ Last healthy:  2026-10-05 16:32, boot 5dfd9262
 scd:           running (pid 629)
 
 Changed since the last healthy boot, worst first:
-6e6b92 16:33  blocker fstab-source-missing, line 4  /etc/fstab
+6e6b92 10-05 16:33  blocker fstab-source-missing, line 4  /etc/fstab
 
 To put /etc/fstab back:
   sc restore 7228aa

@@ -1085,7 +1085,7 @@ Failed since:  <K boots>, last <MM-DD HH:MM>: never reached multi-user
 scd:           not running
 
 Changed since the last healthy boot, worst first:
-<BAD> <HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab
+<BAD> <MM-DD HH:MM>  blocker fstab-source-missing, line <N>  /etc/fstab
 
 To put /etc/fstab back:
   mount -o remount,rw /
@@ -1103,7 +1103,7 @@ Failed since:  1 boot, last 10-04 12:05: never reached multi-user
 scd:           not running
 
 Changed since the last healthy boot, worst first:
-c7146c 12:03  blocker fstab-source-missing, line 4  /etc/fstab
+c7146c 10-04 12:03  blocker fstab-source-missing, line 4  /etc/fstab
 
 To put /etc/fstab back:
   mount -o remount,rw /
@@ -1158,10 +1158,10 @@ class TestGolden(unittest.TestCase):
         self.assertTrue(any("line 12: expected '  sync'" in p for p in r.problems), r.problems)
 
     def test_81_columns(self):
-        long_row = "c7146c 12:03  blocker fstab-source-missing, line 4  /etc/" + "x" * 24
+        long_row = "c7146c 10-04 12:03  blocker fstab-source-missing, line 4  /etc/" + "x" * 18
         self.assertEqual(len(long_row), 81)
-        report = REPORT.replace("c7146c 12:03  blocker fstab-source-missing, line 4  /etc/fstab", long_row)
-        golden = GOLDEN.replace("/etc/fstab\n\nTo", "/etc/" + "x" * 24 + "\n\nTo")
+        report = REPORT.replace("c7146c 10-04 12:03  blocker fstab-source-missing, line 4  /etc/fstab", long_row)
+        golden = GOLDEN.replace("/etc/fstab\n\nTo", "/etc/" + "x" * 18 + "\n\nTo")
         r = console.match_golden(self.lines(report), golden, BIND)
         self.assertFalse(r.ok)
         self.assertEqual(r.problems, ["line 7 is 81 columns, more than 80: %r" % long_row])

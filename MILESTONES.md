@@ -323,11 +323,14 @@ snapshot.
    local-fs or `Conflicts=` with emergency, the row -1 fallback, a
    warning-only change without undo, and the 5-file console cap (A7,
    B section 4).
-7. Cosmetic: the console's times have no date; `sc status` makes
-   `$SC_HOME/tmp`; a WAL store on a read-only root says "unable to open
-   database file (14)"; `FS_IOC_GETFLAGS` is wrong on mips and sparc;
-   "The newest changes" comes with a "Last healthy" line when the only ok
-   verdict has row -1 (B).
+7. Done: cosmetics (B): the console's times have their date; a command
+   that only reads makes no `$SC_HOME/tmp`; a WAL store on a read-only
+   root says what it says on a writable one ("sc needs delete"), not
+   "unable to open database file (14)"; the "Last healthy" boot whose row
+   is not known has its own title, not "no healthy boot is recorded".
+   `FS_IOC_GETFLAGS`: mips and sparc were never built (sc builds for the
+   64-bit ports with `fstatat`, and Go has no sparc port), so the
+   constant is now only for the ports sc builds for.
 8. `fstab=no` does not cover crypttab: a second LUKS volume asks for its
    passphrase in the rescue boot (`luks.crypttab=no`, if wanted; LUKS is
    a non-goal) (A10).

@@ -241,8 +241,8 @@ func TestCheckCLIScratchFallback(t *testing.T) {
 		t.Errorf("scratch left: %v", left)
 	}
 	scratchParents = func() []string { return []string{ro(), ro()} }
-	if r := sc(t, "check", fstab); r.code != 1 || !strings.HasPrefix(r.stderr, "sc: no scratch directory for the validators' copies: "+home+"/tmp (permission denied); no writable place for a private directory: ") ||
-		strings.Count(r.stderr, "permission denied") != 3 || strings.Count(r.stderr, "\n") != 1 {
+	if r := sc(t, "check", fstab); r.code != 1 || !strings.HasPrefix(r.stderr, "sc: no scratch directory for the validators' copies ("+home+"/tmp is not one this user may write); no writable place for a private directory: ") ||
+		strings.Count(r.stderr, "permission denied") != 2 || strings.Count(r.stderr, "\n") != 1 {
 		t.Errorf("none writable: %+v", r)
 	}
 }
@@ -391,5 +391,20 @@ func TestCheckCLISaidShown(t *testing.T) {
 	r = sc(t, "check", "-v", fstab)
 	if strings.Contains(r.stdout, "\x1b") || !strings.Contains(r.stdout, "  "+fstab+`: "findmnt: \x1b[7mbad"`+"\n\n1 blocker, 1 warning in 1 file.") {
 		t.Errorf("with -v: %q", r.stdout)
+	}
+}
+
+// Commands that only read do not make $SC_HOME/tmp: their scratch copies
+// go to a private directory unless scd made it (M4 follow-up 7).
+func TestReadersMakeNoTmp(t *testing.T) {
+	_, fstab := checkEnv(t)
+	os.WriteFile(fstab, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	home := os.Getenv("SC_HOME")
+	mustSC(t, "init")
+	mustSC(t, "snapshot", fstab)
+	sc(t, "check", fstab)
+	sc(t, "status")
+	if _, err := os.Stat(filepath.Join(home, "tmp")); !os.IsNotExist(err) {
+		t.Errorf("%s/tmp made: %v", home, err)
 	}
 }

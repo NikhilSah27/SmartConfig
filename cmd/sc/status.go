@@ -466,7 +466,12 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 			statusUndo(&undoText, c, *undo, bounded, mode, ro, console, menuSet)
 		}
 		title := fmt.Sprintf("\nChanged since %s, worst first:\n", since)
-		if !bounded {
+		switch {
+		case !bounded && healthy:
+			// Its verdict was given while the store could not be read
+			// (M4 follow-up 7: "no healthy boot" under "Last healthy").
+			title = "\nThe newest changes, worst first (not known which came after it):\n"
+		case !bounded:
 			title = "\nThe newest changes, worst first (no healthy boot is recorded):\n"
 		}
 		// 20 rows of 25: systemd's prompt takes the other five. The rows
@@ -484,15 +489,20 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 				fmt.Fprintf(out, "%s more (sc status lists them all)\n", count(len(shown)-i, "file"))
 				break
 			}
-			prefix := fmt.Sprintf("%s %s  %-*s  ", e.row.ID, time.Unix(e.row.TS, 0).Local().Format("15:04"), w, consoleProblem(e))
+			// With the date: in S3, "053fdf 21:06" was the evening before
+			// (M4 follow-up 7).
+			prefix := fmt.Sprintf("%s %s  %-*s  ", e.row.ID, time.Unix(e.row.TS, 0).Local().Format("01-02 15:04"), w, consoleProblem(e))
 			fmt.Fprintf(out, "%s%s\n", prefix, fit(prefix, show(e.row.Path)))
 		}
 		out.Write(undoText.Bytes())
 		return exit(worst)
 	} else {
-		if bounded {
+		switch {
+		case bounded:
 			fmt.Fprintf(out, "\nChanged since %s, newest first:\n", since)
-		} else {
+		case healthy:
+			fmt.Fprintln(out, "\nThe newest changes (which came after the last healthy boot is not known), newest first:")
+		default:
 			fmt.Fprintln(out, "\nThe newest changes (no healthy boot is recorded), newest first:")
 		}
 		tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)

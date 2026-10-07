@@ -370,7 +370,7 @@ Failed since:  1 boot, last 10-04 12:05: never reached multi-user
 scd:           not running
 
 Changed since the last healthy boot, worst first:
-c7146c 12:03  blocker fstab-source-missing, line 4  /etc/fstab
+c7146c 10-04 12:03  blocker fstab-source-missing, line 4  /etc/fstab
 
 To put /etc/fstab back:
   mount -o remount,rw /

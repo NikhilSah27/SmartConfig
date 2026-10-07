@@ -217,6 +217,12 @@ func open(dir string) (*Store, error) {
 	}
 	for attempt := 0; ; attempt++ {
 		s, err := openDB(dir, file, dir, why)
+		if err != nil && walUnreadable(err, file) {
+			// Where it may not write, SQLite cannot even open a WAL store
+			// ("unable to open database file (14)" on a read-only root, M4
+			// follow-up 7): say what a store sc may write says.
+			return nil, fmt.Errorf("store %s uses journal mode wal, sc needs delete", dir)
+		}
 		if err == nil || !hotJournal(err) {
 			return s, err
 		}
@@ -258,6 +264,25 @@ func openDB(dir, file, name, why string) (*Store, error) {
 func hotJournal(err error) bool {
 	var se *sqlite.Error
 	return errors.As(err, &se) && se.Code() == sqlite3.SQLITE_READONLY_ROLLBACK
+}
+
+// walUnreadable reports whether err is SQLite's for a WAL store it may not
+// write next to (SQLITE_CANTOPEN on a read-only file system,
+// SQLITE_READONLY for a directory this user may not write): the store's
+// header says WAL (its file format bytes are 2). sc never makes one.
+func walUnreadable(err error, file string) bool {
+	var se *sqlite.Error
+	if !errors.As(err, &se) || se.Code()&0xff != sqlite3.SQLITE_CANTOPEN && se.Code()&0xff != sqlite3.SQLITE_READONLY {
+		return false
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 20)
+	_, err = io.ReadFull(f, head)
+	return err == nil && head[18] == 2 && head[19] == 2
 }
 
 // copyParents are the places tried for a repaired copy: tmpfs first,

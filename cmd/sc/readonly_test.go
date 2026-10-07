@@ -197,3 +197,35 @@ func TestReadOnlyCopyRemovedOnSignal(t *testing.T) {
 	}
 	gone("SIGTERM")
 }
+
+// A store in WAL mode where sc may not write (a read-only root): SQLite
+// cannot open it there ("unable to open database file (14)", M4 follow-up
+// 7); sc says what it says of a WAL store it may write: it needs delete.
+func TestReadOnlyWALCLI(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory of mode 0500")
+	}
+	home := t.TempDir()
+	t.Setenv("SC_HOME", home)
+	mustSC(t, "init")
+	p := filepath.Join(t.TempDir(), "conf")
+	os.WriteFile(p, []byte("x\n"), 0o644)
+	mustSC(t, "snapshot", "-q", p)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(home, "changes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	want := "sc: store " + home + " uses journal mode wal, sc needs delete\n"
+	if r := sc(t, "log", p); r.code != 1 || r.stderr != want {
+		t.Errorf("writable: %+v", r)
+	}
+	os.Chmod(home, 0o500)
+	t.Cleanup(func() { os.Chmod(home, 0o700) })
+	if r := sc(t, "log", p); r.code != 1 || r.stderr != want {
+		t.Errorf("read-only: %+v", r)
+	}
+}
