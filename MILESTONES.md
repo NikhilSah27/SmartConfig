@@ -288,7 +288,7 @@ snapshot.
   2 s: This boot, Last healthy, Failed since, scd), so a hung `sc` still
   says which boot was healthy before the 60 s stop; one in time is one
   write, as the lab matches it whole (chunk C, C6).
-- Stays (your pick): a SIGHUP in the first milliseconds of `sc status
+- Stays (`2ae67e8`, your pick): a SIGHUP in the first milliseconds of `sc status
   --console`, before `signal.Notify` runs, ends sc by the kernel's
   default (chunk D, B5; 3 to 5 ms, said in `main`). The shell still
   starts: the drop-in's `ExecStartPre=-` lets the report fail.
@@ -320,7 +320,7 @@ snapshot.
    version's restore (B9).
 3. `GRUB_TOP_LEVEL` is ignored: the rescue entry boots the newest kernel
    (A9).
-4. Documented (your pick): `systemctl soft-reboot` starts a new session
+4. Documented (`2ae67e8`, your pick): `systemctl soft-reboot` starts a new session
    with the same boot id: it gets no "seen" line (the boot has its
    verdict), so a failure in it before multi-user brings no menu (A5,
    the cost of A3's fix). systemd 255 has no soft-reboot count to tell

@@ -2317,3 +2317,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   Full checks passed; the first run's root pass lost one fake
   `systemd-analyze` to a VM pause (11.6 s against the 10 s limit, 3 of 3
   reruns pass), so fake machines get a minute, `b7a89e6`.
+- **Soft-reboot and the early SIGHUP documented, `2ae67e8`** (chunk G, your
+  picks: M4 follow-up 4 and the chunk D note stay as limits). The README
+  says a soft-reboot is the same boot to sc (systemd 255 has no count of
+  them), so a failure in it brings no menu; the SIGHUP window (3 to 5 ms
+  before `signal.Notify`) was already said in `main`, and the rescue
+  shell starts even if the report dies. Docs only. Chunk G's items are
+  all in; next, its review.
