@@ -1893,6 +1893,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     tty1-versus-gdm question of plan section 7: gdm). 1 min 42 s and
     1 min 40 s to "Startup finished". `f11e5522` ended with a clean
     reboot at 06:14:05.
+  - The menu came up by itself, no key pressed, before the rescue boot
+    and again after it (your answer, 2026-10-07: "yes, the menu came up
+    by itself both times").
   - The rescue boot (`7ce2c935`, your photos): "SmartConfig rescue" from
     the menu, and the report above "Press Enter" as in the README: this
     boot (rescue), root read-only; last healthy `94783975`; failed since
