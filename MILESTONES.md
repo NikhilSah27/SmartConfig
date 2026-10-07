@@ -188,7 +188,10 @@ where nss-systemd supplies root.
   shows them all.
 - A file is checked alone, except netplan's files, which are merged as
   netplan merges them, and a unit's drop-in, which is checked with its
-  unit. Cross-file conflicts (two sudoers drop-ins) are not looked for.
+  unit, and an sshd drop-in, which is checked inside sshd_config with
+  the other drop-ins (alone, with a note, when one cannot be read or
+  another file stops sshd). Cross-file conflicts (two sudoers drop-ins)
+  are not looked for.
   A drop-in for every unit with a prefix (`foo-.service.d`) is not
   checked.
 - As a user, `sc check` cannot read some files (sudoers, a 0600 netplan
@@ -211,8 +214,8 @@ where nss-systemd supplies root.
    its drop-ins (medium).
 2. Done (`e9133ca`): sshd: a warning for a `ListenAddress` this machine
    does not have (no SSH there, and none at all when it is the only one).
-3. sshd: check a drop-in together with the main file, not alone (a false
-   blocker when the two only work together).
+3. Done: sshd: a drop-in is checked inside the main file, as sshd reads
+   it, not alone (a false blocker when the two only work together).
 4. Notes: keep a validator's raw lines for `-v`.
 5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
    its scratch copy at once (now swept after an hour).

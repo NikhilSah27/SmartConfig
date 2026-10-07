@@ -36,6 +36,7 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 		groupPath:    filepath.Join(dir, "no-group"),         // no admins to look for
 		passwdPath:   filepath.Join(dir, "no-passwd"),
 		addrs:        func() ([]netip.Addr, error) { return fakeAddrs, nil },
+		sshdRoot:     filepath.Join(dir, "no-root"), // no sshd_config: a drop-in is checked alone
 		exists:       func(p string) bool { return set[p] }}, args
 }
 

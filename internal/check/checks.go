@@ -25,6 +25,7 @@ type Checks struct {
 	groupPath    string                            // "": /etc/group, whose sudo and admin members are the admins
 	passwdPath   string                            // "": /etc/passwd, the users a group's members must be
 	addrs        func() ([]netip.Addr, error)      // nil: this machine's interface addresses; tests fake the machine
+	sshdRoot     string                            // "": /; tests fake the machine's /etc/ssh
 }
 
 // Report is the result of checking one file.

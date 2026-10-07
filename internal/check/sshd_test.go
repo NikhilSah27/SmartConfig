@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -291,7 +292,8 @@ func TestSshdReal(t *testing.T) {
 	if out, err := exec.Command("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v\n%s", err, out)
 	}
-	c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key}
+	// No sshd_config: a drop-in alone, whatever this machine has.
+	c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key, sshdRoot: t.TempDir()}
 	// As root, sshd checks its privilege separation directory after the
 	// file; where ssh.service never ran (a CI runner) there is none, and a
 	// clean file is then a note, not a clean run.
@@ -407,5 +409,120 @@ func TestSshdListenReal(t *testing.T) {
 	rep, _ := c.Check(context.Background(), sshdConfig, []byte(data+"ListenAddress 192.0.2.7\n"))
 	if want := fmt.Sprintf("%d sshd-listen-missing warning", len(have)+1); brief(rep.Findings) != want {
 		t.Errorf("%q, want %q (the machine has %v)", brief(rep.Findings), want, have)
+	}
+}
+
+// sshdRoot makes a fake machine's /etc/ssh: sshd_config is main, the
+// drop-ins are name -> content. It returns the root.
+func sshdRootWith(t *testing.T, main string, dropins map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	d := filepath.Join(root, "etc/ssh/sshd_config.d")
+	os.MkdirAll(d, 0o755)
+	if main != "" {
+		os.WriteFile(filepath.Join(root, sshdMain), []byte(main), 0o644)
+	}
+	for name, data := range dropins {
+		os.WriteFile(filepath.Join(d, name), []byte(data), 0o644)
+	}
+	return root
+}
+
+// A drop-in is checked as sshd reads it, inside sshd_config, with the
+// other drop-ins (M3 follow-up 3), by the real sshd on fake /etc/ssh trees.
+func TestSshdTogether(t *testing.T) {
+	for _, p := range []string{"/usr/sbin/sshd", "/usr/bin/ssh-keygen"} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skip("no " + p)
+		}
+	}
+	key := filepath.Join(t.TempDir(), "key")
+	if out, err := exec.Command("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v\n%s", err, out)
+	}
+	const include = "Include /etc/ssh/sshd_config.d/*.conf\n"
+	const akc = "AuthorizedKeysCommand /usr/bin/true\n"
+	other := map[string]string{"40-other.conf": "PasswordAuthentication no\n"}
+	alone := "; the drop-in was checked alone"
+	// As root sshd checks /run/sshd after the files (see TestSshdReal).
+	clean := ""
+	if _, err := os.Stat("/run/sshd"); err != nil && os.Geteuid() == 0 {
+		clean = "sshd did not finish checking the file (Missing privilege separation directory: /run/sshd)"
+	}
+	for _, tc := range []struct {
+		name, main string
+		dropins    map[string]string
+		data, want string
+		note       string
+	}{
+		{"a setting whose partner is in sshd_config", include + "AuthorizedKeysCommandUser nobody\n", other, akc, "", clean},
+		{"the same, the Include relative", "Include sshd_config.d/*.conf\nAuthorizedKeysCommandUser nobody\n", other, akc, "", clean},
+		{"the drop-in's own line", include, other, "Port 22\nPermitRootLogn no\n", "2 sshd-invalid blocker", ""},
+		{"a refusal it causes", include, other, akc, "0 sshd-invalid blocker", ""},
+		{"sshd_config refused without it too", include + akc, other, "Port 22\n", "",
+			"sshd refuses the configuration without the drop-in too (AuthorizedKeysCommand set without AuthorizedKeysCommandUser); the drop-in was not checked to the end"},
+		{"another drop-in refused", include, map[string]string{"40-other.conf": "PermitRootLogn no\n"}, "Port 22\n", "",
+			"sshd stops at a problem in another file, maybe before the drop-in" + alone},
+		{"not included", "Port 22\n", other, akc, "0 sshd-invalid blocker", sshdMain + " does not include it" + alone},
+		{"no sshd_config", "", other, akc, "0 sshd-invalid blocker", ""},
+	} {
+		c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key, sshdRoot: sshdRootWith(t, tc.main, tc.dropins)}
+		rep, err := c.Check(context.Background(), sshdDropIn, []byte(tc.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
+		}
+		for _, f := range rep.Findings {
+			if strings.Contains(f.Raw+f.Text+f.Key, c.Home) || f.Line > 0 && !strings.HasPrefix(f.Raw, sshdDropIn) {
+				t.Errorf("%s: %+v", tc.name, f)
+			}
+		}
+		if left, _ := os.ReadDir(filepath.Join(c.Home, "tmp")); len(left) != 0 {
+			t.Errorf("%s: scratch copies left: %v", tc.name, left)
+		}
+	}
+	if os.Geteuid() != 0 {
+		// A drop-in sc cannot read, as a user.
+		root := sshdRootWith(t, include, other)
+		os.Chmod(filepath.Join(root, "etc/ssh/sshd_config.d/40-other.conf"), 0)
+		c := &Checks{Home: filepath.Join(t.TempDir(), "schome"), sshdHostKey: key, sshdRoot: root}
+		rep, _ := c.Check(context.Background(), sshdDropIn, []byte(akc))
+		if brief(rep.Findings) != "0 sshd-invalid blocker" || len(rep.Notes) != 1 ||
+			!strings.HasPrefix(rep.Notes[0], "sc could not read /etc/ssh/sshd_config.d/40-other.conf (") || !strings.HasSuffix(rep.Notes[0], alone) {
+			t.Errorf("unreadable: %q %q", brief(rep.Findings), rep.Notes)
+		}
+	}
+}
+
+// The scratch sshd_config sshd is given, and another file's line refused
+// only with the drop-in, which no setting of OpenSSH 9.6 does: a fake
+// sshd that refuses line 3 of the file it is given while the drop-in's
+// copy has content, and logs that file and the copies next to it.
+func TestSshdTogetherOther(t *testing.T) {
+	c, args := fakeMachine(t, nil, "", "", 0)
+	c.sshdRoot = sshdRootWith(t, "Port 22\nInclude /etc/ssh/sshd_config.d/*.conf /etc/ssh/extra.conf\nUsePAM yes\n",
+		map[string]string{"40-other.conf": "PasswordAuthentication no\n", "50-local.conf": "the old version\n", "README": "not read\n"})
+	script := fmt.Sprintf("#!/bin/sh\nf=$3\n{ cat \"$f\"; ls \"$(dirname \"$f\")/d\"; } >> %s\n"+
+		"if [ -s \"$(dirname \"$f\")/d/50-local.conf\" ]; then echo \"$f line 3: Directive 'UsePAM' is not allowed within a Match block\" >&2; exit 255; fi\nexit 0\n", args)
+	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte(script), 0o755)
+	rep, err := c.Check(context.Background(), sshdDropIn, []byte("Match User bob\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if brief(rep.Findings) != "0 sshd-invalid blocker" || len(rep.Notes) != 0 ||
+		rep.Findings[0].Raw != sshdMain+" line 3: Directive 'UsePAM' is not allowed within a Match block" ||
+		rep.Findings[0].Text != "with this drop-in, sshd refuses another file's line" {
+		t.Errorf("%q %+v %q", brief(rep.Findings), rep.Findings, rep.Notes)
+	}
+	// Twice: with the drop-in, then with it empty. The Include of its
+	// directory names the copies, the other one is left as it was; the
+	// copies are the drop-ins the pattern reads.
+	b, _ := os.ReadFile(args)
+	want := "Port 22\nInclude " + filepath.Join(c.Home, "tmp") + "/check-*/together/d/*.conf /etc/ssh/extra.conf\nUsePAM yes\n40-other.conf\n50-local.conf\n"
+	got := regexp.MustCompile(`check-[0-9]+`).ReplaceAllString(string(b), "check-*")
+	if got != want+want {
+		t.Errorf("sshd was given:\n%s\nwant twice:\n%s", got, want)
 	}
 }

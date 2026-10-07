@@ -4,13 +4,19 @@ package check
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+
+	"smartconfig/internal/fsutil"
 )
 
 func init() {
@@ -42,10 +48,21 @@ var (
 	sshdEnv = regexp.MustCompile(`^(Missing privilege separation directory|Privilege separation user |.* must be owned by root and not group or world-writable\.$|sshd: no hostkeys available|Unable to load host key)`)
 )
 
-// checkSshd checks an sshd_config or a drop-in with sshd -t, and with sc's
-// own rule for ListenAddress, which sshd -t does not judge.
+// sshdMain is sshd's own file; relative Include paths are in its directory.
+const sshdMain = "/etc/ssh/sshd_config"
+
+// checkSshd checks an sshd_config or a drop-in with sshd -t, a drop-in as
+// sshd reads it, inside sshd_config; and with sc's own rule for
+// ListenAddress, which sshd -t does not judge.
 func checkSshd(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
-	out, notes, err := sshdTest(ctx, c, in)
+	var out []Finding
+	var notes []string
+	var err error
+	if in.path == sshdMain {
+		out, notes, err = sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path))
+	} else {
+		out, notes, err = sshdTogether(ctx, c, in)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -114,13 +131,153 @@ func (c *Checks) machineAddrs() ([]netip.Addr, error) {
 	return out, nil
 }
 
-// sshdTest runs sshd -t on the file. The server reads its host keys before
-// it says the file is fine, which only root can; a test gives it a
-// throwaway key with -h instead. A drop-in is checked on its own: it may
-// use the same keywords, and a setting that clashes with the main file is
-// sshd's to report.
-func sshdTest(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
-	args := []string{"-t", "-f", in.file}
+// sshdOther starts the note for what sshd says about a file other than the
+// one checked.
+const sshdOther = "sshd reports a problem in another file: "
+
+// sshdTogether checks a drop-in as sshd reads it (M3 follow-up 3): in a
+// scratch copy of sshd_config whose Include of the drop-in's directory
+// names a scratch copy of that directory, the candidate in place of its
+// namesake. A setting whose partner is in sshd_config (AuthorizedKeysCommand
+// and its user) is then no false blocker. What sshd says about the
+// drop-in's lines is the drop-in's; what it says about another file, or
+// without a line, only when a second run with the candidate empty does not
+// say it too. The drop-in is checked alone, with a note, when sshd_config
+// does not include it, when it or another drop-in cannot be read, or when
+// sshd stops at a problem of another file's, which may come before the
+// drop-in is read. Without an sshd_config there is nothing to read it in.
+func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
+	alone := func(why string) ([]Finding, []string, error) {
+		out, notes, err := sshdRun(ctx, c, in, in.file, strings.NewReplacer(in.file, in.path))
+		if why != "" {
+			notes = append(notes, why+"; the drop-in was checked alone")
+		}
+		return out, notes, err
+	}
+	main, err := os.ReadFile(filepath.Join(c.sshdRoot, sshdMain))
+	if errors.Is(err, fs.ErrNotExist) {
+		return alone("")
+	} else if err != nil {
+		return alone("sc could not read " + sshdMain + " (" + fsutil.ErrText(err) + ")")
+	}
+	// Each Include pattern that names the drop-in is pointed at the copy
+	// of its directory.
+	dir, name := filepath.Dir(in.path), filepath.Base(in.path)
+	root := filepath.Join(filepath.Dir(in.file), "together")
+	copies := filepath.Join(root, "d")
+	var pats []string
+	lines := strings.Split(string(main), "\n")
+	for i, l := range lines {
+		f := strings.Fields(l)
+		if len(f) < 2 || !strings.EqualFold(f[0], "Include") {
+			continue
+		}
+		named := false
+		for j, p := range f[1:] {
+			p = strings.Trim(p, `"`)
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(filepath.Dir(sshdMain), p)
+			}
+			if ok, _ := filepath.Match(p, in.path); ok && filepath.Dir(p) == dir {
+				pats = append(pats, filepath.Base(p))
+				f[j+1], named = filepath.Join(copies, filepath.Base(p)), true
+			}
+		}
+		if named {
+			lines[i] = strings.Join(f, " ")
+		}
+	}
+	if len(pats) == 0 {
+		return alone(sshdMain + " does not include it")
+	}
+	if err := os.MkdirAll(copies, 0o700); err != nil {
+		return nil, nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(c.sshdRoot, dir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return alone("sc could not read " + dir + " (" + fsutil.ErrText(err) + ")")
+	}
+	for _, e := range entries {
+		read := false
+		for _, p := range pats {
+			ok, _ := filepath.Match(p, e.Name())
+			read = read || ok
+		}
+		if !read || e.Name() == name {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(c.sshdRoot, dir, e.Name()))
+		if err != nil {
+			return alone("sc could not read " + filepath.Join(dir, e.Name()) + " (" + fsutil.ErrText(err) + ")")
+		}
+		if err := os.WriteFile(filepath.Join(copies, e.Name()), b, 0o600); err != nil {
+			return nil, nil, err
+		}
+	}
+	file := filepath.Join(root, "sshd_config")
+	if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		return nil, nil, err
+	}
+	names := strings.NewReplacer(file, sshdMain, copies+"/", dir+"/")
+	run := func(data []byte) ([]Finding, []string, error) {
+		if err := os.WriteFile(filepath.Join(copies, name), data, 0o600); err != nil {
+			return nil, nil, err
+		}
+		return sshdRun(ctx, c, in, file, names)
+	}
+	out, notes, err := run(in.data)
+	if err != nil {
+		return nil, nil, err
+	}
+	lineless := func(f Finding) bool { return f.Line == 0 }
+	other := func(n string) bool { return strings.HasPrefix(n, sshdOther) }
+	if !slices.ContainsFunc(out, lineless) && !slices.ContainsFunc(notes, other) {
+		return out, notes, nil
+	}
+	before, beforeNotes, err := run(nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if slices.ContainsFunc(beforeNotes, other) {
+		return alone("sshd stops at a problem in another file, maybe before the drop-in")
+	}
+	// A refusal without a line that sshd gives without the drop-in too is
+	// not the drop-in's doing; sshd stopped there, so the drop-in was not
+	// checked to the end.
+	var kept []string
+	had := map[string]bool{}
+	for _, f := range before {
+		if lineless(f) {
+			had[f.Key] = true
+		}
+	}
+	out = slices.DeleteFunc(out, func(f Finding) bool {
+		if lineless(f) && had[f.Key] {
+			kept = append(kept, "sshd refuses the configuration without the drop-in too ("+f.Raw+"); the drop-in was not checked to the end")
+		}
+		return lineless(f) && had[f.Key]
+	})
+	// Without the drop-in sshd reads every other file content, so what it
+	// refuses in one now is the drop-in's doing (a block the drop-in leaves
+	// open would do that): a finding of the drop-in's, without a line.
+	for _, n := range notes {
+		if !other(n) {
+			kept = append(kept, n)
+			continue
+		}
+		raw := strings.TrimPrefix(n, sshdOther)
+		out = append(out, Finding{Rule: "sshd-invalid", Severity: Blocker, Raw: raw, Key: raw,
+			Text: "with this drop-in, sshd refuses another file's line"})
+	}
+	return out, kept, nil
+}
+
+// sshdRun runs sshd -t on file, a scratch copy, and reads what it says,
+// with names putting the real paths back. The server reads its host keys
+// before it says the file is fine, which only root can; a test gives it a
+// throwaway key with -h instead.
+func sshdRun(ctx context.Context, c *Checks, in input, file string, names *strings.Replacer) ([]Finding, []string, error) {
+	args := []string{"-t", "-f", file}
 	if c.sshdHostKey != "" {
 		args = append(args, "-h", c.sshdHostKey)
 	}
@@ -138,7 +295,7 @@ func sshdTest(ctx context.Context, c *Checks, in input) ([]Finding, []string, er
 	byLine := map[int]int{} // line -> index in out
 	var loose []string      // lines that name no file, kept for the next finding
 	var env []string        // lines about the machine
-	for _, l := range strings.Split(strings.ReplaceAll(string(res.Err), in.file, in.path), "\n") {
+	for _, l := range strings.Split(names.Replace(string(res.Err)), "\n") {
 		l = strings.TrimRight(l, "\r") // its log lines end in \r\n
 		if l == "" || strings.HasSuffix(l, " bad configuration options") {
 			continue
@@ -158,7 +315,7 @@ func sshdTest(ctx context.Context, c *Checks, in input) ([]Finding, []string, er
 		}
 		file, n, msg := m[1], m[2], m[3]
 		if file != in.path {
-			notes = append(notes, "sshd reports a problem in another file: "+l)
+			notes = append(notes, sshdOther+l)
 			loose = nil
 			continue
 		}
@@ -237,7 +394,7 @@ func sshdHostKeys(c *Checks, in input, env []string, out []Finding, notes []stri
 				out = append(out, Finding{Rule: "sshd-invalid", Severity: Blocker, Line: line, Raw: raw, Key: p,
 					Text: "host key " + p + " does not exist, and sshd has no other"})
 			} else {
-				notes = append(notes, "sshd reports a problem in another file: host key "+p+" does not exist")
+				notes = append(notes, sshdOther+"host key "+p+" does not exist")
 			}
 		}
 	case none:
