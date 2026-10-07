@@ -530,3 +530,16 @@ func TestSshdTogetherOther(t *testing.T) {
 		t.Errorf("sshd was given:\n%s\nwant twice:\n%s", got, want)
 	}
 }
+
+// The together check's words, when one run is all it takes: a line about
+// the machine (as root without /run/sshd, CI's runner) is said too. The
+// first CI run of follow-up 4 found them dropped: this VM has /run/sshd.
+func TestSshdTogetherSaid(t *testing.T) {
+	c, _ := fakeMachine(t, nil, "", "", 0)
+	c.sshdRoot = sshdRootWith(t, "Include /etc/ssh/sshd_config.d/*.conf\n", nil)
+	os.WriteFile(filepath.Join(c.Run.Dirs[0], "sshd"), []byte("#!/bin/sh\necho 'Missing privilege separation directory: /run/sshd' >&2\nexit 255\n"), 0o755)
+	rep, err := c.Check(context.Background(), sshdDropIn, []byte("Port 22\n"))
+	if err != nil || len(rep.Findings) != 0 || notesSaid(rep) != "sshd did not finish checking the file said: Missing privilege separation directory: /run/sshd" {
+		t.Errorf("%q %q %v", brief(rep.Findings), notesSaid(rep), err)
+	}
+}

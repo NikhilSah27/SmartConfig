@@ -251,6 +251,7 @@ func sshdTogether(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	}
 	lineless := func(f Finding) bool { return f.Line == 0 }
 	if !slices.ContainsFunc(out, lineless) && len(others) == 0 {
+		in.say("", heard...)
 		return out, notes, nil
 	}
 	before, _, othersBefore, err := run(nil, quiet)
