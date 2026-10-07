@@ -27,6 +27,13 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A separate /boot not mounted (the rescue shell mounts only
+			// /): the write would land on the root filesystem's copy,
+			// which nothing reads, and say it worked.
+			if mp := unmountedMount(src.Path); mp != "" {
+				return fmt.Errorf("%s is under %s, which /etc/fstab mounts and is not mounted: run mount %s, then this again (file not changed)",
+					show(src.Path), show(mp), shellQuote(mp))
+			}
 			c, prev, err := s.Restore(src.ID)
 			if err != nil {
 				return err

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -89,6 +90,23 @@ func parseFstab(data []byte) (entries []fstabEntry, bad []badLine) {
 	}
 	return entries, bad
 }
+
+// FstabTargets returns the mount points of an fstab's lines, unescaped,
+// but swap's and other names that are not a path ("none").
+func FstabTargets(data []byte) []string {
+	entries, _ := parseFstab(data)
+	var out []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.target, "/") && e.fstype != "swap" {
+			out = append(out, filepath.Clean(e.target))
+		}
+	}
+	return out
+}
+
+// Unmangle undoes the octal escapes of fstab and /proc/self/mountinfo
+// (\040 is a space).
+func Unmangle(s string) string { return unmangle(s) }
 
 var octalEscape = regexp.MustCompile(`\\[0-3][0-7]{2}`)
 

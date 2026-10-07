@@ -294,7 +294,9 @@ to mount, the menu after a failed boot depends on Ubuntu's own
 `recordfail`. The rescue boot mounts only `/`: with `/var` or
 `/usr/local` on a filesystem of its own, run `mount /var` (or `mount
 /usr/local`) and then `sc status`; with a separate `/boot`, run `mount
-/boot` before restoring a file under `/boot/grub`.
+/boot` before restoring a file under `/boot/grub`. `sc restore` refuses
+to write under a mount point of `/etc/fstab` that is not mounted, and
+says which to mount: the file would land on the root filesystem's copy.
 
 **The rescue entry is a root shell from a menu item.** While root is
 locked, as it is on Ubuntu by default, it asks for no password; if root
