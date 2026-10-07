@@ -120,8 +120,13 @@ and the boot after it: verdict ok, flag clear, `/etc/fstab` back
 for S4 (log): a red `[FAILED] grub-initrd-fallback.service` right above
 the report (Ubuntu's unit, which cannot write grubenv on the read-only
 root), `sc boot seen` twice in each failed boot (harmless here), and
-the README's "stops in emergency mode". **Next: S4** (final review,
-docs, tag `m4`), with your OK.
+the README's "stops in emergency mode". **S4 runs** (your OK,
+2026-10-07 06:45 UTC, "go ahead with S4"): the final review, three
+reviewer agents in their own clones (`~/smartconfig-work/review-m4final/`):
+boot integration, the rescue-time CLI and its data, security and the
+docs. Read-only on this VM; no QEMU. Then the fixes, the docs and the
+tag `m4`; installing a fixed build and `accept-m4` as root wait for your
+word.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
