@@ -88,6 +88,36 @@ func TestReadOnlyCopyCLI(t *testing.T) {
 	}
 }
 
+// In the rescue report the note is part of the report, on every console,
+// not one more write to stderr, a console that may be stopped (the M4
+// final review, B1).
+func TestReadOnlyCopyConsole(t *testing.T) {
+	_, copies := readOnlyHotStore(t, 3)
+	cl := filepath.Join(t.TempDir(), "cmdline")
+	os.WriteFile(cl, []byte("ro fstab=no systemd.unit=rescue.target\n"), 0o644)
+	devs := t.TempDir()
+	active := filepath.Join(t.TempDir(), "active")
+	os.WriteFile(active, []byte("tty1\n"), 0o644)
+	os.WriteFile(filepath.Join(devs, "tty1"), nil, 0o644)
+	oldCL, oldRO, oldProc, oldRunner := cmdlinePath, rootReadOnly, procDir, bootRunner
+	oldActive, oldDev, oldSys := consoleActive, devDir, systemConsole
+	cmdlinePath, rootReadOnly, procDir = cl, func() bool { return true }, t.TempDir()
+	bootRunner.Dirs = []string{t.TempDir()}
+	consoleActive, devDir, systemConsole = active, devs, func(io.Writer) bool { return true }
+	t.Cleanup(func() {
+		cmdlinePath, rootReadOnly, procDir, bootRunner = oldCL, oldRO, oldProc, oldRunner
+		consoleActive, devDir, systemConsole = oldActive, oldDev, oldSys
+	})
+	r := sc(t, "status", "--console")
+	tty1, _ := os.ReadFile(filepath.Join(devs, "tty1"))
+	if r.stderr != "" || r.stdout != "" || !strings.HasPrefix(string(tty1), "This boot:") || !strings.Contains(string(tty1), copyNote) {
+		t.Errorf("%+v\ntty1:\n%s", r, tty1)
+	}
+	if left, _ := os.ReadDir(copies); len(left) != 0 {
+		t.Errorf("copy left: %v", left)
+	}
+}
+
 // A reader that goes away (sc log | head) or a stop signal ends sc as
 // usual, and its repaired copy of the store is gone (the chunk A review:
 // every such run left a full copy in /run).

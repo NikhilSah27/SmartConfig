@@ -80,30 +80,52 @@ var (
 // a sick disk, must give way to the shell well before that.
 var consoleLimit = 60 * time.Second
 
+// consoleDeadline ends every console write, counted from the start of sc
+// status --console, report or the word that it was stopped: what the
+// consoles take after consoleLimit must still end inside systemd's 90 s,
+// however many there are, with room for plymouth's ExecStartPre before sc.
+var consoleDeadline = 80 * time.Second
+
 // writeConsoles writes the rescue report. To /dev/console (the drop-in:
 // rescue.service's tty) it goes to every console the kernel uses, as
 // sulogin asks on each: /dev/console alone is only the last console= one
 // (a screen with a serial console got no report, the chunk C review).
-func writeConsoles(out io.Writer, report []byte) {
+// Nothing is written after until.
+//
+// out gets the report only when no console opens: a console that was
+// given up is stopped, and out, /dev/console, is one of them (the M4
+// final review: a stopped sole console held the write, and the shell,
+// past every limit). Even then the write is given up at until.
+func writeConsoles(out io.Writer, report []byte, until time.Time) {
 	names := []string(nil)
 	if systemConsole(out) {
 		if b, err := os.ReadFile(consoleActive); err == nil {
 			names = strings.Fields(string(b))
 		}
 	}
-	wrote := 0
+	opened := 0
 	for _, n := range names {
 		f, err := os.OpenFile(filepath.Join(devDir, n), os.O_WRONLY|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			continue
 		}
-		if writeConsole(ttyFile{f}, report) {
-			wrote++
-		}
+		opened++
+		writeConsole(ttyFile{f}, report, until)
 		f.Close()
 	}
-	if wrote == 0 {
-		out.Write(report)
+	if opened > 0 {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		out.Write(report) // left behind at until; sc exits soon after
+		close(done)
+	}()
+	t := time.NewTimer(time.Until(until))
+	defer t.Stop()
+	select {
+	case <-done:
+	case <-t.C:
 	}
 }
 
@@ -114,8 +136,7 @@ func writeConsoles(out io.Writer, report []byte) {
 // the report for 4 s at 9600 baud, and a plain 2 s limit cut the report
 // in the middle of a line (the M4 lab, on a loaded host). So a console
 // keeps its turn while it takes bytes or its queue drains, for
-// consoleTurn at most: two consoles at their worst, after a report that
-// took all of consoleLimit, still end inside systemd's 90 s.
+// consoleTurn at most, and never past consoleDeadline.
 //
 // stall and turn add up elapsed time, but each slice is capped at
 // consoleStep: a host pause freezes the whole machine, and under TCG sc's
@@ -154,12 +175,16 @@ func (t ttyFile) queued() int {
 	return n
 }
 
-// writeConsole writes report to c and reports whether all of it went.
-func writeConsole(c console, report []byte) bool {
+// writeConsole writes report to c and reports whether all of it went; a
+// non-zero until ends it at that time, whatever its turn.
+func writeConsole(c console, report []byte, until time.Time) bool {
 	last := c.queued()
 	prev := time.Now()
 	var stall, turn time.Duration // elapsed, each slice capped at consoleStep
 	for len(report) > 0 {
+		if !until.IsZero() && !time.Now().Before(until) {
+			return false
+		}
 		c.SetWriteDeadline(time.Now().Add(consoleSlice))
 		n, err := c.Write(report)
 		report = report[n:]
@@ -237,15 +262,22 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	var report bytes.Buffer
 	if console {
 		ignoreHangup.Store(true)
+		until := time.Now().Add(consoleDeadline)
 		real := out
 		out = &report
+		// A note (the store's repaired copy) goes into the report too:
+		// on stderr it would be one more write to a console that may be
+		// stopped.
+		oldNote := noteOut
+		noteOut = &report
+		defer func() { noteOut = oldNote }()
 		// One of the two writes, never both: the report, or the word that
 		// it was stopped.
 		var once sync.Once
 		stop := time.AfterFunc(consoleLimit, func() {
 			once.Do(func() {
 				writeConsoles(real, []byte(fmt.Sprintf("sc: the report took over %s and was stopped, so that the shell can start.\n"+
-					"Run it from the shell: sc status\n", seconds(consoleLimit))))
+					"Run it from the shell: sc status\n", seconds(consoleLimit))), until)
 				os.Exit(1)
 			})
 		})
@@ -258,7 +290,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 				fmt.Fprintf(&report, "sc: %v\n", err)
 				err = exitCode(1)
 			}
-			once.Do(func() { writeConsoles(real, report.Bytes()) })
+			once.Do(func() { writeConsoles(real, report.Bytes(), until) })
 		}()
 	}
 	testHookInStatus()

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -708,7 +709,7 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 	// It takes ten bytes at a time: slow, never stopped.
 	limits(time.Minute, time.Minute)
 	slow := &fakeConsole{take: func() int { return 10 }, queue: none}
-	if !writeConsole(slow, report) || !bytes.Equal(slow.got, report) {
+	if !writeConsole(slow, report, time.Time{}) || !bytes.Equal(slow.got, report) {
 		t.Errorf("slow: got %d of %d bytes", len(slow.got), len(report))
 	}
 
@@ -725,7 +726,7 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 		},
 		queue: func() int { q--; return q },
 	}
-	if !writeConsole(drains, report) || !bytes.Equal(drains.got, report) {
+	if !writeConsole(drains, report, time.Time{}) || !bytes.Equal(drains.got, report) {
 		t.Errorf("a draining queue: got %d of %d bytes", len(drains.got), len(report))
 	}
 
@@ -734,7 +735,7 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 	for name, queue := range map[string]func() int{"queue stands": func() int { return 4096 }, "queue not known": none} {
 		start = time.Now()
 		stopped := &fakeConsole{take: func() int { return 0 }, queue: queue}
-		if writeConsole(stopped, report) || len(stopped.got) != 0 {
+		if writeConsole(stopped, report, time.Time{}) || len(stopped.got) != 0 {
 			t.Errorf("%s: written", name)
 		}
 		if d := time.Since(start); d < consoleStall || d > consoleTurn/2 {
@@ -746,7 +747,7 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 	limits(time.Minute, 300*time.Millisecond)
 	start = time.Now()
 	trickle := &fakeConsole{take: func() int { time.Sleep(5 * time.Millisecond); return 1 }, queue: none}
-	if writeConsole(trickle, bytes.Repeat(report, 100)) || len(trickle.got) == 0 {
+	if writeConsole(trickle, bytes.Repeat(report, 100), time.Time{}) || len(trickle.got) == 0 {
 		t.Errorf("trickle: written whole, or nothing at all (%d bytes)", len(trickle.got))
 	}
 	if d := time.Since(start); d < consoleTurn || d > consoleStall/2 {
@@ -755,7 +756,7 @@ func TestWriteConsoleSlowOrStopped(t *testing.T) {
 
 	// An error that is no timeout ends it at once.
 	gone := &fakeConsole{err: syscall.EIO, queue: none}
-	if writeConsole(gone, report) {
+	if writeConsole(gone, report, time.Time{}) {
 		t.Error("EIO: written")
 	}
 }
@@ -794,7 +795,7 @@ func TestWriteConsoleHostPause(t *testing.T) {
 		},
 		queue: none,
 	}
-	if !writeConsole(paused, report) || !bytes.Equal(paused.got, report) {
+	if !writeConsole(paused, report, time.Time{}) || !bytes.Equal(paused.got, report) {
 		t.Errorf("a host pause lost the report: got %d of %d bytes", len(paused.got), len(report))
 	}
 }
@@ -810,7 +811,7 @@ func TestTTYFileQueued(t *testing.T) {
 	if q := (ttyFile{reg}).queued(); q != -1 {
 		t.Errorf("a regular file: queued %d", q)
 	}
-	if !writeConsole(ttyFile{reg}, []byte("report\n")) {
+	if !writeConsole(ttyFile{reg}, []byte("report\n"), time.Time{}) {
 		t.Error("a regular file: not written")
 	}
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
@@ -840,7 +841,7 @@ func TestTTYFileQueued(t *testing.T) {
 	if q := tty.queued(); q < 0 {
 		t.Errorf("a terminal: queued %d", q)
 	}
-	if !writeConsole(tty, []byte("This boot:\n")) {
+	if !writeConsole(tty, []byte("This boot:\n"), time.Time{}) {
 		t.Fatal("a terminal: not written")
 	}
 	// Nobody reads the master: the terminal fills up and then stands.
@@ -849,7 +850,7 @@ func TestTTYFileQueued(t *testing.T) {
 	consoleStall = 300 * time.Millisecond
 	t.Cleanup(func() { consoleStall = oldStall })
 	done := make(chan bool, 1)
-	go func() { done <- writeConsole(tty, bytes.Repeat([]byte("x"), 1<<20)) }()
+	go func() { done <- writeConsole(tty, bytes.Repeat([]byte("x"), 1<<20), time.Time{}) }()
 	select {
 	case ok := <-done:
 		if ok {
@@ -857,6 +858,99 @@ func TestTTYFileQueued(t *testing.T) {
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("writeConsole hangs on a full terminal")
+	}
+}
+
+// openPty gives a terminal's two ends and the path of the one sc writes.
+func openPty(t *testing.T) (slave *os.File, name string, master *os.File) {
+	t.Helper()
+	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	var n, unlock int32
+	for _, c := range []struct {
+		req uintptr
+		arg *int32
+	}{{syscall.TIOCSPTLCK, &unlock}, {syscall.TIOCGPTN, &n}} {
+		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, m.Fd(), c.req, uintptr(unsafe.Pointer(c.arg))); e != 0 {
+			t.Skipf("no pty: %v", e)
+		}
+	}
+	name = fmt.Sprintf("/dev/pts/%d", n)
+	s, err := os.OpenFile(name, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		t.Skipf("no pty: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s, name, m
+}
+
+// blockingWriter is a console that takes nothing until it is released.
+type blockingWriter struct {
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	w.calls.Add(1)
+	<-w.release
+	return len(p), nil
+}
+
+// The only console is stopped (Scroll Lock, XOFF): it is given up, and
+// the report is not written to the command's output instead, which is
+// /dev/console, the same stopped device. That write had no limit, and the
+// shell never came (the M4 final review, B1).
+func TestConsoleStoppedSole(t *testing.T) {
+	slave, name, _ := openPty(t)
+	const tcxonc, tcooff = 0x540A, 0
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), tcxonc, tcooff); e != 0 {
+		t.Skipf("TCXONC: %v", e)
+	}
+	devs := t.TempDir()
+	os.Symlink(name, filepath.Join(devs, "tty1"))
+	active := filepath.Join(t.TempDir(), "active")
+	os.WriteFile(active, []byte("tty1\n"), 0o644)
+	oldActive, oldDev, oldSys, oldStall := consoleActive, devDir, systemConsole, consoleStall
+	consoleActive, devDir, systemConsole, consoleStall = active, devs, func(io.Writer) bool { return true }, 300*time.Millisecond
+	t.Cleanup(func() { consoleActive, devDir, systemConsole, consoleStall = oldActive, oldDev, oldSys, oldStall })
+	out := &blockingWriter{release: make(chan struct{})}
+	defer close(out.release)
+	done := make(chan struct{})
+	start := time.Now()
+	go func() { writeConsoles(out, []byte("This boot: x\n"), time.Now().Add(time.Minute)); close(done) }()
+	select {
+	case <-done:
+		if d := time.Since(start); d > 10*time.Second {
+			t.Errorf("given up after %s", d)
+		}
+		if out.calls.Load() != 0 {
+			t.Error("the report went to the command's output as well")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("writeConsoles hangs on a stopped sole console")
+	}
+}
+
+// When no console opens, the command's output gets the report, but not
+// past the deadline: it may be the same stopped /dev/console. writeConsole
+// stops at the deadline too, whatever its turn.
+func TestConsoleDeadline(t *testing.T) {
+	oldActive, oldSys := consoleActive, systemConsole
+	consoleActive, systemConsole = filepath.Join(t.TempDir(), "none"), func(io.Writer) bool { return true }
+	t.Cleanup(func() { consoleActive, systemConsole = oldActive, oldSys })
+	out := &blockingWriter{release: make(chan struct{})}
+	defer close(out.release)
+	start := time.Now()
+	writeConsoles(out, []byte("This boot: x\n"), time.Now().Add(300*time.Millisecond))
+	if d := time.Since(start); d < 250*time.Millisecond || d > 5*time.Second || out.calls.Load() != 1 {
+		t.Errorf("returned after %s, %d writes", d, out.calls.Load())
+	}
+	c := &fakeConsole{take: func() int { return 1 << 20 }, queue: func() int { return 0 }}
+	if writeConsole(c, []byte("report\n"), time.Now().Add(-time.Second)) || len(c.got) != 0 {
+		t.Errorf("past the deadline: wrote %q", c.got)
 	}
 }
 
