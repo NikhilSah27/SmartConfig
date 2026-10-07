@@ -327,9 +327,10 @@ snapshot.
    verdict), so a failure in it before multi-user brings no menu (A5,
    the cost of A3's fix). systemd 255 has no soft-reboot count to tell
    the sessions apart; the README says so ("Where it does less").
-5. The units run as full root: `NoNewPrivileges=`, `ProtectHome=` and,
-   for `sc-boot-seen`, `PrivateNetwork=` (C14). `42_smartconfig` honours
-   its test knob `SC_GRUB_BOOT` from root's environment.
+5. Done (`8c5cc40`): the units ran as full root: now `NoNewPrivileges=`,
+   `ProtectHome=` and, for `sc-boot-seen`, `PrivateNetwork=` (C14).
+   `42_smartconfig` honoured its test knob `SC_GRUB_BOOT` from root's
+   environment; the tests now rewrite its `boot=/boot` line.
 6. Test gaps from the mutation runs: the Go tests miss `sc-boot-seen`
    ordered after sysinit or basic, `sc-boot-ok` with `Requires=` on
    local-fs or `Conflicts=` with emergency, the row -1 fallback, a

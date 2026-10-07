@@ -2354,3 +2354,12 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   first, when it has an initrd; else the newest with one, and a word on
   stderr. `TestGrubScriptTopLevel` (fails without the change). Full
   checks passed.
+- **M4 follow-up 5, the units' hardening, done `8c5cc40`** (chunk H). Both
+  boot units: `NoNewPrivileges=yes`, `ProtectHome=yes`; `sc-boot-seen`
+  also `PrivateNetwork=yes` (`sc-boot-ok` asks systemd over its socket).
+  Ubuntu's sysinit units (`systemd-resolved`, `-timesyncd`, `nftables`)
+  set up such namespaces this early. `42_smartconfig` takes no
+  `SC_GRUB_BOOT`; the tests rewrite its `boot=/boot` line. Checked by
+  `systemd-analyze verify` and `TestBootUnits`; that a broken boot still
+  gets its seen line with them is for the lab run after chunk H. Full
+  checks passed.
