@@ -184,11 +184,16 @@ func Init(dir string) error {
 	return s.Close()
 }
 
+// NotInitialisedError is Open's error for a directory with no store.
+type NotInitialisedError struct{ Dir string }
+
+func (e *NotInitialisedError) Error() string { return e.Dir + " is not initialised, run: sc init" }
+
 // Open opens a data directory previously created by Init.
 func Open(dir string) (*Store, error) {
 	if _, err := os.Stat(filepath.Join(dir, "changes.db")); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%s is not initialised, run: sc init", dir)
+			return nil, &NotInitialisedError{dir}
 		}
 		return nil, fmt.Errorf("open %s: %w", dir, err)
 	}

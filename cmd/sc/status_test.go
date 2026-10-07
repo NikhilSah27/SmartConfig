@@ -391,6 +391,33 @@ func TestStatusFirstSeenIsNotNew(t *testing.T) {
 	}
 }
 
+// A flag file deleted since the healthy boot is the fix its own finding
+// asks for, not an error with an undo that puts it back (the M4 final
+// review, B3); fstab deleted still is one.
+func TestStatusDeletedFlag(t *testing.T) {
+	dir, _, home := statusEnv(t, "ro", false)
+	flag := filepath.Join(dir, "sshd_not_to_be_run")
+	g, err := check.ParseGraph("check flag " + flag + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Graph = g }
+	t.Cleanup(func() { testHookChecks = hook })
+	snap(t, flag, "")
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	s, err := store.Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(flag)
+	s.Record([]store.Obs{{Path: flag, Origin: store.OriginAuto}})
+	s.Close()
+	if r := sc(t, "status"); r.code != 0 || !strings.Contains(r.stdout, "  deleted\n") || strings.Contains(r.stdout, "sc restore") {
+		t.Errorf("%+v", r)
+	}
+}
+
 // scd is a plain sc watch; a user's sc watch --root is not it.
 func TestStatusScdState(t *testing.T) {
 	statusEnv(t, "ro", false)
@@ -556,6 +583,11 @@ func TestStatusConsoleErrors(t *testing.T) {
 	os.Remove(filepath.Join(devs, "tty1")) // no console opens
 	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "This boot:") || !strings.Contains(r.stdout, "\nsc: ") {
 		t.Errorf("no console: %+v", r)
+	}
+	// No store in the rescue boot: /var not mounted, not "sc init" (the
+	// M4 final review, B4).
+	if r := sc(t, "status", "--console"); !strings.Contains(r.stdout, "; if /var is a filesystem of its own: mount /var, then sc status\n") || strings.Contains(r.stdout, "sc init") {
+		t.Errorf("no store: %+v", r)
 	}
 }
 

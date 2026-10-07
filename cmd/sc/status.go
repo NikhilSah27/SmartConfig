@@ -343,6 +343,12 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	fmt.Fprintf(out, "scd:           %s\n", scdState())
 
 	s, err := openStore()
+	var none *store.NotInitialisedError
+	if errors.As(err, &none) && mode != "normal" {
+		// The rescue boot mounts only /: "sc init" would make a new,
+		// empty store under /var's mount point (the M4 final review, B4).
+		return fmt.Errorf("no store at %s; if /var is a filesystem of its own: mount /var, then sc status", none.Dir)
+	}
 	if err != nil {
 		return err
 	}
@@ -498,12 +504,15 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 // a checker, the worst finding its change added, as sc edit judges an
 // edit (before is the version it is compared with); else what the row is.
 // A file with a checker that is gone is an error: what read it is left
-// without it.
+// without it. Not a flag file (nologin, sshd_not_to_be_run) nor
+// ld.so.preload: deleting them is what their own findings ask for, and
+// the undo would put them back (the M4 final review, B3).
 func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store.Row, before *store.Change) (string, check.Severity) {
-	checked := c.GraphInUse().Checker(r.Path) != ""
+	checker := c.GraphInUse().Checker(r.Path)
+	checked := checker != ""
 	switch r.Kind {
 	case store.KindDeleted:
-		if checked && before != nil && before.Kind != store.KindDeleted {
+		if checked && checker != "flag" && checker != "preload" && before != nil && before.Kind != store.KindDeleted {
 			return "error: deleted", check.Error
 		}
 		return "deleted", 0
