@@ -122,8 +122,8 @@ func editenvCalls(t *testing.T) string {
 }
 
 // The menu flag: sc boot seen sets it, a healthy verdict unsets it, a bad
-// one leaves it; without GRUB's 1024-byte block it is not touched, and the
-// journal says so.
+// one sets it again (in case seen could not); without GRUB's 1024-byte
+// block it is not touched, and the journal says so.
 func TestBootMenuFlag(t *testing.T) {
 	bootEnv(t, `active\ninactive\ninactive\n`, 0)
 	mustSC(t, "boot", "seen")
@@ -135,7 +135,7 @@ func TestBootMenuFlag(t *testing.T) {
 	bootEnv(t, `inactive\ninactive\ninactive\n`, 0)
 	mustSC(t, "boot", "seen")
 	mustSC(t, "boot", "verdict")
-	if got := editenvCalls(t); got != "ENV set smartconfig_pending=1\n" {
+	if got := editenvCalls(t); got != "ENV set smartconfig_pending=1\nENV set smartconfig_pending=1\n" {
 		t.Errorf("bad boot: %q", got)
 	}
 
@@ -162,6 +162,31 @@ func TestBootMenuFlag(t *testing.T) {
 	os.WriteFile(filepath.Join(bootRunner.Dirs[0], "grub-editenv"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
 	if out := mustSC(t, "boot", "seen"); !strings.Contains(out, "grub-editenv set failed (exit 1)") {
 		t.Errorf("a failing grub-editenv: %q", out)
+	}
+}
+
+// A boot with its verdict is not seen again (systemctl rescue, an
+// isolate): no line, and the flag stays as the verdict left it. A seen
+// that cannot write its line still sets the flag, and says why it failed
+// (the M4 final review, A3 and C7).
+func TestBootSeenOnce(t *testing.T) {
+	home := bootEnv(t, `active\ninactive\ninactive\n`, 0)
+	mustSC(t, "boot", "seen")
+	mustSC(t, "boot", "verdict")
+	if out := mustSC(t, "boot", "seen"); out != "boot b0b0-1: already ok, not seen again\n" {
+		t.Errorf("stdout %q", out)
+	}
+	if got := editenvCalls(t); got != "ENV set smartconfig_pending=1\nENV unset smartconfig_pending\n" {
+		t.Errorf("calls %q", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, boot.FileName)); strings.Count(string(b), " seen ") != 1 {
+		t.Errorf("boots:\n%s", b)
+	}
+
+	home = bootEnv(t, "", 0)
+	os.MkdirAll(filepath.Join(home, boot.FileName), 0o700) // cannot be written
+	if r := sc(t, "boot", "seen"); r.code != 1 || !strings.Contains(r.stderr, "boots") || editenvCalls(t) != "ENV set smartconfig_pending=1\n" {
+		t.Errorf("%+v, calls %q", r, editenvCalls(t))
 	}
 }
 

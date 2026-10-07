@@ -42,18 +42,29 @@ func newBootCmd() *cobra.Command {
 				return err
 			}
 			home := store.Home()
-			if err := os.MkdirAll(home, 0o700); err != nil {
-				return err
-			}
-			if err := boot.Seen(home, id, time.Now()); err != nil {
-				return err
+			// A boot that has its verdict is not seen again: systemctl
+			// rescue or emergency, or an isolate, can start the finished
+			// unit once more, and its flag would bring the menu back after
+			// a healthy boot (the M4 final review, A3).
+			if bs, err := boot.Read(home); err == nil {
+				for _, b := range bs {
+					if b.ID == id && b.Verdict != "" {
+						fmt.Fprintf(cmd.OutOrStdout(), "boot %s: already %s, not seen again\n", id, b.Verdict)
+						return nil
+					}
+				}
 			}
 			// Until a healthy verdict unsets it, the next boot shows the
-			// menu with "SmartConfig rescue" (plan 3.3).
+			// menu with "SmartConfig rescue" (plan 3.3). The flag first: a
+			// "seen" line that cannot be written (a full /var) must not
+			// cost the menu too (the M4 final review, C7).
 			if note := menuFlag(cmd.Context(), true); note != "" {
 				fmt.Fprintln(cmd.OutOrStdout(), note)
 			}
-			return nil
+			if err := os.MkdirAll(home, 0o700); err != nil {
+				return err
+			}
+			return boot.Seen(home, id, time.Now())
 		},
 	}, &cobra.Command{
 		Use:   "verdict",
@@ -102,10 +113,11 @@ func runBootVerdict(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "boot %s: %s (%s)\n", id, verdict, why)
-	if verdict == "ok" {
-		if note := menuFlag(ctx, false); note != "" {
-			fmt.Fprintln(cmd.OutOrStdout(), note)
-		}
+	// ok clears the flag. bad sets it again, in case seen could not (its
+	// unit failed on a /var that did not mount, or grub-editenv did):
+	// the menu after a failed boot (the M4 final review, A6).
+	if note := menuFlag(ctx, verdict == "bad"); note != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), note)
 	}
 	return nil
 }

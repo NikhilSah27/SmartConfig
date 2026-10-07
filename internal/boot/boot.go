@@ -97,9 +97,11 @@ func path(home string) string { return filepath.Join(home, FileName) }
 // keeping only the last keepLines lines when the file has grown past
 // maxSize (rewritten in place, so a writer waiting for the lock appends
 // to the same file), and syncs it: a boot reset soon after must not lose
-// its line.
+// its line. A line a crash left unfinished is ended first, so the new one
+// is not glued to it. Root writes the file at boot: a symlink there, or
+// anything not a regular file, is refused, never followed.
 func appendLine(home, line string) error {
-	f, err := os.OpenFile(path(home), os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path(home), os.O_RDWR|os.O_APPEND|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		return fmt.Errorf("boots: %w", err)
 	}
@@ -107,9 +109,21 @@ func appendLine(home, line string) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("boots: lock: %w", err)
 	}
-	if fi, err := f.Stat(); err == nil && fi.Size() > maxSize {
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("boots: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("boots: %s is not a regular file", f.Name())
+	}
+	if fi.Size() > maxSize {
 		if err := trim(f); err != nil {
 			return err
+		}
+	} else if fi.Size() > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, fi.Size()-1); err == nil && last[0] != '\n' {
+			line = "\n" + line
 		}
 	}
 	if _, err := f.WriteString(line + "\n"); err != nil {
@@ -141,7 +155,9 @@ func trim(f *os.File) error {
 }
 
 // Read returns the boots the file in home records, in the order each was
-// first seen. Lines it cannot read are skipped; no file is no boots.
+// first seen. Lines it cannot read are skipped, and so is a last line
+// with no end (a write cut short, or still going on); zeros a power cut
+// left before a line are dropped. No file is no boots.
 func Read(home string) ([]Boot, error) {
 	// Read whole: trimming keeps the file near 1 MiB, and a line of any
 	// length (zeroed blocks after a power cut) is one line to skip.
@@ -154,8 +170,9 @@ func Read(home string) ([]Boot, error) {
 	}
 	var out []Boot
 	at := map[string]int{}
-	for _, line := range strings.Split(string(data), "\n") {
-		fl := strings.SplitN(line, " ", 5)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines[:len(lines)-1] { // the last: "" or unended
+		fl := strings.SplitN(strings.TrimLeft(line, "\x00"), " ", 5)
 		if len(fl) < 3 {
 			continue
 		}

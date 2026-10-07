@@ -155,6 +155,52 @@ func TestReadLongLine(t *testing.T) {
 	}
 }
 
+// A line a crash cut short, or zeros a power cut left at the end, are
+// not glued to the next boot's line; a last line with no end is not read,
+// nor are verdicts with a row or a word that do not parse (the M4 final
+// review, B5: the next boot's "seen" was lost in the torn line).
+func TestReadTornLines(t *testing.T) {
+	for name, tail := range map[string]string{"torn": "bbbb seen 2", "zeros": string(make([]byte, 4096))} {
+		home := t.TempDir()
+		os.WriteFile(filepath.Join(home, FileName), []byte("aaaa seen 1\naaaa ok 2 7 why\n"+tail), 0o600)
+		if bs, _ := Read(home); len(bs) != 1 || bs[0].ID != "aaaa" {
+			t.Errorf("%s, before the next line: %+v", name, bs)
+		}
+		if err := Seen(home, "cccc", t0); err != nil {
+			t.Fatal(err)
+		}
+		bs, err := Read(home)
+		if err != nil || bs[len(bs)-1].ID != "cccc" || bs[len(bs)-1].Seen != t0 || bs[0].Verdict != "ok" {
+			t.Errorf("%s: %+v %v", name, bs, err)
+		}
+	}
+	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, FileName), []byte("aaaa ok 2 x why\naaaa maybe 2 7 why\naaaa seen 1\n"), 0o600)
+	if bs, _ := Read(home); len(bs) != 1 || bs[0].Verdict != "" {
+		t.Errorf("an unreadable verdict was read: %+v", bs)
+	}
+}
+
+// The boots file is written by root at boot: a symlink in its place is
+// refused, and its target left as it was (the M4 final review, C6).
+func TestAppendRefusesSymlink(t *testing.T) {
+	home := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	os.WriteFile(victim, []byte("keep\n"), 0o600)
+	os.Symlink(victim, filepath.Join(home, FileName))
+	if err := Seen(home, "cccc", t0); err == nil {
+		t.Error("appended through a symlink")
+	}
+	os.Remove(filepath.Join(home, FileName))
+	os.Mkdir(filepath.Join(home, FileName), 0o700)
+	if err := Seen(home, "cccc", t0); err == nil {
+		t.Error("appended to a directory")
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep\n" {
+		t.Errorf("victim: %q", b)
+	}
+}
+
 // Appends are serialized by a lock, also across a trim: none is lost.
 func TestAppendWhileTrimming(t *testing.T) {
 	home := t.TempDir()
