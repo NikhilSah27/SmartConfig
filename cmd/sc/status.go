@@ -620,6 +620,12 @@ func statusUndo(out io.Writer, c *check.Checks, e entry, bounded bool, mode stri
 	if ro {
 		fmt.Fprintln(out, "  mount -o remount,rw /")
 	}
+	// A separate /boot the rescue boot did not mount: sc restore refuses
+	// to write under it (M4 follow-up 1), so it is mounted first (the
+	// chunk E review, C7: only the README said so).
+	if mp := unmountedMount(e.row.Path); mp != "" {
+		fmt.Fprintf(out, "  mount %s\n", shellQuote(mp))
+	}
 	switch {
 	case e.before.Kind == store.KindDeleted && console:
 		// Short lines: a console line that wraps pushes the top off.

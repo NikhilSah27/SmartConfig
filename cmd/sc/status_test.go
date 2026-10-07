@@ -1162,3 +1162,24 @@ func TestStatusHealthyRowUnknown(t *testing.T) {
 		t.Errorf("console: %+v", r)
 	}
 }
+
+// A change under a mount point of fstab that is not mounted (a separate
+// /boot in the rescue boot): the undo mounts it first, as sc restore
+// refuses to write under it (the chunk E review, C7; M4 follow-up 1).
+func TestStatusUndoMounts(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro fstab=no systemd.unit=rescue.target", true)
+	good := snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	snap(t, fstab, badLine)
+	mounts := "UUID=a / ext4 defaults 0 1\nUUID=b " + dir + " ext4 defaults 0 2\n"
+	fakeMounts(t, mounts, rootMount)
+	for _, args := range [][]string{{"status"}, {"status", "--console"}} {
+		if r := sc(t, args...); !strings.Contains(r.stdout, "  mount -o remount,rw /\n  mount "+dir+"\n  sc restore "+good+"\n") {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+	fakeMounts(t, mounts, rootMount+"40 22 8:1 / "+dir+" rw - ext4 /dev/sda1 rw\n")
+	if r := sc(t, "status"); !strings.Contains(r.stdout, "  mount -o remount,rw /\n  sc restore "+good+"\n") {
+		t.Errorf("mounted: %+v", r)
+	}
+}
