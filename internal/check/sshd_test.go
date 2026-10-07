@@ -461,8 +461,9 @@ func TestSshdTogether(t *testing.T) {
 		{"a refusal it causes", include, other, akc, "0 sshd-invalid blocker", ""},
 		{"sshd_config refused without it too", include + akc, other, "Port 22\n", "",
 			"sshd refuses the configuration without the drop-in too (AuthorizedKeysCommand set without AuthorizedKeysCommandUser); the drop-in was not checked to the end"},
+		// Alone, the drop-in is clean: as root without /run/sshd, that note.
 		{"another drop-in refused", include, map[string]string{"40-other.conf": "PermitRootLogn no\n"}, "Port 22\n", "",
-			"sshd stops at a problem in another file, maybe before the drop-in" + alone},
+			strings.TrimPrefix(clean+"|", "|") + "sshd stops at a problem in another file, maybe before the drop-in" + alone},
 		{"not included", "Port 22\n", other, akc, "0 sshd-invalid blocker", sshdMain + " does not include it" + alone},
 		{"no sshd_config", "", other, akc, "0 sshd-invalid blocker", ""},
 	} {
