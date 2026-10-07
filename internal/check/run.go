@@ -48,6 +48,12 @@ type Result struct {
 // PATH; stdin is /dev/null. A tool that is not installed, exits non-zero or
 // times out is a Result, not an error.
 func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Result, error) {
+	return r.RunEnv(ctx, dir, nil, tool, args...)
+}
+
+// RunEnv is Run with env added to the environment, for a setting a tool
+// takes from there only (systemd-analyze's unit path).
+func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool string, args ...string) (Result, error) {
 	name, dirs := tool, r.Dirs
 	if dirs == nil {
 		dirs = toolDirs
@@ -83,7 +89,7 @@ func (r Runner) Run(ctx context.Context, dir, tool string, args ...string) (Resu
 	defer cancel()
 	cmd := exec.CommandContext(tctx, path, args...)
 	cmd.Dir = dir
-	cmd.Env = []string{"LC_ALL=C", "PATH=" + strings.Join(toolDirs, ":")}
+	cmd.Env = append([]string{"LC_ALL=C", "PATH=" + strings.Join(toolDirs, ":")}, env...)
 	// Its own process group, so a timeout kills what it started too.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }

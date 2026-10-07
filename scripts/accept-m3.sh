@@ -92,6 +92,12 @@ as /etc/ssh/sshd_config.d/90-accept.conf 2 sshd-invalid "PermitRootLogn no\n"
 as $TESTUNIT 0 - "[Unit]\nDescription=accept\n[Service]\nExecStart=/bin/true\n"
 as $TESTUNIT 2 unit-exec-missing "[Unit]\nDescription=accept\n[Service]\nExecStart=/usr/bin/sc-no-such-binary\n"
 as $TESTUNIT 0 unit-unknown-key "[Unit]\nDescription=accept\n[Service]\nExecStart=/bin/true\nRestrt=always\n"
+# A drop-in, checked with its unit: the journal's, which every systemd
+# machine has; a second ExecStart= without the empty one before it is a
+# refusal. A drop-in for no unit has no effect.
+as /etc/systemd/system/systemd-journald.service.d/90-accept.conf 0 - "[Service]\nRestartSec=5\n"
+as /etc/systemd/system/systemd-journald.service.d/90-accept.conf 2 unit-syntax "[Service]\nExecStart=/bin/true\n"
+as /etc/systemd/system/sc-no-such-unit.service.d/90-accept.conf 0 unit-dropin-orphan "[Service]\nRestart=always\n"
 as /etc/default/grub 0 - 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
 as /etc/default/grub 2 grub-default-syntax 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash\n'
 as /etc/default/grub 2 grub-default-syntax 'GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX_DEFAULT=quiet splash\n'

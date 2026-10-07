@@ -174,8 +174,9 @@ its changes after approval (C1 to C9) in section 15. Reviews:
 [D](docs/reviews/2026-10-03-m3-chunk-d.md),
 [final](docs/reviews/2026-10-03-m3-final.md).
 
-34 rules across 15 checkers, each with a fixed explanation (`sc check
--v`). Each validator was first run on this VM in the form sc uses, to make
+34 rules across 15 checkers at the tag, each with a fixed explanation
+(`sc check -v`); follow-up 1 added a 16th, for unit drop-ins, and its
+rule `unit-dropin-orphan`. Each validator was first run on this VM in the form sc uses, to make
 sure it only checks, and severities follow what the consumer really does: an fstab
 line with `nofail` is a warning, a passwd file without root is a warning
 where nss-systemd supplies root.
@@ -186,8 +187,10 @@ where nss-systemd supplies root.
 - `sc edit` and scd judge a change by the findings it adds; `sc check`
   shows them all.
 - A file is checked alone, except netplan's files, which are merged as
-  netplan merges them. Cross-file conflicts (two sudoers drop-ins) are not
-  looked for.
+  netplan merges them, and a unit's drop-in, which is checked with its
+  unit. Cross-file conflicts (two sudoers drop-ins) are not looked for.
+  A drop-in for every unit with a prefix (`foo-.service.d`) is not
+  checked.
 - As a user, `sc check` cannot read some files (sudoers, a 0600 netplan
   file). It says so and exits 1; it never guesses. A validator cut short
   (out of time, killed) also gives exit 1.
@@ -203,8 +206,9 @@ where nss-systemd supplies root.
 
 ### M3 follow-ups (from the final review, none high)
 
-1. A checker for unit drop-ins (`*.service.d/*.conf`, what `systemctl
-   edit` writes): verify the unit together with its drop-ins (medium).
+1. Done: a checker for unit drop-ins (`*.service.d/*.conf`, what
+   `systemctl edit` writes), which verifies the unit together with its
+   drop-ins (medium).
 2. sshd: a warning for a `ListenAddress` this machine does not have
    (SSH is gone at the next boot).
 3. sshd: check a drop-in together with the main file, not alone (a false

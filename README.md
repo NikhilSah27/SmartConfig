@@ -152,7 +152,8 @@ checker.
 What is checked, each with the system's own validator in a check-only form
 plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers
 (`visudo -c`), `sshd_config` (`sshd -t`), systemd units in
-`/etc/systemd/system` (`systemd-analyze verify`), `/etc/default/grub` and
+`/etc/systemd/system` and their drop-ins (`NAME.service.d/*.conf`, checked
+with the unit) (`systemd-analyze verify`), `/etc/default/grub` and
 `grub.cfg` (`sh -n`, `grub-script-check`), netplan (netplan's generator on
 a scratch copy of all its files), udev rules (`udevadm verify`), passwd
 and group (`pwck -r`, `grpck -r`, with a made-up shadow file), sysctl

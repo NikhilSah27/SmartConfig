@@ -5,8 +5,10 @@ package check
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -30,6 +32,10 @@ sc check -v shows the remark; follow it when you can.`},
 it: the unit still loads, but the setting has no effect. Most likely a
 typo. Check the spelling against the unit's man page (systemd.unit,
 systemd.service, systemd.exec, ...).`},
+		Rule{"unit-dropin-orphan", Warning, `No unit on this machine has the name of the drop-in's directory (the
+unit's name, then .d), so systemd does not read the drop-in and its
+settings have no effect. Check the name against systemctl
+list-unit-files, or install the unit first.`},
 	)
 }
 
@@ -111,7 +117,123 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		return nil, notes, err
 	}
 	name, instance := unitName(in.file)
-	var out []Finding
+	out, problem, _ := readVerify(res, in.data, in.file, in.path, name, instance)
+	if problem != "" {
+		return nil, append(notes, problem), nil
+	}
+	return out, notes, nil
+}
+
+// unitDirs is the system unit path, in systemd's order; tests fake it.
+var unitDirs = []string{"/etc/systemd/system", "/run/systemd/system", "/usr/local/lib/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system"}
+
+// unitAlias returns the unit that name is an alias of (sshd.service of
+// ssh.service on Ubuntu): the first file of that name on the unit path is
+// a symlink to a unit of another name. systemd says what it finds under
+// that name. "" when name is no alias.
+func unitAlias(name string) string {
+	for _, d := range unitDirs {
+		p := filepath.Join(d, name)
+		fi, err := os.Lstat(p)
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return ""
+		}
+		// A link to /dev/null masks the unit; one to a file of the same
+		// name (systemctl link) is no alias.
+		t, err := filepath.EvalSymlinks(p)
+		if b := filepath.Base(t); err == nil && b != name && filepath.Ext(b) == filepath.Ext(name) {
+			return b
+		}
+		return ""
+	}
+	return ""
+}
+
+// checkUnitDropIn checks a drop-in, /etc/systemd/system/NAME.d/X.conf,
+// together with the unit NAME it changes (M3 follow-up 1). systemd-analyze
+// verify loads the unit by name with a scratch directory first on its
+// unit path (SYSTEMD_UNIT_PATH; the trailing ":" keeps the stock path), so
+// the candidate there takes the place of the drop-in of the same name and
+// comes with the unit's other drop-ins. What it says about the drop-in's
+// lines is the drop-in's. What it says about the unit is the drop-in's
+// only when a second run, with that file empty, does not say it too: a
+// refusal the drop-in causes (a second ExecStart= without the empty one
+// before it), not a problem the unit had before.
+func checkUnitDropIn(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
+	dir := filepath.Base(filepath.Dir(in.path))
+	unit := strings.TrimSuffix(dir, ".d")
+	dot := strings.LastIndexByte(unit, '.')
+	if unit == dir || dot <= 0 {
+		return nil, []string{"the drop-in is not in a unit's NAME.d directory; it was not checked"}, nil
+	}
+	if stem := unit[:dot]; strings.HasSuffix(stem, "-") {
+		// systemd 246 and later: one drop-in for every unit whose name
+		// starts with stem. Which of them it breaks, sc does not judge.
+		return nil, []string{"a drop-in for every unit whose name starts with " + stem + "; it was not checked"}, nil
+	}
+	name, instance := unitName(unit)
+	names := []string{name, instance}
+	if a := unitAlias(name); a != "" {
+		names = append(names, a)
+	}
+	verify := func(sub string, data []byte) (res Result, file string, notes []string, ok bool, err error) {
+		root := filepath.Join(filepath.Dir(in.file), sub)
+		file = filepath.Join(root, dir, filepath.Base(in.path))
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return res, file, nil, false, err
+		}
+		if err := os.WriteFile(file, data, 0o600); err != nil {
+			return res, file, nil, false, err
+		}
+		res, notes, ok, err = c.validateEnv(ctx, in, []string{"SYSTEMD_UNIT_PATH=" + root + ":"}, "systemd-analyze", "verify", "--man=no", instance)
+		return res, file, notes, ok, err
+	}
+	res, file, notes, ok, err := verify("with", in.data)
+	if err != nil || !ok {
+		return nil, notes, err
+	}
+	out, problem, notFound := readVerify(res, in.data, file, in.path, names...)
+	switch {
+	case notFound != "":
+		return []Finding{{Rule: "unit-dropin-orphan", Severity: Warning, Raw: notFound,
+			Text: unit + " is not on this machine, so systemd does not read the drop-in"}}, notes, nil
+	case problem != "":
+		return nil, append(notes, problem), nil
+	}
+	own := func(f Finding) bool { return strings.HasPrefix(f.Raw, in.path+":") }
+	if !slices.ContainsFunc(out, func(f Finding) bool { return !own(f) }) {
+		return out, notes, nil // only the drop-in's lines: no second run
+	}
+	res, file, _, ok, err = verify("without", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	var before []Finding
+	if ok {
+		before, _, _ = readVerify(res, in.data, file, in.path, names...)
+	} else {
+		// No baseline: what is said about the unit is not known to be
+		// the drop-in's doing.
+		notes = append(notes, "systemd-analyze did not finish a second run, without the drop-in; what it said about "+unit+" as a whole is left out")
+		before = slices.DeleteFunc(slices.Clone(out), own)
+	}
+	key := func(f Finding) string { return f.Rule + "\x00" + f.Text + "\x00" + f.Key }
+	had := map[string]bool{}
+	for _, f := range before {
+		had[key(f)] = true
+	}
+	return slices.DeleteFunc(out, func(f Finding) bool { return !own(f) && had[key(f)] }), notes, nil
+}
+
+// readVerify reads what systemd-analyze verify said in res about the unit
+// called one of names (its name, a template's instance, the unit it is an
+// alias of), read from file, which is path on the machine; data is that
+// file's content. problem, when set, is why it says nothing about the
+// unit, as a note; notFound is then the line saying no unit has the name.
+func readVerify(res Result, data []byte, file, path string, names ...string) (out []Finding, problem, notFound string) {
 	syntax := -1        // index in out of the unit-syntax finding the summary lines belong to
 	recognized := false // a line about some unit was read
 	var unknown []string
@@ -122,15 +244,19 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			syntax = len(out) - 1
 		}
 	}
+	said := map[string]bool{}
 	for _, l := range strings.Split(string(res.Err), "\n") {
-		if l == "" {
+		// A line said twice is one problem: a template's drop-in is read
+		// for the template and again for its instance.
+		if l == "" || said[l] {
 			continue
 		}
+		said[l] = true
 		// The scratch path is the real one from here on: findings never
 		// carry it, and nothing but this file can be at that path.
-		raw := strings.ReplaceAll(l, in.file, in.path)
+		raw := strings.ReplaceAll(l, file, path)
 		switch {
-		case strings.HasPrefix(raw, in.path+":"):
+		case strings.HasPrefix(raw, path+":"):
 			m := unitFileMsg.FindStringSubmatch(raw)
 			if m == nil {
 				unknown = append(unknown, raw)
@@ -140,7 +266,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			n, _ := strconv.Atoi(m[2])
 			msg := m[3]
 			f := Finding{Line: n, Raw: raw}
-			key := unitKey(in.data, n)
+			key := unitKey(data, n)
 			if strings.Contains(msg, "gnoring") || strings.Contains(msg, "gnored") {
 				// The line is skipped; the unit loads without it.
 				f.Rule, f.Severity = "unit-unknown-key", Warning
@@ -161,7 +287,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				}
 				// The line's content in the key: a second Restrat= added
 				// above an old one is blamed for the new line.
-				f.Key = lineKey(in.data, n) + " " + f.Key
+				f.Key = lineKey(data, n) + " " + f.Key
 			} else if strings.HasPrefix(msg, "Invalid section header") {
 				f.Rule, f.Severity = "unit-syntax", Error
 				f.Text = "the section header is not valid; the unit does not load"
@@ -175,7 +301,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		case unitNameMsg.MatchString(raw):
 			m := unitNameMsg.FindStringSubmatch(raw)
 			recognized = true
-			if m[1] != name && m[1] != instance {
+			if !slices.Contains(names, m[1]) {
 				continue // another unit's problem
 			}
 			msg := m[2]
@@ -183,7 +309,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 			switch {
 			case unitExec.MatchString(msg):
 				e := unitExec.FindStringSubmatch(msg)
-				f.Rule, f.Line = "unit-exec-missing", unitLine(in.data, "", e[1])
+				f.Rule, f.Line = "unit-exec-missing", unitLine(data, "", e[1])
 				if strings.HasPrefix(e[2], "No such file") {
 					f.Text = e[1] + " does not exist on this machine"
 				} else {
@@ -193,7 +319,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				continue // Documentation= names a man page that is not installed: no problem with the unit
 			case strings.HasPrefix(msg, "Failed to open "):
 				// It never read the file; "Unit NAME not found." follows.
-				return nil, append(notes, "systemd-analyze could not load the unit ("+raw+")"), nil
+				return nil, "systemd-analyze could not load the unit (" + raw + ")", ""
 			case unitStart.MatchString(msg):
 				reason := unitStart.FindStringSubmatch(msg)[1]
 				if d := unitDep.FindStringSubmatch(reason); d != nil && d[2] == "not found" {
@@ -210,7 +336,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				key := ""
 				if k := unitKeyInMsg.FindStringSubmatch(msg); k != nil {
 					key = k[1]
-					f.Line = unitLine(in.data, key, "")
+					f.Line = unitLine(data, key, "")
 				}
 				switch {
 				case strings.HasPrefix(msg, "Service has no ExecStart="):
@@ -235,14 +361,15 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		case unitSummary.MatchString(raw):
 			m := unitSummary.FindStringSubmatch(raw)
 			recognized = true
-			if m[1] != name && m[1] != instance {
+			if !slices.Contains(names, m[1]) {
 				continue
 			}
 			msg := m[2]
 			switch {
 			case strings.HasPrefix(msg, "not found"):
-				// It never loaded the file (unreadable, or a name it rejects).
-				return nil, append(notes, "systemd-analyze could not load the unit ("+raw+")"), nil
+				// It never loaded the file (unreadable, or a name it rejects),
+				// or no unit has the name.
+				return nil, "systemd-analyze could not load the unit (" + raw + ")", raw
 			case strings.HasPrefix(msg, "failed to load properly") && len(remarks) > 0 && syntax < 0:
 				// It did not load: its remarks were the reasons.
 				for _, i := range remarks {
@@ -254,7 +381,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 				out[syntax].Raw += "; " + raw
 			case strings.HasPrefix(msg, "is masked"):
 				f := Finding{Rule: "unit-syntax", Severity: Error, Raw: raw, Text: "the unit is masked and cannot be started"}
-				if len(strings.TrimSpace(string(in.data))) == 0 {
+				if len(strings.TrimSpace(string(data))) == 0 {
 					f.Text = "the file is empty, so the unit is masked and cannot be started"
 				}
 				add(f)
@@ -273,7 +400,7 @@ func checkUnit(ctx context.Context, c *Checks, in input) ([]Finding, []string, e
 		if len(unknown) > 0 {
 			msg = unknown[0]
 		}
-		return nil, append(notes, "systemd-analyze could not check the unit ("+msg+")"), nil
+		return nil, "systemd-analyze could not check the unit (" + msg + ")", ""
 	}
-	return out, notes, nil
+	return out, "", ""
 }

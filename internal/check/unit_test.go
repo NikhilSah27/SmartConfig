@@ -292,3 +292,168 @@ func TestUnitRealVerify(t *testing.T) {
 		t.Errorf("good unit: %+v %v", rep, err)
 	}
 }
+
+// dropinTool makes c's systemd-analyze a script for drop-in checks. Each
+// run appends a line to the returned log: its unit path, the drop-in's
+// place under it, its size, and the arguments. It prints with to stderr
+// when the drop-in has content and without when it is empty (the second
+// run), FILE standing for the drop-in's scratch path, and exits code. A
+// without of "kill" kills the second run.
+func dropinTool(t *testing.T, c *Checks, with, without string, code int) string {
+	t.Helper()
+	dir := c.Run.Dirs[0]
+	log := filepath.Join(dir, "runs")
+	os.WriteFile(filepath.Join(dir, "with.err"), []byte(with), 0o644)
+	os.WriteFile(filepath.Join(dir, "without.err"), []byte(without), 0o644)
+	second := fmt.Sprintf(`sed "s|FILE|$f|g" %s >&2`, filepath.Join(dir, "without.err"))
+	if without == "kill" {
+		second = "kill -9 $$"
+	}
+	script := fmt.Sprintf("#!/bin/sh\nroot=${SYSTEMD_UNIT_PATH%%:}\nf=$(find \"$root\" -name '*.conf')\n"+
+		"printf '%%s|%%s|%%s|%%s\\n' \"$SYSTEMD_UNIT_PATH\" \"${f#$root/}\" \"$(wc -c < \"$f\")\" \"$*\" >> %s\n"+
+		"if [ -s \"$f\" ]; then sed \"s|FILE|$f|g\" %s >&2; else %s; fi\nexit %d\n",
+		log, filepath.Join(dir, "with.err"), second, code)
+	if err := os.WriteFile(filepath.Join(dir, "systemd-analyze"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return log
+}
+
+// fakeUnitDirs points the unit path at a directory of its own for the
+// test, with links as name -> target in it.
+func fakeUnitDirs(t *testing.T, links map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	for name, target := range links {
+		os.WriteFile(filepath.Join(dir, target), []byte("[Service]\nExecStart=/bin/true\n"), 0o644)
+		os.Symlink(target, filepath.Join(dir, name))
+	}
+	saved := unitDirs
+	unitDirs = []string{dir}
+	t.Cleanup(func() { unitDirs = saved })
+}
+
+const refusal = "%s: Service has more than one ExecStart= setting, which is only allowed for Type=oneshot services. Refusing.\nUnit %s has a bad unit file setting.\n"
+
+// A drop-in is checked with its unit (M3 follow-up 1): systemd-analyze
+// verify loads the unit by name with the candidate first on the unit
+// path; what it says about the unit as a whole is the drop-in's only when
+// a second run, with the drop-in empty, does not say it too.
+func TestUnitDropIn(t *testing.T) {
+	const typo = "FILE:3: Unknown key name 'Restrat' in section 'Service', ignoring.\n"
+	const gone = "my.service: Command /usr/bin/gone is not executable: No such file or directory\n"
+	data := "[Service]\nExecStart=/usr/bin/true\nRestrat=always\n"
+	for _, tc := range []struct {
+		name, path, with, without string
+		code                      int
+		want, note                string
+		runs                      int
+		links                     map[string]string
+	}{
+		{name: "the drop-in's own line, no second run", with: typo, want: "3 unit-unknown-key warning", runs: 1},
+		{name: "a refusal the drop-in causes", with: fmt.Sprintf(refusal, "my.service", "my.service"), code: 1,
+			want: "2 unit-syntax error", runs: 2},
+		{name: "the unit's own problem", with: gone, without: gone, code: 1, runs: 2},
+		{name: "all three", with: typo + gone + fmt.Sprintf(refusal, "my.service", "my.service"), without: gone, code: 1,
+			want: "2 unit-syntax error\n3 unit-unknown-key warning", runs: 2},
+		{name: "a line said twice", with: typo + typo, want: "3 unit-unknown-key warning", runs: 1},
+		{name: "no unit of that name", with: "Unit my.service not found.\n", code: 1, want: "0 unit-dropin-orphan warning", runs: 1},
+		{name: "no second run", with: typo + fmt.Sprintf(refusal, "my.service", "my.service"), without: "kill", code: 1,
+			want: "3 unit-unknown-key warning", runs: 2,
+			note: "systemd-analyze did not finish a second run, without the drop-in; what it said about my.service as a whole is left out"},
+		// sshd.service is ssh.service on Ubuntu: systemd says ssh.service.
+		{name: "an alias", path: unitDir + "sshd.service.d/50-x.conf", with: fmt.Sprintf(refusal, "ssh.service", "ssh.service"), code: 1,
+			want: "2 unit-syntax error", runs: 2, links: map[string]string{"sshd.service": "ssh.service"}},
+		{name: "another unit's problem", path: unitDir + "sshd.service.d/50-x.conf", with: fmt.Sprintf(refusal, "ssh.service", "ssh.service"), code: 1, runs: 1},
+		{name: "a template", path: unitDir + "getty@.service.d/50-x.conf", with: typo, want: "3 unit-unknown-key warning", runs: 1},
+		{name: "a drop-in for every foo- unit", path: unitDir + "foo-.service.d/50-x.conf",
+			note: "a drop-in for every unit whose name starts with foo-; it was not checked"},
+	} {
+		c, _ := fakeMachine(t, nil, "", "", 0)
+		log := dropinTool(t, c, tc.with, tc.without, tc.code)
+		fakeUnitDirs(t, tc.links)
+		path := tc.path
+		if path == "" {
+			path = unitDir + "my.service.d/50-x.conf"
+		}
+		rep, err := c.Check(context.Background(), path, []byte(data))
+		if err != nil || rep.Checker != "unitdropin" {
+			t.Fatalf("%s: %+v %v", tc.name, rep, err)
+		}
+		if got := brief(rep.Findings); got != tc.want || strings.Join(rep.Notes, "|") != tc.note {
+			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q, want %q", tc.name, got, tc.want, rep.Notes, tc.note)
+		}
+		for _, f := range rep.Findings {
+			if _, ok := Lookup(f.Rule); !ok || f.Path != path || strings.Contains(f.Raw+f.Text+f.Key, c.Home) {
+				t.Errorf("%s: %+v", tc.name, f)
+			}
+		}
+		b, _ := os.ReadFile(log)
+		runs := strings.Split(strings.TrimSpace(string(b)), "\n")
+		if len(b) == 0 {
+			runs = nil
+		}
+		if len(runs) != tc.runs {
+			t.Errorf("%s: %d runs, want %d: %q", tc.name, len(runs), tc.runs, runs)
+		}
+		// The candidate first, then an empty file in its place, each as
+		// UNIT.d/NAME on a unit path of its own under the scratch
+		// directory, ending in ":" to keep the stock path; the unit by
+		// name, a template by an instance.
+		unit := filepath.Base(filepath.Dir(path))
+		inst := strings.Replace(strings.TrimSuffix(unit, ".d"), "@.", "@i.", 1)
+		for i, r := range runs {
+			f := strings.Split(r, "|")
+			size := fmt.Sprint(len(data))
+			if i == 1 {
+				size = "0"
+			}
+			if len(f) != 4 || !strings.HasPrefix(f[0], filepath.Join(c.Home, "tmp", "check-")) || !strings.HasSuffix(f[0], ":") ||
+				f[1] != unit+"/50-x.conf" || f[2] != size || f[3] != "verify --man=no "+inst {
+				t.Errorf("%s: run %d: %q", tc.name, i, f)
+			}
+		}
+		if left, _ := os.ReadDir(filepath.Join(c.Home, "tmp")); len(left) != 0 {
+			t.Errorf("%s: scratch copies left: %v", tc.name, left)
+		}
+	}
+}
+
+// unitAlias follows a link on the unit path to a unit of another name
+// only.
+func TestUnitAlias(t *testing.T) {
+	fakeUnitDirs(t, map[string]string{"sshd.service": "ssh.service", "same.service": "same.service.real"})
+	os.Symlink("/dev/null", filepath.Join(unitDirs[0], "masked.service"))
+	for name, want := range map[string]string{"sshd.service": "ssh.service", "ssh.service": "", "masked.service": "",
+		"same.service": "", "nothere.service": ""} {
+		if got := unitAlias(name); got != want {
+			t.Errorf("unitAlias(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// The real systemd-analyze, where installed, on drop-ins for the journal's
+// own unit, which every systemd machine has, and for a unit no machine has.
+func TestUnitDropInRealVerify(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/systemd-analyze"); err != nil {
+		t.Skip("no systemd-analyze")
+	}
+	if _, err := os.Stat("/usr/lib/systemd/system/systemd-journald.service"); err != nil {
+		t.Skip("no systemd-journald.service")
+	}
+	c := &Checks{Home: filepath.Join(t.TempDir(), "schome")}
+	journald := unitDir + "systemd-journald.service.d/50-sc-test.conf"
+	for _, tc := range []struct{ name, path, data, want string }{
+		{"a second ExecStart and a typo", journald, "[Service]\nExecStart=/usr/bin/true\nRestrt=always\n", "2 unit-syntax error\n3 unit-unknown-key warning"},
+		{"good", journald, "[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-journald\n", ""},
+		{"no such unit", unitDir + "sc-no-such-unit.service.d/50-x.conf", "[Service]\nRestart=always\n", "0 unit-dropin-orphan warning"},
+	} {
+		rep, err := c.Check(context.Background(), tc.path, []byte(tc.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != tc.want || len(rep.Notes) != 0 {
+			t.Errorf("%s:\n%s\nwant:\n%s\nnotes %q", tc.name, got, tc.want, rep.Notes)
+		}
+	}
+}

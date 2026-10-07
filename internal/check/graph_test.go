@@ -124,10 +124,12 @@ func TestGraphParseErrors(t *testing.T) {
 // graphSamples has, for every checker of the built-in graph, paths it must
 // read. Each step that adds a checker adds its lines here.
 var graphSamples = map[string][]string{
-	"fstab":    {"/etc/fstab"},
-	"sudoers":  {"/etc/sudoers", "/etc/sudoers.d/90-local"},
-	"sshd":     {"/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d/50-local.conf"},
-	"unit":     {"/etc/systemd/system/my.service", "/etc/systemd/system/my.timer"},
+	"fstab":   {"/etc/fstab"},
+	"sudoers": {"/etc/sudoers", "/etc/sudoers.d/90-local"},
+	"sshd":    {"/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d/50-local.conf"},
+	"unit":    {"/etc/systemd/system/my.service", "/etc/systemd/system/my.timer"},
+	"unitdropin": {"/etc/systemd/system/ssh.service.d/override.conf", "/etc/systemd/system/getty@.service.d/50-local.conf",
+		"/etc/systemd/system/my.timer.d/50-local.conf"},
 	"shsyntax": {"/etc/default/grub"},
 	"grubcfg":  {"/boot/grub/grub.cfg", "/boot/grub/custom.cfg"},
 	"nsswitch": {"/etc/nsswitch.conf"},

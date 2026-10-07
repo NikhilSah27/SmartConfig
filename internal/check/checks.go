@@ -51,21 +51,22 @@ type input struct {
 
 // checkers maps the graph's checker names to their code.
 var checkers = map[string]func(context.Context, *Checks, input) ([]Finding, []string, error){
-	"fstab":    checkFstab,
-	"sudoers":  checkSudoers,
-	"sshd":     checkSshd,
-	"unit":     checkUnit,
-	"shsyntax": checkShSyntax,
-	"grubcfg":  checkGrubCfg,
-	"nsswitch": checkNsswitch,
-	"preload":  checkPreload,
-	"flag":     checkFlag,
-	"hosts":    checkHosts,
-	"netplan":  checkNetplan,
-	"udev":     checkUdev,
-	"passwd":   checkPasswd,
-	"group":    checkGroup,
-	"sysctl":   checkSysctl,
+	"fstab":      checkFstab,
+	"sudoers":    checkSudoers,
+	"sshd":       checkSshd,
+	"unit":       checkUnit,
+	"unitdropin": checkUnitDropIn,
+	"shsyntax":   checkShSyntax,
+	"grubcfg":    checkGrubCfg,
+	"nsswitch":   checkNsswitch,
+	"preload":    checkPreload,
+	"flag":       checkFlag,
+	"hosts":      checkHosts,
+	"netplan":    checkNetplan,
+	"udev":       checkUdev,
+	"passwd":     checkPasswd,
+	"group":      checkGroup,
+	"sysctl":     checkSysctl,
 }
 
 // Check runs the checker the graph names for path on data, which need not
@@ -133,7 +134,12 @@ func (c *Checks) pathExists(p string) bool {
 // that did not happen for a clean one. ok is false when there is no output
 // to read.
 func (c *Checks) validate(ctx context.Context, in input, tool string, args ...string) (res Result, notes []string, ok bool, err error) {
-	res, err = c.Run.Run(ctx, filepath.Dir(in.file), tool, args...)
+	return c.validateEnv(ctx, in, nil, tool, args...)
+}
+
+// validateEnv is validate with env added to the validator's environment.
+func (c *Checks) validateEnv(ctx context.Context, in input, env []string, tool string, args ...string) (res Result, notes []string, ok bool, err error) {
+	res, err = c.Run.RunEnv(ctx, filepath.Dir(in.file), env, tool, args...)
 	// A validator that is not installed is missing before and after
 	// alike: sc's own rules are then the whole check. One that was cut
 	// short this time is not.
