@@ -319,8 +319,9 @@ snapshot.
 2. Done (`17f4a34`): a checked file replaced by a symlink was not judged ("now a
    symlink"); `sc status` now calls it an error, with the healthy
    version's restore (B9).
-3. `GRUB_TOP_LEVEL` is ignored: the rescue entry boots the newest kernel
-   (A9).
+3. Done: `GRUB_TOP_LEVEL` was ignored: the rescue entry booted the newest
+   kernel (A9). It now boots the one `GRUB_TOP_LEVEL` names, as `10_linux`
+   puts it first, when that one has an initrd (else it says so).
 4. Documented (`2ae67e8`, your pick): `systemctl soft-reboot` starts a new session
    with the same boot id: it gets no "seen" line (the boot has its
    verdict), so a failure in it before multi-user brings no menu (A5,

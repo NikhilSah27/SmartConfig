@@ -27,14 +27,19 @@ if [ "x${GRUB_DISABLE_RECOVERY}" = "xtrue" ] ; then
 	no_entry=1
 fi
 
-# The newest kernel that has an initrd, in 10_linux's order.
+# The newest kernel that has an initrd, in 10_linux's order: the one
+# GRUB_TOP_LEVEL names first, as 10_linux puts it first (M4 follow-up 3).
 list=
 for i in "$boot"/vmlinuz-* ; do
 	if grub_file_is_not_garbage "$i" ; then list="$list $i" ; fi
 done
+sorted=$(echo $list | tr ' ' '\n' | version_sort -r)
+if [ "x${GRUB_TOP_LEVEL}" != "x" ] && command -v grub_move_to_front >/dev/null ; then
+	sorted=$(grub_move_to_front "${GRUB_TOP_LEVEL}" ${sorted})
+fi
 linux=
 initrd=
-for k in $(echo $list | tr ' ' '\n' | version_sort -r) ; do
+for k in ${sorted} ; do
 	version=$(basename "$k" | sed -e "s,^[^0-9]*-,,g")
 	for i in "initrd.img-${version}" "initrd-${version}.img" ; do
 		if test -e "$boot/$i" ; then
@@ -47,6 +52,8 @@ done
 
 if [ -z "$linux" ] && [ -z "$no_entry" ] ; then
 	gettext_printf "SmartConfig rescue: no entry (no kernel in %s has an initrd)\n" "$boot" >&2
+elif [ "x${GRUB_TOP_LEVEL}" != "x" ] && [ "x${GRUB_TOP_LEVEL}" != "x$linux" ] && [ -z "$no_entry" ] ; then
+	gettext_printf "SmartConfig rescue: GRUB_TOP_LEVEL %s is not a kernel with an initrd here; the rescue entry boots %s\n" "${GRUB_TOP_LEVEL}" "$linux" >&2
 fi
 
 # A btrfs or ZFS root needs subvolume or pool arguments that only 10_linux

@@ -202,7 +202,8 @@ its login screen all the same, with emergency mode out of sight behind
 it, and nothing on the screen says what went wrong (sign-off S3). At the
 console, M4 gives you:
 
-- **A menu entry, SmartConfig rescue.** It boots the newest kernel with
+- **A menu entry, SmartConfig rescue.** It boots the newest kernel (the
+  one `GRUB_TOP_LEVEL` names, if set and it has an initrd) with
   root read-only and `/etc/fstab` ignored (`ro fstab=no
   systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1`), with the default
   entry's options but `quiet splash`, straight to a root shell: no 90 s

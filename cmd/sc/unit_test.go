@@ -422,6 +422,7 @@ func grubScript(t *testing.T, kernels []string, env ...string) string {
 }
 
 // grubScriptErr is grubScript, with what the script printed on stderr.
+// BOOT/ in env is the made-up /boot.
 func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, string) {
 	t.Helper()
 	lib := "/usr/share/grub/grub-mkconfig_lib"
@@ -436,6 +437,9 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 		if !noInitrd {
 			os.WriteFile(boot+"/initrd.img-"+k, []byte("i"), 0o644)
 		}
+	}
+	for i := range env {
+		env[i] = strings.ReplaceAll(env[i], "BOOT/", boot+"/")
 	}
 	pkg := t.TempDir()
 	os.WriteFile(pkg+"/grub-mkconfig_lib", []byte(". "+lib+"\n"+
@@ -489,6 +493,22 @@ func TestGrubScript(t *testing.T) {
 	}
 	if out := grubScript(t, nil); strings.Contains(out, "menuentry") || !strings.Contains(out, "smartconfig_pending") {
 		t.Errorf("no kernel:\n%s", out)
+	}
+}
+
+// GRUB_TOP_LEVEL names the kernel 10_linux puts first: the rescue entry
+// boots it too (M4 follow-up 3: it booted the newest). One without an
+// initrd is passed over, with a word.
+func TestGrubScriptTopLevel(t *testing.T) {
+	kernels := []string{"6.8.0-100-generic", "6.8.0-142-generic", "6.9.0-1-generic!"}
+	out, msg := grubScriptErr(t, kernels, "GRUB_TOP_LEVEL=BOOT/vmlinuz-6.8.0-100-generic")
+	if !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-100-generic root=") || !strings.Contains(out, "\tinitrd\t/boot/initrd.img-6.8.0-100-generic\n") ||
+		strings.Contains(msg, "GRUB_TOP_LEVEL") {
+		t.Errorf("top level:\n%s\n%s", out, msg)
+	}
+	out, msg = grubScriptErr(t, kernels, "GRUB_TOP_LEVEL=BOOT/vmlinuz-6.9.0-1-generic")
+	if !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=") || !strings.Contains(msg, "is not a kernel with an initrd here; the rescue entry boots ") {
+		t.Errorf("top level without an initrd:\n%s\n%s", out, msg)
 	}
 }
 
