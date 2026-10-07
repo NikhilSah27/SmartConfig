@@ -148,19 +148,12 @@ var (
 // first queued change, logs the findings the change added, and says so
 // when a file it reported is clean of them again.
 func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
-	rows, err := w.st.List(p, 0)
+	// The two rows it needs, not the path's whole history (M3 follow-up
+	// 7: that took 0.1 s at 20,000 rows).
+	last, before, err := w.st.Around(p, j.first, j.last)
 	if err != nil {
 		w.logOnce("check list "+p, prioErr, fmt.Sprintf("check: %s: %v", show(p), err))
 		return
-	}
-	var last, before *store.Change
-	for i := range rows { // newest first
-		if rows[i].ID == j.last {
-			last = &rows[i]
-		}
-		if rows[i].ID == j.first && i+1 < len(rows) {
-			before = &rows[i+1]
-		}
 	}
 	if last == nil {
 		return // gone from the store: nothing to say

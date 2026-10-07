@@ -681,10 +681,19 @@ func (s *Store) Rows(after int64, n int) ([]Row, error) {
 	return out, nil
 }
 
+// The queries that read one row of a path, each an index search whose cost
+// does not grow with the path's history (TestPathQueryPlans): the newest
+// row at or before a rowid walks the index on path back from there, and an
+// id is unique (the table's UNIQUE index on it).
+const (
+	qAsOf = `SELECT ` + cols + ` FROM changes WHERE path = ? AND rowid <= ? ORDER BY rowid DESC LIMIT 1`
+	qByID = `SELECT rowid, ` + cols + ` FROM changes WHERE id = ? AND path = ?`
+)
+
 // AsOf returns the newest change of path at or before row rowid: what was
 // recorded of the path then. It is nil when nothing was.
 func (s *Store) AsOf(path string, rowid int64) (*Change, error) {
-	rows, err := s.db.Query(`SELECT `+cols+` FROM changes WHERE path = ? AND rowid <= ? ORDER BY rowid DESC LIMIT 1`, path, rowid)
+	rows, err := s.db.Query(qAsOf, path, rowid)
 	if err != nil {
 		return nil, fmt.Errorf("list changes: %w", err)
 	}
@@ -693,6 +702,41 @@ func (s *Store) AsOf(path string, rowid int64) (*Change, error) {
 		return nil, err
 	}
 	return &cs[0], nil
+}
+
+// Around returns what scd's checker compares (M3 follow-up 7): the change
+// of path whose id is last, and the change of path just before the one
+// whose id is first (nil when that is the path's first). Three index
+// searches, not a read of the path's whole history. lastC is nil when no
+// change of path has the id last.
+func (s *Store) Around(path, first, last string) (lastC, before *Change, err error) {
+	byID := func(id string) (*Row, error) {
+		rows, err := s.db.Query(qByID, id, path)
+		if err != nil {
+			return nil, fmt.Errorf("list changes: %w", err)
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			return nil, rows.Err()
+		}
+		var r Row
+		if err := scanChange(rows, &r.Change, &r.RowID); err != nil {
+			return nil, err
+		}
+		return &r, nil
+	}
+	l, err := byID(last)
+	if err != nil || l == nil {
+		return nil, nil, err
+	}
+	f := l
+	if first != last {
+		if f, err = byID(first); err != nil || f == nil {
+			return &l.Change, nil, err
+		}
+	}
+	before, err = s.AsOf(path, f.RowID-1)
+	return &l.Change, before, err
 }
 
 // List returns up to n changes, newest (last inserted) first, whatever their

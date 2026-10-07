@@ -1262,3 +1262,76 @@ func TestHistoryOrderIgnoresClock(t *testing.T) {
 		t.Fatalf("same content again: unchanged=%v id %s, want unchanged since %s", unchanged, c.ID, second.ID)
 	}
 }
+
+// Around gives scd's checker the change with the last id and the change
+// before the one with the first id (M3 follow-up 7), of that path only.
+func TestAround(t *testing.T) {
+	s, dir := setup(t)
+	tick := clock(s)
+	p, q := filepath.Join(dir, "p"), filepath.Join(dir, "q")
+	var ids []string
+	for _, v := range []string{"1", "2", "3"} {
+		write(t, p, v, 0o644)
+		c, _ := snap(t, s, p)
+		ids = append(ids, c.ID)
+		write(t, q, v, 0o644)
+		snap(t, s, q) // another path's rows in between
+		tick()
+	}
+	for _, tc := range []struct {
+		first, last string
+		want        string // last's id, then before's or "-"
+	}{
+		{ids[1], ids[2], ids[2] + " " + ids[0]},
+		{ids[2], ids[2], ids[2] + " " + ids[1]},
+		{ids[0], ids[0], ids[0] + " -"},
+		{"ffffff", ids[2], ids[2] + " -"},
+		{ids[0], "ffffff", "- -"},
+	} {
+		last, before, err := s.Around(p, tc.first, tc.last)
+		got := "- -"
+		if last != nil {
+			got = last.ID + " -"
+			if before != nil {
+				got = last.ID + " " + before.ID
+			}
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("Around(%s, %s) = %s %v, want %s", tc.first, tc.last, got, err, tc.want)
+		}
+	}
+	// Another path's id is not this path's change.
+	qs, _ := s.List(q, 1)
+	if last, before, err := s.Around(p, qs[0].ID, qs[0].ID); last != nil || before != nil || err != nil {
+		t.Errorf("another path's id: %+v %+v %v", last, before, err)
+	}
+}
+
+// The queries that read one row of a path are index searches with no sort:
+// their cost does not grow with the path's history (M3 follow-up 7: the
+// checker's list of it took 0.1 s at 20,000 rows).
+func TestPathQueryPlans(t *testing.T) {
+	s, _ := setup(t)
+	for q, want := range map[string]string{
+		qAsOf: "SEARCH changes USING INDEX changes_path_seq (path=? AND rowid<?)",
+		qByID: "SEARCH changes USING INDEX sqlite_autoindex_changes_1 (id=?)",
+	} {
+		rows, err := s.db.Query("EXPLAIN QUERY PLAN "+q, "/p", "x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan = append(plan, detail)
+		}
+		rows.Close()
+		if p := strings.Join(plan, "; "); p != want {
+			t.Errorf("%s:\n%s\nwant %s", q, p, want)
+		}
+	}
+}
