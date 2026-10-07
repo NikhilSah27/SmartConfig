@@ -2172,3 +2172,29 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     cases), `TestSshdTogetherOther`; 9 mutations, each caught.
   - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
     race`, `make m1-compat`.
+- **CI red once, on `6fb78f0`, fixed in `762909e`.** CI's root pass
+  failed `TestSshdTogether`: its runner has no `/run/sshd`, so `sshd -t`
+  as root adds a note to a clean run, and the case that falls back to
+  the drop-in alone is one. This VM has `/run/sshd`; a reproduction in
+  a private mount namespace was refused by Claude Code's safety check, so
+  CI was the test: green on `762909e`.
+- **A time limit that runs out before the validator starts is a
+  timeout, `56c5d31`.** The race pass of follow-up 4's checks failed
+  `TestSudoersVisudoBroken` ("run visudo: context deadline exceeded"):
+  with other tests running alongside, more than its 200 ms passed before
+  the start, and exec refuses a done context. Now that is a `TimedOut`
+  result, a note like any timeout; `TestRunTimeoutBeforeStart` (1 ns)
+  gave the error before. Checks are run alone from now on.
+- **M3 follow-up 4, notes and the validators' words, done `c77b060`**
+  (chunk F). A note is sc's sentence; what a validator said behind it
+  (which may quote a file) is `Report.Said`: `sc check -v` prints it,
+  without `-v` a line says `-v` shows it; `sc edit` prints it under the
+  note. About 15 notes changed in 9 checkers.
+  - The drop-in checks' second runs say nothing into `Said`; the sshd
+    together check keeps the first run's lines only when it keeps its
+    result (a test with a fake sshd says them once).
+  - Tests: `notesSaid` in the check tests (the old notes' raw text is
+    asserted as said lines), `TestCheckCLISaid`, `TestEditSaid`; 8
+    mutations, each caught (one only after a test was extended).
+  - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
+    race` (uncached), `make m1-compat`.
