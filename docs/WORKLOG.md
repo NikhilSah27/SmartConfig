@@ -2405,3 +2405,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   (seen line and menu as before) and the new check 1.8 (seen's
   `Before=` has no target but `shutdown.target`). The README now says
   the lab runs the recipe.
+- **The `cmd/sc` flake, found and fixed `e37758b`** (chunk H; the chunk D
+  note). A hunt (`~/smartconfig-work/fu-scratch/h7/hunt.sh`: three
+  `make lab-test`, then `go test ./cmd/sc/`, ten times) failed at once,
+  because it ran under `nohup`: SIGHUP ignored is inherited, sc keeps an
+  ignored hangup (by design), and `TestConsoleStatusOutlivesHangup`,
+  `TestWatchSIGHUPRescans` and the lab's signal test (via
+  `TestLabPython`) failed every time. The earlier unkept failure fits
+  that. `TestMain` un-ignores SIGHUP in the test process, so children
+  start with the default; the lab test's child resets it. Under `nohup`
+  those tests pass now, and the hunt then ran 10 of 10 clean. Full
+  checks passed. Chunk H's items are all in; next, its review.

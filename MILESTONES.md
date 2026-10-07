@@ -292,8 +292,12 @@ snapshot.
   --console`, before `signal.Notify` runs, ends sc by the kernel's
   default (chunk D, B5; 3 to 5 ms, said in `main`). The shell still
   starts: the drop-in's `ExecStartPre=-` lets the report fail.
-- One `go test ./cmd/sc/` run of 14 failed right after three lab-test
-  runs, its output not kept; 13 later runs passed (chunk D).
+- Done (`e37758b`): one `go test ./cmd/sc/` run of 14 failed right after
+  three lab-test runs, its output not kept (chunk D). Found: run under
+  `nohup`, the tests' children inherit SIGHUP ignored and sc keeps it
+  so; three hangup tests failed that way every time. The tests now give
+  their children SIGHUP as a shell does; 10 rounds of three lab-test runs
+  and `go test ./cmd/sc/` then passed.
 - Done (`b092a79`): the lab (chunk D): a read over ssh whose time ran out
   while the host stood still runs once more with a fresh budget; a mark
   no longer waits out its 1 s drain while serial reconnects; `facts.sh`'s
