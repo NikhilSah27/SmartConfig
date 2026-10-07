@@ -33,6 +33,13 @@ SyslogIdentifier=sc-boot
 Environment=GOTRACEBACK=none
 # A slow boot (the lab's stalls) took longer than 10 s.
 TimeoutStartSec=90s
+# Only what it needs (the M4 final review, C14): it gains no privilege
+# through a set-user-ID file, sees no /home, /root or /run/user, and has
+# no network. Ubuntu's own sysinit units (systemd-resolved, -timesyncd)
+# set up such namespaces this early too.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateNetwork=yes
 
 [Install]
 WantedBy=sysinit.target

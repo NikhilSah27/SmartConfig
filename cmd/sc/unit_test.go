@@ -79,8 +79,8 @@ func TestBootUnits(t *testing.T) {
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
 			"\nIgnoreOnIsolate=yes\n", "\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n",
 			"\nBefore=grub-common.service grub-initrd-fallback.service shutdown.target\n",
-			"\nConditionKernelCommandLine=!fstab=no\n"},
-		"sc-boot-ok.service": {"\nConditionPathIsReadWrite=/var/lib\n", "\nConditionKernelCommandLine=!fstab=no\n",
+			"\nConditionKernelCommandLine=!fstab=no\n", "\nNoNewPrivileges=yes\n", "\nProtectHome=yes\n", "\nPrivateNetwork=yes\n"},
+		"sc-boot-ok.service": {"\nNoNewPrivileges=yes\n", "\nProtectHome=yes\n", "\nConditionPathIsReadWrite=/var/lib\n", "\nConditionKernelCommandLine=!fstab=no\n",
 			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
 			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service scd.service\n"},
 	} {
@@ -445,8 +445,16 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 	os.WriteFile(pkg+"/grub-mkconfig_lib", []byte(". "+lib+"\n"+
 		"prepare_grub_to_access_device () { echo \"search --no-floppy --fs-uuid --set=root BOOTFS\"; }\n"+
 		"make_system_path_relative_to_its_root () { echo /boot; }\n"), 0o644)
-	cmd := exec.Command("sh", "../../scripts/42_smartconfig")
-	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg, "SC_GRUB_BOOT=" + boot,
+	// The script's own /boot line points at the made-up one: it takes no
+	// variable for it from root's environment (M4 follow-up 5).
+	src, _ := os.ReadFile("../../scripts/42_smartconfig")
+	if strings.Count(string(src), "\nboot=/boot\n") != 1 || strings.Contains(string(src), "SC_GRUB_BOOT") {
+		t.Fatal("42_smartconfig: no single boot=/boot line, or a variable for it")
+	}
+	script := filepath.Join(pkg, "42_smartconfig")
+	os.WriteFile(script, []byte(strings.Replace(string(src), "\nboot=/boot\n", "\nboot="+boot+"\n", 1)), 0o755)
+	cmd := exec.Command("sh", script)
+	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg,
 		"GRUB_DEVICE=/dev/sda2", "GRUB_DEVICE_UUID=sc-no-such-uuid", "GRUB_DEVICE_PARTUUID=sc-no-such-partuuid", "GRUB_FS=ext2",
 		"GRUB_CMDLINE_LINUX=net.ifnames=0", "GRUB_CMDLINE_LINUX_DEFAULT=quiet splash console=tty1 nomodeset console=ttyS0 *"}, env...)
 	var stderr strings.Builder

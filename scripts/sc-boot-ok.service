@@ -19,6 +19,10 @@ ExecStart=/usr/local/sbin/sc boot verdict
 SyslogIdentifier=sc-boot
 Environment=GOTRACEBACK=none
 TimeoutStartSec=120s
+# Only what it needs (the M4 final review, C14); it asks systemd over its
+# socket in /run, so the network stays.
+NoNewPrivileges=yes
+ProtectHome=yes
 
 [Install]
 WantedBy=multi-user.target
