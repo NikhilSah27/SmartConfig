@@ -97,9 +97,12 @@ func path(home string) string { return filepath.Join(home, FileName) }
 // keeping only the last keepLines lines when the file has grown past
 // maxSize (rewritten in place, so a writer waiting for the lock appends
 // to the same file), and syncs it: a boot reset soon after must not lose
-// its line. A line a crash left unfinished is ended first, so the new one
-// is not glued to it. Root writes the file at boot: a symlink there, or
-// anything not a regular file, is refused, never followed.
+// its line. A line a crash left unfinished is ended first, with tornMark,
+// so the new one is not glued to it and the torn one is never read: cut
+// in its row, "bbbb ok 1700000000 12" for row 1234, it would read whole
+// and pull the healthy boot's line back (M4 follow-up 9). Root writes the
+// file at boot: a symlink there, or anything not a regular file, is
+// refused, never followed.
 func appendLine(home, line string) error {
 	f, err := os.OpenFile(path(home), os.O_RDWR|os.O_APPEND|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
@@ -123,7 +126,7 @@ func appendLine(home, line string) error {
 	} else if fi.Size() > 0 {
 		last := make([]byte, 1)
 		if _, err := f.ReadAt(last, fi.Size()-1); err == nil && last[0] != '\n' {
-			line = "\n" + line
+			line = tornMark + "\n" + line
 		}
 	}
 	if _, err := f.WriteString(line + "\n"); err != nil {
@@ -134,6 +137,9 @@ func appendLine(home, line string) error {
 	}
 	return nil
 }
+
+// tornMark ends a line a crash cut short; Read skips such a line.
+const tornMark = " #torn"
 
 // trim rewrites f, which is locked, with its last keepLines lines.
 func trim(f *os.File) error {
@@ -172,6 +178,9 @@ func Read(home string) ([]Boot, error) {
 	at := map[string]int{}
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines[:len(lines)-1] { // the last: "" or unended
+		if strings.HasSuffix(line, tornMark) {
+			continue
+		}
 		fl := strings.SplitN(strings.TrimLeft(line, "\x00"), " ", 5)
 		if len(fl) < 3 {
 			continue

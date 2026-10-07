@@ -174,7 +174,21 @@ func TestReadTornLines(t *testing.T) {
 			t.Errorf("%s: %+v %v", name, bs, err)
 		}
 	}
+	// A verdict cut in its row (1234 kept as 12) is ended as torn by the
+	// next line, and never read: read whole, it pulled the healthy boot's
+	// line back (M4 follow-up 9).
 	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, FileName), []byte("aaaa seen 1\naaaa ok 2 7 why\nbbbb seen 3\nbbbb ok 4 12"), 0o600)
+	if err := Seen(home, "cccc", t0); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, FileName))
+	bs, _ := Read(home)
+	if len(bs) != 3 || bs[0].Verdict != "ok" || bs[1].ID != "bbbb" || bs[1].Verdict != "" || bs[2].ID != "cccc" ||
+		!strings.Contains(string(b), "bbbb ok 4 12"+tornMark+"\n") {
+		t.Errorf("a verdict cut in its row: %+v\n%q", bs, b)
+	}
+	home = t.TempDir()
 	os.WriteFile(filepath.Join(home, FileName), []byte("aaaa ok 2 x why\naaaa maybe 2 7 why\naaaa seen 1\n"), 0o600)
 	if bs, _ := Read(home); len(bs) != 1 || bs[0].Verdict != "" {
 		t.Errorf("an unreadable verdict was read: %+v", bs)
