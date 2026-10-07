@@ -2278,3 +2278,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   the healthy version's restore; a link that was a link stays as it was.
   `TestStatusFileNowLink`, which fails without the change. Full checks
   passed.
+- **M4 follow-up 9, a torn verdict line, done `4adc132`** (chunk G). The
+  next append ends a fragment a crash left with " #torn", and `Read`
+  skips it: a verdict cut in its row id can no longer pull the healthy
+  boot's line back. Old boots files have no mark and read as before.
+  The new case in `TestReadTornLines` failed before. Full checks passed.

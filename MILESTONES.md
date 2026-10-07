@@ -331,6 +331,6 @@ snapshot.
 8. `fstab=no` does not cover crypttab: a second LUKS volume asks for its
    passphrase in the rescue boot (`luks.crypttab=no`, if wanted; LUKS is
    a non-goal) (A10).
-9. Done: a torn verdict line whose row id lost digits pulled the line
+9. Done (`4adc132`): a torn verdict line whose row id lost digits pulled the line
    back (more rows counted as changed); a line a crash cut short is now
    ended with a mark, and the mark is never read as a line (B5).
