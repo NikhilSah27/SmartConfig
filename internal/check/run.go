@@ -99,6 +99,11 @@ func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool strin
 	out, errOut := &capWriter{max: maxOut}, &capWriter{max: maxOut}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	if err := cmd.Start(); err != nil {
+		// Start refuses a context that is done: a time that ran out on a
+		// busy machine before the tool started is a timeout all the same.
+		if ctx.Err() == nil && tctx.Err() != nil {
+			return Result{Found: true, TimedOut: true, Exit: -1}, nil
+		}
 		return Result{Found: true}, fmt.Errorf("run %s: %w", tool, err)
 	}
 	// Whatever the tool started and left behind is killed too, while the

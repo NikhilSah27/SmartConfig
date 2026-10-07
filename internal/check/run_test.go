@@ -271,3 +271,15 @@ func TestReportIncomplete(t *testing.T) {
 		}
 	}
 }
+
+// A time that runs out before the tool starts is a timeout, not an error:
+// the race run, on a busy machine, once took more than 200 ms to get to
+// the start, and exec refuses to start under a context that is done.
+func TestRunTimeoutBeforeStart(t *testing.T) {
+	r := tool(t, "fake", "echo started\n")
+	r.Timeout = time.Nanosecond
+	res, err := r.Run(context.Background(), "", "fake")
+	if err != nil || !res.TimedOut || res.Exit != -1 || len(res.Out) != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
