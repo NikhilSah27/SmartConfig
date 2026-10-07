@@ -111,7 +111,10 @@ status` healthy. You reset the two boots after it (a black desktop;
 your answer). **S3 runs** (your OK and a fresh snapshot, 21:05 UTC,
 "Yes, taken — go"; log): the bad line is in `/etc/fstab` (line 10,
 row `053fdf`, scd: blocker), and this VM reboots into the failing boot.
-You drive the console: the failed boot (a photo: the report above
+Two failing boots are behind us, the rescue boot not yet (2026-10-07
+05:58 UTC, as the user; log): flag set, fstab still the bad one, this
+boot "emergency" with the desktop up. You are booting "SmartConfig
+rescue" now. You drive the console: the failed boot (a photo: the report above
 "Press Enter"? `#` or `login:`?), a reset, the menu by itself, "SmartConfig
 rescue", the report (a photo), Enter, its commands, then Ubuntu at the
 menu once more. **At the next session:** the verdicts (the failed boot
@@ -1861,3 +1864,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     daemon-reload: the owner reboots.
   - Next: the reboot (`systemd-run --on-active=120 systemctl reboot`);
     you drive the console.
+  - Since (2026-10-07 05:58 UTC; read as the user, no root, so no
+    verdicts and no system journal yet;
+    `~/smartconfig-work/signoff/pre-s3-rescue-20261007T055831Z.txt`):
+    two boots after `94783975` (ended 21:09): `928e5ac3` (21:16 to
+    01:20, then gone without a shutdown, `last -x`: crash, the host
+    again) and `f11e5522` (05:41). grubenv `smartconfig_pending=1`;
+    `/etc/fstab` still the bad one (sha256 `1ab60193…`); `sc status`:
+    this boot `f11e5522` (emergency), root read-write, scd running;
+    `systemctl is-system-running`: maintenance; the desktop came up all
+    the same (both boots). No rescue boot yet.
+  - Next: you boot "SmartConfig rescue" from the menu, run the report's
+    commands, then Ubuntu; then the checks as root.
