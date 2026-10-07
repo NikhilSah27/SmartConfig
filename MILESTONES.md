@@ -206,9 +206,9 @@ where nss-systemd supplies root.
 
 ### M3 follow-ups (from the final review, none high)
 
-1. Done: a checker for unit drop-ins (`*.service.d/*.conf`, what
-   `systemctl edit` writes), which verifies the unit together with its
-   drop-ins (medium).
+1. Done (`1246469`): a checker for unit drop-ins (`*.service.d/*.conf`,
+   what `systemctl edit` writes), which verifies the unit together with
+   its drop-ins (medium).
 2. sshd: a warning for a `ListenAddress` this machine does not have
    (SSH is gone at the next boot).
 3. sshd: check a drop-in together with the main file, not alone (a false

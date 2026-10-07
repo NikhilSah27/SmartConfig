@@ -2110,3 +2110,29 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   follow-ups are in; its soak was closed by you); M3 has 7 follow-ups
   open, M4 9 and 8 review notes. The order and the chunks are in "Now".
   Out: M4 follow-up 8 (LUKS, a non-goal) and your own items.
+- **M3 follow-up 1, unit drop-ins, done `1246469`** (chunk F). A new
+  checker, `unitdropin`, for `/etc/systemd/system/NAME.d/*.conf`.
+  `systemd-analyze verify` loads NAME by name, with a scratch directory
+  first on `SYSTEMD_UNIT_PATH`, where the candidate takes the place of
+  the drop-in of the same name (probed on this VM, systemd 255: the
+  scratch copy wins, and a trailing ":" keeps the stock path).
+  - The drop-in's own lines are its findings. A finding about the unit
+    as a whole counts only if a second run, with the drop-in empty, does
+    not give it too: a second `ExecStart=` without the empty one before
+    it is the drop-in's; a problem the unit had before is not.
+  - Found while probing: for an alias (`sshd.service.d` on Ubuntu)
+    systemd names the unit `ssh.service`, so the alias is followed
+    through the unit path's symlink; a template's drop-in is said twice
+    (template and instance), now one finding. `verify` checks only the
+    first command of each `Exec…` list (systemd's limit): an added
+    `ExecStartPre=` after one with `-` is not looked at.
+  - No unit of that name: `unit-dropin-orphan` (warning). A prefix
+    drop-in (`foo-.service.d`) gets a note, not a check.
+  - Tests: `TestUnitDropIn` (11 cases, a fake verify that answers by
+    the drop-in's size), `TestUnitAlias`, `TestUnitDropInRealVerify`
+    (journald, real systemd). 8 mutations of the new code, each caught.
+    `accept-m3.sh` has three new cases (run as a user here with this
+    build: as expected; as root at the end, with your run).
+  - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
+    race`, `make m1-compat`. The M4 rescue drop-ins on this VM check
+    clean with the new build.
