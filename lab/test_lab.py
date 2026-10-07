@@ -272,7 +272,9 @@ class TestMux(unittest.TestCase):
         with mock.patch.object(serialmux, "GAP", 0.05):  # every wake (0.2 s with nothing to read) is late then
             mux = self.start()
             self.assertTrue(wait_until(lambda: len(mux.gaps) >= 2))
-        self.assertIn(b"gap: the mux did not run for 0.2 s", self.read("mux.log"))
+        # At least the 0.2 s wake, more under load (a race pass beside it
+        # measured 0.3 s: the chunk G review's checks).
+        self.assertRegex(self.read("mux.log").decode(), r"gap: the mux did not run for (0\.[2-9]|[1-9]\d*\.\d) s")
 
     def test_a_wall_clock_jump_alone_is_logged_not_kept(self):
         mux = self.start()
@@ -322,6 +324,20 @@ class TestMux(unittest.TestCase):
             sent += len(line)
             self.assertEqual(mux.mark("RESET#%d" % i, drain=30.0).txt, sent, i)  # as long as a loaded host needs
         self.assertEqual(mux.mark("x", drain=0).txt, sent)
+
+    def test_a_mark_while_serial_reconnects_does_not_wait(self):
+        # QEMU's socket gone and the loop trying to reconnect: the old
+        # connection was read to its end, nothing more can come, and the
+        # mark does not wait out its drain (the chunk D review).
+        mux = self.start(reconnect=10.0)
+        self.qemu.conn.sendall(b"reboot: Restarting system\n")
+        self.assertTrue(wait_until(lambda: mux.size() == 26))
+        self.qemu.reset()
+        self.qemu.close()
+        self.assertTrue(wait_until(lambda: b"closed by QEMU" in self.read("mux.log")))
+        t = time.monotonic()
+        self.assertEqual(mux.mark("RESET", drain=8.0).txt, 26)
+        self.assertLess(time.monotonic() - t, 3)
 
     def test_a_mark_with_nothing_unread_does_not_wait(self):
         mux = self.start()

@@ -286,16 +286,19 @@ func TestLabGuestFacts(t *testing.T) {
 		os.WriteFile(filepath.Join(root, p), []byte(data), 0o644)
 	}
 	labStubs(t, dir, map[string]string{
-		"systemctl":  `case "$1" in is-active) echo active ;; is-enabled) echo enabled ;; esac`,
-		"journalctl": "", "systemd-analyze": "", "grub-editenv": "", "passwd": "",
+		// SCLAB_FAIL: the commands facts.sh filters fail.
+		"systemctl":  `case "$1" in is-active) echo active ;; is-enabled) echo enabled ;; list-units) [ -z "$SCLAB_FAIL" ] || exit 3 ;; esac`,
+		"journalctl": "", "systemd-analyze": `[ -z "$SCLAB_FAIL" ] || exit 3`, "grub-editenv": "", "passwd": "",
 		// It reads its input: a part has none, whatever facts.sh was given.
-		"dmesg": "cat",
+		"dmesg": `[ -z "$SCLAB_FAIL" ] || exit 3
+cat`,
 		// The real one (the log has its arguments), with 2 s for a part when SCLAB_HANG is set.
 		"timeout": `[ -z "$SCLAB_HANG" ] || { shift 3; set -- -k 5 2 "$@"; }
 exec "$(PATH=/usr/bin:/bin command -v timeout)" "$@"`,
 		// Not this machine's processes: a command line with "p_" in it
 		// (an sshd session of backup_user) failed the test below.
-		"ps": `echo "    1 Ss   /usr/lib/systemd/systemd-journald"`,
+		"ps": `[ -z "$SCLAB_FAIL" ] || exit 3
+echo "    1 Ss   /usr/lib/systemd/systemd-journald"`,
 		"sc": `case "$1" in
 status) echo "This boot:     3b3b3b3b (rescue), root read-only"; exit 2 ;;
 check) echo blocker; exit 2 ;;
@@ -418,6 +421,17 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 	names, rc, _ := labBlocks(t, out)
 	if rc["sc-log-fstab"] != "124" || rc["sc-status"] != "2" || names[len(names)-1] != "end" {
 		t.Errorf("a part that hangs: sc-log-fstab rc %s, sc-status rc %s:\n%s", rc["sc-log-fstab"], rc["sc-status"], out)
+	}
+	// A command that fails under a filter: its block has the command's
+	// status, not the filter's (the chunk D review, B14).
+	out, _ = facts([]string{"SCLAB_FAIL=1"}, "dump")
+	_, rc, _ = labBlocks(t, out)
+	if rc["targets"] != "3" || rc["dmesg"] != "3" || rc["procs"] != "3" {
+		t.Errorf("a failing command under a filter: targets %s, dmesg %s, procs %s", rc["targets"], rc["dmesg"], rc["procs"])
+	}
+	out, _ = facts([]string{"SCLAB_FAIL=1"}, "normal")
+	if _, rc, _ = labBlocks(t, out); rc["blame"] != "3" {
+		t.Errorf("a failing systemd-analyze blame: rc %s", rc["blame"])
 	}
 	// Usage: a mode, and ids that are ids.
 	for _, args := range [][]string{nil, {"rescue"}, {"rescue", "ab;c"}, {"normal", "x"}} {

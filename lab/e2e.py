@@ -1269,12 +1269,26 @@ class E2E:
 
     # -- the guest over ssh ---------------------------------------------------
 
-    def ssh(self, command, timeout, input=None, lost=False):
+    def ssh(self, command, timeout, input=None, lost=False, retry=False):
         """command in the guest; a vm.Result. ssh failing by itself (exit
         255), or a timeout while the host stood still (a mux gap), is an
         SshLost unless lost is true (the caller reads rc itself): a check
-        must never take it for the guest's answer."""
+        must never take it for the guest's answer. retry: the command
+        only reads, and one that ran out of time while the host stood
+        still runs once more, with a fresh budget, before that (the chunk
+        D review: a pause then costs the call, not the mode)."""
         gaps = len(self.mux.gaps)
+        r = self._ssh_once(command, timeout, input)
+        if retry and r.timed_out and len(self.mux.gaps) > gaps:
+            gaps = len(self.mux.gaps)
+            self.log("ssh: %s ran out of time while the host stood still; once more" % _cell(command, 80))
+            r = self._ssh_once(command, timeout, input)
+        if not lost and (r.rc == 255 or (r.timed_out and len(self.mux.gaps) > gaps)):
+            raise SshLost("ssh %s: %s: %s" % ("failed (exit 255)" if r.rc == 255 else "ran out of time while the host stood still",
+                                             _cell(command, 80), _cell(r.err, 200)))
+        return r
+
+    def _ssh_once(self, command, timeout, input):
         r = labvm.ssh(self.machine.ssh_port, self.key, command, self.left(timeout), input=input)
         with open(os.path.join(self.run, "ssh.log"), "a", encoding="utf-8", errors="replace") as f:
             f.write("== %s rc=%s %.1fs $ %s\n" % (duration(time.monotonic() - self.t_start), r.rc, r.secs, command))
@@ -1282,17 +1296,14 @@ class E2E:
                 f.write(r.out[-6000:] + ("" if r.out.endswith("\n") else "\n"))
             if r.err:
                 f.write("-- stderr\n" + r.err[-3000:] + ("" if r.err.endswith("\n") else "\n"))
-        if not lost and (r.rc == 255 or (r.timed_out and len(self.mux.gaps) > gaps)):
-            raise SshLost("ssh %s: %s: %s" % ("failed (exit 255)" if r.rc == 255 else "ran out of time while the host stood still",
-                                             _cell(command, 80), _cell(r.err, 200)))
         return r
 
-    def sudo(self, command, timeout=None, lost=False):
-        return self.ssh("sudo -n sh -c %s" % sh_quote(command), timeout or self.b("BUDGET_CMD"), lost=lost)
+    def sudo(self, command, timeout=None, lost=False, retry=False):
+        return self.ssh("sudo -n sh -c %s" % sh_quote(command), timeout or self.b("BUDGET_CMD"), lost=lost, retry=retry)
 
     def facts(self, tag):
         """sudo facts.sh normal, saved as evidence/facts-<tag>.txt."""
-        r = self.ssh("sudo -n sh %s/facts.sh normal" % GUEST_DIR, 2 * self.b("BUDGET_CMD_SC"))
+        r = self.ssh("sudo -n sh %s/facts.sh normal" % GUEST_DIR, 2 * self.b("BUDGET_CMD_SC"), retry=True)
         name = "facts-%s.txt" % tag
         ev = self.save(name, r.out + ("== ssh-stderr rc=%s\n%s" % (r.rc, r.err) if r.err.strip() else ""))
         if r.rc != 0 or "\n== end rc=0" not in "\n" + r.out:
@@ -1323,7 +1334,7 @@ class E2E:
     def boots_text(self, strict=False):
         """The boots file over ssh; "" if it cannot be read. strict: ssh
         failing (255) is a LabError, never an empty file."""
-        r = self.sudo("cat /var/lib/smartconfig/boots", lost=True)
+        r = self.sudo("cat /var/lib/smartconfig/boots", lost=True, retry=True)
         if strict and r.rc == 255:
             raise LabError("ssh failed reading the boots file: %s" % r.err.strip()[-200:])
         return r.out if r.rc == 0 else ""

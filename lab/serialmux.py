@@ -407,6 +407,8 @@ class Mux:
                         with self._wlock:
                             self._ser.close()
                             self._ser = None
+                        with self._cv:
+                            self._cv.notify_all()  # a mark's drain: read to the end
                         self._log("serial: closed by QEMU")
                         ser = self._connect(self.reconnect)
                         if ser is None:
@@ -518,12 +520,15 @@ class Mux:
         The caller is another thread (QMP's reader): what the guest wrote
         before the event may still be unread here, and would land after
         the mark, in the next boot's text. So it waits, at most drain s,
-        for the loop to find nothing more to read."""
+        for the loop to find nothing more to read, or for the serial
+        connection to be gone: then the old one was read to its end, and
+        the loop may spend seconds reconnecting (the chunk D review: the
+        drain waited the whole second then)."""
         with self._cv:
             if drain and self._thread is not None and self._thread.is_alive() \
                     and threading.current_thread() is not self._thread:
                 idle, deadline = self._idle, time.monotonic() + drain
-                while self._idle == idle and not self.closed and time.monotonic() < deadline:
+                while self._idle == idle and self._ser is not None and not self.closed and time.monotonic() < deadline:
                     self._cv.wait(deadline - time.monotonic())
             m = Mark(label, round(self.clock() - self.t0, 2), len(self._raw),
                      len(self._txt), len(self._inputs))

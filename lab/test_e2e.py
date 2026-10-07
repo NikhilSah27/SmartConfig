@@ -1497,6 +1497,18 @@ class TestVerdictClasses(unittest.TestCase):
             r.ssh("sc status", 300)
         self.assertIn("the host stood still", str(c.exception))
 
+    def test_a_read_across_a_pause_runs_once_more(self):
+        # A read whose time ran out while the host stood still runs once
+        # more with a fresh budget (the chunk D review's idea); a second
+        # timeout with no pause in it is the guest's.
+        slow = labvm.Result(["ssh"], 124, "", "(timed out after 300 s)", True, 300.0)
+        seen = labvm.Result(["ssh"], 0, "seen\n", "", False, 1.0)
+        r = self.lost([slow, seen], gaps_after=[(100.0, 233.0)])
+        self.assertEqual(r.sudo("cat /var/lib/smartconfig/boots", retry=True).out, "seen\n")
+        self.assertTrue(any("once more" in m for m in r.logged), r.logged)
+        r = self.lost([slow, slow], gaps_after=[(100.0, 233.0)])
+        self.assertEqual(r.ssh("cat x", 300, retry=True).rc, 124)
+
     def test_poll(self):
         r = fake_run(self)
         answers = [e2e.SshLost("x"), "", "row"]
@@ -1773,7 +1785,7 @@ class TestRebootSsh(unittest.TestCase):
         r.new_boot = lambda ev: ev
         calls = []
 
-        def ssh(command, timeout=None, lost=False):
+        def ssh(command, timeout=None, lost=False, retry=False):
             calls.append(command)
             return answers.pop(0)
         r.ssh = ssh
@@ -1857,7 +1869,7 @@ class TestBoot2Probe(unittest.TestCase):
         calls = []
         clock = [time.monotonic()]
 
-        def ssh(command, timeout, input=None, lost=False):
+        def ssh(command, timeout, input=None, lost=False, retry=False):
             calls.append(command)
             return results[min(len(calls), len(results)) - 1]
 
@@ -2022,11 +2034,11 @@ class TestBoot2Probe(unittest.TestCase):
 
     def test_26_reads_through_ssh_only(self):
         r = fake_run(self)
-        r.sudo = lambda command, timeout=None, lost=False: ssh_result(255, err="kex_exchange_identification: Connection reset by peer")
+        r.sudo = lambda command, timeout=None, lost=False, retry=False: ssh_result(255, err="kex_exchange_identification: Connection reset by peer")
         self.assertEqual(r.boots_text(), "")  # a poll goes on
         with self.assertRaises(e2e.LabError):
             r.boots_text(strict=True)
-        r.sudo = lambda command, timeout=None, lost=False: ssh_result(1, err="cat: /var/lib/smartconfig/boots: No such file")
+        r.sudo = lambda command, timeout=None, lost=False, retry=False: ssh_result(1, err="cat: /var/lib/smartconfig/boots: No such file")
         self.assertEqual(r.boots_text(strict=True), "")  # no file is the guest's answer, not ssh's
 
     def run_26(self, boots, env_rc=0, sync_rc=0, env="smartconfig_pending=1\nrecordfail=1\n"):
@@ -2035,7 +2047,7 @@ class TestBoot2Probe(unittest.TestCase):
         r.boots_text = lambda strict=False: boots
         answers = {"grub-editenv": ssh_result(env_rc, env if env_rc == 0 else ""),
                    "sync": ssh_result(sync_rc)}
-        r.sudo = lambda command, timeout=None, lost=False: answers[command.split()[0]]
+        r.sudo = lambda command, timeout=None, lost=False, retry=False: answers[command.split()[0]]
         r.check_26(B2)
         return r.rows["2.6"]
 
@@ -2137,7 +2149,7 @@ def answers(run, table):
     that gives one. Returns the list the commands asked are added to."""
     asked = []
 
-    def ssh(command, timeout=None, input=None, lost=False):
+    def ssh(command, timeout=None, input=None, lost=False, retry=False):
         asked.append(command)
         for key, v in table.items():
             if key in command:

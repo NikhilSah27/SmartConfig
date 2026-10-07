@@ -63,9 +63,16 @@ p_sha() {
 }
 
 p_consoles() {
-	cat /proc/consoles
-	printf 'active: %s\n' "$(cat /sys/class/tty/console/active)"
+	cat /proc/consoles || return
+	active=$(cat /sys/class/tty/console/active) || return
+	printf 'active: %s\n' "$active"
 }
+
+# keep TEXT: TEXT with its line end back, nothing for nothing. A part
+# that filters a command's output takes the output first, so its block
+# has the command's exit status, not the filter's (the chunk D review,
+# B14: a failing systemd-analyze gave an empty block with rc=0).
+keep() { [ -z "$1" ] || printf '%s\n' "$1"; }
 
 # p_mounts: "MOUNTPOINT SOURCE=".." LABEL=".." FSTYPE=".." OPTIONS=".."",
 # or "MOUNTPOINT -" when nothing is mounted there.
@@ -150,7 +157,7 @@ p_sc() { sc "$@"; }
 
 p_analyze() { systemd-analyze "$@"; }
 
-p_blame() { systemd-analyze blame | head -n 30; }
+p_blame() { out=$(systemd-analyze blame) || return; keep "$out" | head -n 30; }
 
 # p_hashes: "FILE SHA256" of what nothing in the rescue shell may change
 # (check 3.8): the store, its journal files, the boots file, /etc/fstab.
@@ -212,14 +219,20 @@ p_vcs() {
 		return 1
 	fi
 	cols=$(od -An -tu1 -j1 -N1 "/dev/vcsa$1" 2>/dev/null | tr -d ' ')
-	tr '\000' ' ' <"/dev/vcs$1" | fold -w "${cols:-80}" | sed 's/ *$//'
+	out=$(tr '\000' ' ' <"/dev/vcs$1") || return
+	printf '%s' "$out" | fold -w "${cols:-80}" | sed 's/ *$//'
 }
 
 p_procs() {
-	ps -eo pid,stat,args | grep -E 'sulogin|getty|journald|udevd|sshd|sc (watch|boot|status)' | grep -v grep
+	out=$(ps -eo pid,stat,args) || return
+	keep "$out" | grep -E 'sulogin|getty|journald|udevd|sshd|sc (watch|boot|status)' | grep -v grep
+	return 0
 }
 
-p_targets() { systemctl list-units --type=target --state=active --no-legend --plain | cut -d' ' -f1; }
+p_targets() {
+	out=$(systemctl list-units --type=target --state=active --no-legend --plain) || return
+	keep "$out" | cut -d' ' -f1
+}
 
 p_jobs() { systemctl list-jobs --no-legend --plain; }
 
@@ -235,7 +248,7 @@ p_journal_tail() {
 	journalctl -b -o short-monotonic --no-pager -n "$n" "$@"
 }
 
-p_dmesg() { dmesg | tail -n 40; }
+p_dmesg() { out=$(dmesg) || return; keep "$out" | tail -n 40; }
 
 # sec NAME PART [ARG...]: run p_PART in a shell of its own, with a time
 # limit and no input, and print its block.
