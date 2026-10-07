@@ -2363,3 +2363,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `systemd-analyze verify` and `TestBootUnits`; that a broken boot still
   gets its seen line with them is for the lab run after chunk H. Full
   checks passed.
+- **M4 follow-up 6, the test gaps, done `270c3c5`** (chunk H). `TestBootUnits`
+  refuses `sc-boot-seen` ordered after `sysinit.target`/`basic.target`
+  and any binding or conflict on `sc-boot-ok`;
+  `TestStatusConsoleCapWarnings` pins the 5-file cap with room to spare
+  and no undo for warnings. Each of the six mutations (four unit lines,
+  the cap, the undo's severity) and the row -1 fallback's fails a test.
+  Full checks passed.

@@ -331,7 +331,7 @@ snapshot.
    `ProtectHome=` and, for `sc-boot-seen`, `PrivateNetwork=` (C14).
    `42_smartconfig` honoured its test knob `SC_GRUB_BOOT` from root's
    environment; the tests now rewrite its `boot=/boot` line.
-6. Test gaps from the mutation runs: the Go tests miss `sc-boot-seen`
+6. Done (`270c3c5`): test gaps from the mutation runs: the Go tests missed `sc-boot-seen`
    ordered after sysinit or basic, `sc-boot-ok` with `Requires=` on
    local-fs or `Conflicts=` with emergency, the row -1 fallback, a
    warning-only change without undo, and the 5-file console cap (A7,
