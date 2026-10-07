@@ -226,7 +226,7 @@ where nss-systemd supplies root.
    directory in `/run`).
 7. Done (`8923fd7`): scd: look up only the rows a check needs, not a path's
    whole history.
-8. Done: cosmetic: an unclosed quote in `/etc/default/grub` was reported
+8. Done (`c4c4b2b`): cosmetic: an unclosed quote in `/etc/default/grub` was reported
    past the last line; two swap lines shared one findmnt heading.
 
 ## M4 notes

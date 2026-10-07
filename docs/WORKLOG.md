@@ -2226,3 +2226,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   asserts both SQLite plans (no scan, no sort); `TestAround`; 5
   mutations, each caught. Checks: gofmt, vet, `go test ./...` as a user
   and as root, `make race` (uncached), `make m1-compat`.
+- **M3 follow-up 8, two cosmetics, done `c4c4b2b`** (chunk F; all of chunk F's
+  follow-ups are now in: 1-5, 7, 8; 6 was done in M4).
+  - `/etc/default/grub`: dash puts an unterminated quote at the end of
+    the file, past its last line. sc now names the line that leaves a
+    quote open read on its own (with the next line's quotes read as one
+    file, the mistake seems a line later), unless the next such line
+    closes it (a value over two lines). The real dash's test: line 2,
+    not 4. "end of file unexpected" goes on the last line.
+  - `/etc/fstab`: the captured findmnt output shows a heading per line
+    in the file's order (two "none" for two swap lines), not one per
+    mount point: the k-th heading is the k-th line when each has one;
+    else a message naming one line's source picks it.
+  - Tests: `TestShQuoteOpen`, `TestFstabHeadings`; 7 mutations, each
+    caught. Full checks passed.
+  - Next: the chunk F review (two reviewers), once CI is green.
