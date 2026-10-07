@@ -31,7 +31,10 @@ func fakeMachine(t *testing.T, have []string, tool, golden string, code int) (*C
 	for _, p := range have {
 		set[p] = true
 	}
-	return &Checks{Home: filepath.Join(t.TempDir(), "schome"), Run: Runner{Dirs: []string{dir}},
+	// A minute, not the 10 s a real run gets: a fake tool is a shell
+	// script, and a pause of this VM once ran one past 10 s (a test that
+	// wants a timeout sets its own).
+	return &Checks{Home: filepath.Join(t.TempDir(), "schome"), Run: Runner{Dirs: []string{dir}, Timeout: time.Minute},
 		nsswitchPath: filepath.Join(dir, "no-nsswitch.conf"), // no nss-systemd: the worse case
 		groupPath:    filepath.Join(dir, "no-group"),         // no admins to look for
 		passwdPath:   filepath.Join(dir, "no-passwd"),
