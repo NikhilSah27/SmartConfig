@@ -2198,3 +2198,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     mutations, each caught (one only after a test was extended).
   - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
     race` (uncached), `make m1-compat`.
+- **CI red on `84747b8` (follow-up 4), fixed in `a43a7bf`.** CI's root pass:
+  when the sshd check inside `sshd_config` needed no second run, sshd's
+  words behind a note ("did not finish checking", no `/run/sshd` on the
+  runner) were not handed to `Said`. A real bug, which this VM cannot
+  show (it has `/run/sshd`); `TestSshdTogetherSaid` (a fake sshd) failed
+  before the fix. The check package passed as a user, as root and under
+  race; CI is the full check.
+- **M3 follow-up 5, a stop signal and the validator, done `aca4ab5`**
+  (chunk F). The validator has its own process group, which a Ctrl-C at
+  the terminal does not reach, and sc ended by the signal without its
+  cleanups: a hung validator ran on, its scratch copy stayed an hour.
+  `check.Stop` kills every validator group not yet reaped and removes
+  every scratch directory; sc's signal handler calls it where it removes
+  its temp files (scd at its second signal only). A group leaves the set
+  before it is reaped, so its id cannot be another's.
+  - Tests: `TestSignalStopsValidator` (SIGINT and SIGTERM to `sc check`,
+    a fake findmnt with a child: both gone, no scratch, sc dies by the
+    signal within 3 s), `TestStop` (running, scratch, started after).
+    4 mutations, each caught. Full checks passed.
