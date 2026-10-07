@@ -2137,9 +2137,11 @@ class E2E:
                 rr = [t for t in toks if t.startswith("root=")]
                 if rd != rr:
                     p.append("root= differs: %s, default %s" % (rr, rd))
-                # What the default entry passes on (GRUB_CMDLINE_LINUX, the
-                # consoles) the rescue entry keeps.
-                lost = [t for t in exp_default.split() if t not in toks and t not in ("ro", "rw", "quiet", "splash")]
+                # What the default entry passes on (GRUB_CMDLINE_LINUX and
+                # _DEFAULT) the rescue entry keeps; 10_linux's $vt_handoff
+                # (a desktop's) is the default entry's own.
+                lost = [t for t in exp_default.split()
+                        if t not in toks and t not in ("ro", "rw", "quiet", "splash", "$vt_handoff")]
                 if lost:
                     p.append("the rescue entry drops %s of the default entry" % " ".join(lost))
         rf = RECORDFAIL_BLOCK.search(cfg)

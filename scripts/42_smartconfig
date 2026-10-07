@@ -71,15 +71,22 @@ else
 fi
 
 if [ -n "$linux" ] && [ -n "$root_device" ] && [ -z "$no_entry" ] ; then
-	# Keep GRUB_CMDLINE_LINUX (it applies to every entry) and the console=
-	# settings; leave out "quiet splash", so the console shows the boot.
-	# ro comes after them: the last of ro and rw wins, and an rw in
-	# GRUB_CMDLINE_LINUX must not make the rescue root writable.
-	consoles=
+	# Keep GRUB_CMDLINE_LINUX and GRUB_CMDLINE_LINUX_DEFAULT, as the
+	# default entry has them (a nomodeset there may be what lets this
+	# screen show anything, the M4 final review), but not "quiet splash",
+	# so the console shows the boot. Ubuntu's grub-initrd-fallback.service
+	# cannot write grubenv on the read-only root: masked for this boot, it
+	# does not print a red FAILED line right above sc's report (a desktop
+	# install pulls it into rescue.target, M4 sign-off S3). ro comes after
+	# them all: the last of ro and rw wins, and an rw in either must not
+	# make the rescue root writable.
+	keep=
+	set -f
 	for a in ${GRUB_CMDLINE_LINUX_DEFAULT} ; do
-		case "$a" in console=*) consoles="$consoles $a" ;; esac
+		case "$a" in quiet | splash) ;; *) keep="$keep $a" ;; esac
 	done
-	args="root=${root_device} ${GRUB_CMDLINE_LINUX}${consoles} ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
+	set +f
+	args="root=${root_device} ${GRUB_CMDLINE_LINUX}${keep} systemd.mask=grub-initrd-fallback.service ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
 	rel_dirname=$(make_system_path_relative_to_its_root /boot)
 	gettext_printf "Adding SmartConfig rescue entry: %s\n" "$linux" >&2
 	cat <<EOT

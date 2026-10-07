@@ -440,7 +440,7 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 	cmd := exec.Command("sh", "../../scripts/42_smartconfig")
 	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg, "SC_GRUB_BOOT=" + boot,
 		"GRUB_DEVICE=/dev/sda2", "GRUB_DEVICE_UUID=sc-no-such-uuid", "GRUB_DEVICE_PARTUUID=sc-no-such-partuuid", "GRUB_FS=ext2",
-		"GRUB_CMDLINE_LINUX=net.ifnames=0", "GRUB_CMDLINE_LINUX_DEFAULT=quiet splash console=tty1 console=ttyS0"}, env...)
+		"GRUB_CMDLINE_LINUX=net.ifnames=0", "GRUB_CMDLINE_LINUX_DEFAULT=quiet splash console=tty1 nomodeset console=ttyS0 *"}, env...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -458,15 +458,16 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 }
 
 // The rescue entry boots the newest kernel that has an initrd, with
-// root= as 10_linux gives it, GRUB_CMDLINE_LINUX and the console= settings
-// kept, "quiet splash" left out, and the lab's recipe; the menu flag
+// root= as 10_linux gives it, GRUB_CMDLINE_LINUX and _DEFAULT kept (a
+// nomodeset too, unglobbed), "quiet splash" left out, Ubuntu's
+// grub-initrd-fallback masked, and the lab's recipe; the menu flag
 // follows. A btrfs or ZFS root, or no kernel, gets the flag alone.
 func TestGrubScript(t *testing.T) {
 	out := grubScript(t, []string{"6.8.0-100-generic", "6.8.0-142-generic", "6.9.0-1-generic!"})
 	for _, want := range []string{
 		"menuentry 'SmartConfig rescue' --class ubuntu --class gnu-linux --class os --id smartconfig-rescue {\n",
 		"\tsearch --no-floppy --fs-uuid --set=root BOOTFS\n",
-		"\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=/dev/sda2 net.ifnames=0 console=tty1 console=ttyS0 ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1\n",
+		"\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=/dev/sda2 net.ifnames=0 console=tty1 nomodeset console=ttyS0 * systemd.mask=grub-initrd-fallback.service ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1\n",
 		"\tinitrd\t/boot/initrd.img-6.8.0-142-generic\n",
 		"if [ \"${smartconfig_pending}\" = \"1\" ] ; then\n\tset timeout_style=menu\n\tif [ \"${timeout}\" = \"0\" ] ; then\n\t\tset timeout=30\n\tfi\nfi\n",
 	} {
