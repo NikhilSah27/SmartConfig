@@ -2265,3 +2265,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   undone one at a time, made a test fail (two are reasoned only, named in
   the write-up). Full checks passed (race uncached).
   - Next: chunk G (`sc status` and restore), with your picks in "Now".
+- **M4 follow-up 1, restore under an unmounted mount point, done `0d22229`**
+  (chunk G, your pick: refuse). `sc restore` writes nothing when the
+  path is under the deepest `/etc/fstab` mount point that the mount
+  table does not list (a separate `/boot` in the rescue shell), and says
+  `mount /boot` first, exit 1; without an fstab or a mount table it goes
+  ahead. Tests: `TestRestoreUnmountedMount` (refused, file unchanged;
+  mounted, restored), `TestUnmountedMount` (the deepest point, escaped
+  names, no mount table). Full checks passed.

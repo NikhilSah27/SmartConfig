@@ -303,7 +303,7 @@ snapshot.
 
 ### M4 follow-ups (from the final review; no high one is open)
 
-1. Done (your pick: refuse): a restore under a separate `/boot` that is
+1. Done (`0d22229`, your pick: refuse): a restore under a separate `/boot` that is
    not mounted wrote to the root filesystem's own `/boot/grub`, if one is
    there, and said it worked; `sc restore` now refuses under a mount
    point of `/etc/fstab` that is not mounted (B8).
