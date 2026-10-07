@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"smartconfig/internal/check"
 )
 
 // Only in the signal tests' build of sc (go build -tags sctest):
@@ -15,6 +17,7 @@ import (
 // send a signal in that window.
 // SC_TEST_STATUS_CHECKS holds it back once its store and scratch are
 // open. SC_TEST_CONSOLE_LIMIT is sc status --console's limit.
+// SC_TEST_TOOLS is the one directory validators are looked up in.
 func init() {
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_AFTER_RUN")); err == nil {
 		testHookAfterRun = func() { time.Sleep(d) }
@@ -30,5 +33,8 @@ func init() {
 	}
 	if d, err := time.ParseDuration(os.Getenv("SC_TEST_CONSOLE_LIMIT")); err == nil {
 		consoleLimit = d
+	}
+	if d := os.Getenv("SC_TEST_TOOLS"); d != "" {
+		testHookChecks = func(c *check.Checks) { c.Run.Dirs = []string{d} }
 	}
 }

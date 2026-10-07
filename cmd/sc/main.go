@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
 )
@@ -173,6 +174,7 @@ stop:
 		(*c)()
 		for sig = <-sigs; sig == syscall.SIGHUP; sig = <-sigs {
 		}
+		check.Stop()
 		if claimEnd() {
 			fmt.Fprintf(os.Stderr, "%ssc: stopped by %s\n", errPrefix(os.Stderr), sig)
 		}
@@ -180,6 +182,7 @@ stop:
 	}
 	store.Interrupt()
 	if !mutating.Load() {
+		check.Stop()
 		fsutil.RemovePending()
 		if claimEnd() {
 			fmt.Fprintf(os.Stderr, "sc: interrupted by %s\n", sig)
@@ -192,6 +195,7 @@ stop:
 			break
 		}
 	}
+	check.Stop()
 	fsutil.RemovePending()
 	if claimEnd() {
 		fmt.Fprintf(os.Stderr, "sc: stopped by %s (file not changed)\n", sig)

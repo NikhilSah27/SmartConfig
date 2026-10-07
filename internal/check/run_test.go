@@ -136,6 +136,55 @@ sleep 60
 	}
 }
 
+// Stop kills a validator that is running and removes a scratch copy that
+// is there (M3 follow-up 5; through sc's signal handler in
+// TestSignalStopsValidator), and once it ran, one that starts after it is
+// killed at once: sc is about to end. No test here runs in parallel.
+func TestStop(t *testing.T) {
+	t.Cleanup(func() { liveMu.Lock(); stopped = false; liveMu.Unlock() })
+	r := tool(t, "fake", "echo started\nsleep 60\n")
+	home := t.TempDir()
+	file, cleanup, err := Scratch(home, "/etc/fstab", []byte("x\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	done := make(chan Result)
+	go func() { res, _ := r.Run(context.Background(), "", "fake"); done <- res }()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		liveMu.Lock()
+		n := len(liveGroups)
+		liveMu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the tool never started")
+		}
+	}
+	Stop()
+	select {
+	case res := <-done:
+		if res.Exit != -1 || res.TimedOut {
+			t.Errorf("running: %+v", res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not kill the running tool")
+	}
+	if _, err := os.Stat(filepath.Dir(file)); !os.IsNotExist(err) {
+		t.Errorf("scratch directory still there: %v", err)
+	}
+	start := time.Now()
+	if res, err := r.Run(context.Background(), "", "fake"); err != nil || res.Exit != -1 || time.Since(start) > 5*time.Second {
+		t.Errorf("started after Stop: %+v %v after %v", res, err, time.Since(start))
+	}
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	if len(liveGroups) != 0 || len(liveScratch) != 1 {
+		t.Errorf("left: groups %v, scratch %v (the cleanup not run yet holds one)", liveGroups, liveScratch)
+	}
+}
+
 // A tool that exits while something it started still holds its output does
 // not hang the caller: the straggler is killed and the exit status kept.
 func TestRunStraggler(t *testing.T) {

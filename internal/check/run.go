@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -106,11 +107,22 @@ func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool strin
 		}
 		return Result{Found: true}, fmt.Errorf("run %s: %w", tool, err)
 	}
+	// Until Wait reaps the tool, its pid and so its process group id
+	// cannot belong to anything else: Stop may kill the group until then.
+	pid := cmd.Process.Pid
+	liveMu.Lock()
+	if stopped {
+		syscall.Kill(-pid, syscall.SIGKILL)
+	}
+	liveGroups[pid] = true
+	liveMu.Unlock()
 	// Whatever the tool started and left behind is killed too, while the
-	// tool is still a zombie: until Wait reaps it, its pid and so its
-	// process group id cannot belong to anything else.
-	waitExited(cmd.Process.Pid)
-	syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	// tool is still a zombie.
+	waitExited(pid)
+	syscall.Kill(-pid, syscall.SIGKILL)
+	liveMu.Lock()
+	delete(liveGroups, pid)
+	liveMu.Unlock()
 	err := cmd.Wait()
 	res := Result{Found: true, Out: out.buf, Err: errOut.buf, Truncated: out.cut || errOut.cut}
 	var ee *exec.ExitError
@@ -128,6 +140,32 @@ func (r Runner) RunEnv(ctx context.Context, dir string, env []string, tool strin
 		return res, fmt.Errorf("run %s: %w", tool, err)
 	}
 	return res, nil
+}
+
+// What a signal must end before sc exits, when no deferred cleanup runs
+// (M3 follow-up 5): the process groups of the validators started and not
+// yet reaped, and the scratch directories not yet removed. A Ctrl-C at the
+// terminal does not reach a validator, which has its own process group.
+var (
+	liveMu      sync.Mutex
+	liveGroups  = map[int]bool{}
+	liveScratch = map[string]bool{}
+	stopped     bool // Stop ran: a validator started later is killed at once
+)
+
+// Stop kills every validator sc started and has not reaped, with all it
+// started, and removes every scratch directory. sc's signal handler calls
+// it just before sc ends.
+func Stop() {
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	stopped = true
+	for pid := range liveGroups {
+		syscall.Kill(-pid, syscall.SIGKILL)
+	}
+	for d := range liveScratch {
+		os.RemoveAll(d)
+	}
 }
 
 // waitExited blocks until pid has exited and leaves it unreaped (waitid
@@ -207,7 +245,15 @@ func Scratch(home, path string, data []byte) (file string, cleanup func(), err e
 	if err != nil {
 		return "", nil, fmt.Errorf("scratch copy of %s: %w", path, err)
 	}
-	cleanup = func() { os.RemoveAll(dir) }
+	liveMu.Lock()
+	liveScratch[dir] = true
+	liveMu.Unlock()
+	cleanup = func() {
+		liveMu.Lock()
+		delete(liveScratch, dir)
+		liveMu.Unlock()
+		os.RemoveAll(dir)
+	}
 	file = filepath.Join(dir, name)
 	if err := os.WriteFile(file, data, 0o600); err != nil {
 		cleanup()

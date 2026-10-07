@@ -512,3 +512,63 @@ func TestConsoleStatusArgs(t *testing.T) {
 		}
 	}
 }
+
+// A signal to sc check kills the validator it waits for, with what that
+// started, and removes the scratch copy at once (M3 follow-up 5). The
+// validator has a process group of its own, which a Ctrl-C at the
+// terminal does not reach, and sc ends without its deferred cleanups.
+func TestSignalStopsValidator(t *testing.T) {
+	bin := scBinary(t)
+	home, tools := t.TempDir(), t.TempDir()
+	pids := filepath.Join(tools, "pids")
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nsleep 60 &\necho $$ $! > "+pids+".tmp\nmv "+pids+".tmp "+pids+"\nwait\n"), 0o755)
+	cand := filepath.Join(t.TempDir(), "fstab")
+	os.WriteFile(cand, []byte("/dev/null /data ext4 defaults 0 2\n"), 0o644)
+	gone := func(pid int) bool { return syscall.Kill(pid, 0) == syscall.ESRCH }
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		os.Remove(pids)
+		cmd := exec.Command(bin, "check", "--as", "/etc/fstab", cand)
+		cmd.Env = append(os.Environ(), "SC_HOME="+home, "SC_TEST_TOOLS="+tools)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		var stdout, stderr lockedBuffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { cmd.Process.Kill() })
+		var started []int
+		for deadline := time.Now().Add(5 * time.Second); len(started) == 0; time.Sleep(10 * time.Millisecond) {
+			if b, err := os.ReadFile(pids); err == nil {
+				for _, f := range strings.Fields(string(b)) {
+					var pid int
+					fmt.Sscan(f, &pid)
+					started = append(started, pid)
+				}
+			} else if time.Now().After(deadline) {
+				t.Fatal("the validator never started")
+			}
+		}
+		t.Cleanup(func() {
+			for _, pid := range started {
+				syscall.Kill(pid, syscall.SIGKILL)
+			}
+		})
+		begin := time.Now()
+		cmd.Process.Signal(sig)
+		waitEnd(t, cmd, &stderr, sig)
+		if d := time.Since(begin); d > 3*time.Second {
+			t.Errorf("%v: sc took %v to end", sig, d)
+		}
+		for _, pid := range started {
+			for deadline := time.Now().Add(5 * time.Second); !gone(pid) && time.Now().Before(deadline); {
+				time.Sleep(20 * time.Millisecond)
+			}
+			if !gone(pid) {
+				t.Errorf("%v: validator process %d still runs", sig, pid)
+			}
+		}
+		if left, _ := filepath.Glob(filepath.Join(home, "tmp", "check-*")); len(left) != 0 {
+			t.Errorf("%v: scratch copies left: %v", sig, left)
+		}
+	}
+}

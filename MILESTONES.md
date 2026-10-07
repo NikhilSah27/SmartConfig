@@ -218,8 +218,9 @@ where nss-systemd supplies root.
    sshd reads it, not alone (a false blocker when the two only work
    together).
 4. Done (`c77b060`): notes keep a validator's raw lines for `-v`.
-5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
-   its scratch copy at once (now swept after an hour).
+5. Done: Ctrl-C or SIGTERM to `sc check`: kill the running validator and
+   remove its scratch copy at once (they were left, the copy swept after
+   an hour).
 6. A read-only root (M4's rescue shell): run sc's own rules without a
    scratch copy. Done another way in M4 (step 3, C2: a private scratch
    directory in `/run`).
