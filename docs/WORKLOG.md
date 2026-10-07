@@ -173,6 +173,8 @@ review:
 - **Then:** all checks, `make lab-e2e` in both modes, `accept-m3` and
   `accept-m4` as root and one install of the new build (you run them, as
   for step 3), your reboot and its read-only check; then the M5 plan.
+  The install puts in `scd.service` too (`Type=notify` since `32cc097`):
+  `sc` first, then the unit, `daemon-reload`, `restart scd`.
 
 **M2 follow-ups done; the soak (S6) runs** (2026-10-03). M2 is done
 (tag `m2`). All 8 follow-ups from the final review are in (log,
@@ -2304,3 +2306,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   which other console lines cannot cut, and the M4 lab matches it whole;
   a hung one still shows the header long before the 60 s stop.
   `TestConsoleStatusHeaderFirst`. Full checks passed.
+- **The verdict waits for scd's rescan, done `32cc097`** (chunk G, your
+  pick for the chunk B review's note). scd is `Type=notify` and sends
+  `READY=1` once its startup rescan is recorded and logged; `sc-boot-ok`
+  is ordered after `scd.service`. scd spells out systemd's default
+  dependencies but the target's `After=`, so boot does not wait for the
+  rescan; a rescan that hangs fails the start after 5 minutes. An older
+  `sc` under this unit would never be ready: the README says to install
+  `sc` first. `TestReadyAfterBaseline`, `TestSdNotify`, the unit tests.
+  Full checks passed; the first run's root pass lost one fake
+  `systemd-analyze` to a VM pause (11.6 s against the 10 s limit, 3 of 3
+  reruns pass), so fake machines get a minute, `b7a89e6`.

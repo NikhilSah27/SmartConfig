@@ -277,7 +277,7 @@ snapshot.
 
 ### Open from the reviews
 
-- Done (your pick): edits made while scd was down could be recorded
+- Done (`32cc097`, your pick): edits made while scd was down could be recorded
   after the healthy boot's row, if scd's startup rescan still ran when
   the verdict was given; the undo then named an older, still good,
   version (chunk B). scd is `Type=notify`, ready once that rescan is
