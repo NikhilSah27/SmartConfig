@@ -27,11 +27,11 @@ func TestShSyntax(t *testing.T) {
 	}{
 		{"good", "testdata/sh/good", grubDefault, 0, "", "", ""},
 		{"unterminated quote", "testdata/sh/unterminated", strings.Replace(grubDefault, `splash"`, "splash", 1), 2,
-			"5 grub-default-syntax blocker", "", "the line is not valid shell (Unterminated quoted string)"},
+			"3 grub-default-syntax blocker", "", "a quote on this line is never closed"},
 		{"a stray parenthesis", "testdata/sh/paren", strings.Replace(grubDefault, "TIMEOUT=0", "TIMEOUT=0)", 1), 2,
 			"2 grub-default-syntax blocker", "", `the line is not valid shell (")" unexpected)`},
 		{"an if without fi", "testdata/sh/ifnofi", "GRUB_DEFAULT=0\nif true; then\nGRUB_TIMEOUT=0\n", 2,
-			"4 grub-default-syntax blocker", "", `the line is not valid shell (end of file unexpected (expecting "fi"))`},
+			"3 grub-default-syntax blocker", "", `the line is not valid shell (end of file unexpected (expecting "fi"))`},
 		{"cannot open", writeGolden(t, "cannotopen", "", "sh: 0: cannot open /SCRATCH/grub: No such file\n"), grubDefault, 2,
 			"", "sh could not check the file said: sh: 0: cannot open /etc/default/grub: No such file", ""},
 		{"exit 2 and nothing said", writeGolden(t, "silent", "", ""), grubDefault, 2,
@@ -119,7 +119,8 @@ func TestShSyntaxReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := brief(rep.Findings); got != "4 grub-default-syntax blocker" || len(rep.Notes) != 0 {
+	// dash says line 4, the end of the file: the quote opens on line 2.
+	if got := brief(rep.Findings); got != "2 grub-default-syntax blocker" || len(rep.Notes) != 0 {
 		t.Errorf("findings:\n%s\nnotes %q", got, rep.Notes)
 	}
 	if rep, err = c.Check(context.Background(), "/etc/default/grub", []byte(grubDefault)); err != nil || len(rep.Findings) != 0 || len(rep.Notes) != 0 {
@@ -259,6 +260,27 @@ func TestShAssignments(t *testing.T) {
 		err := exec.Command("/bin/sh", "-c", "set -e; . "+f+" >/dev/null 2>&1").Run()
 		if (err != nil) != (tc.want != "") {
 			t.Errorf("%q: dash says %v", tc.data, err)
+		}
+	}
+}
+
+// The line of a quote a file never closes (M3 follow-up 8): dash reports
+// it at the end of the file.
+func TestShQuoteOpen(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want int
+	}{
+		{"A=0\nB=\"x\nC=\"\"\n", 2},                // C's first quote would close B's
+		{"A=\"x\ny\"\nB='z\n", 3},                  // a value over two lines, then the open one
+		{"A=\"it's\"\nB='a\"b'\nC=\"q\\\"\n", 3},   // ' inside ", " inside ', \" inside "
+		{"# don't\nA=x # it's\nB=a#'b\nC=\"\n", 3}, // comments; a # in a word is not one
+		{"A=\\\"x\nB=`date\n", 2},                  // \" outside quotes; a backquote
+		{"A=\"x\\\ny\nB=1\n", 1},                   // a backslash and newline inside quotes
+		{"A=0\nB=\"x\"\n", 0},
+	} {
+		if got := shQuoteOpen([]byte(tc.data)); got != tc.want {
+			t.Errorf("%q: %d, want %d", tc.data, got, tc.want)
 		}
 	}
 }

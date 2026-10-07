@@ -47,13 +47,90 @@ func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []strin
 			return out, append(notes, in.say("sh could not check the file", strings.ReplaceAll(l, in.file, in.path))), nil
 		}
 		n, _ := strconv.Atoi(m[2])
+		text := fmt.Sprintf("the line is not valid shell (%s)", m[3])
+		// dash says so at the end of the file, past its last line: the
+		// line is the one the quote opens on (M3 follow-up 8).
+		if strings.HasPrefix(m[3], "Unterminated quoted string") {
+			if open := shQuoteOpen(in.data); open > 0 {
+				n, text = open, "a quote on this line is never closed"
+			}
+		}
+		n = min(n, max(1, strings.Count(strings.TrimSuffix(string(in.data), "\n"), "\n")+1))
 		out = append(out, Finding{Rule: "grub-default-syntax", Severity: Blocker, Line: n, Key: lineKey(in.data, n),
-			Raw: strings.ReplaceAll(l, in.file, in.path), Text: fmt.Sprintf("the line is not valid shell (%s)", m[3])})
+			Raw: strings.ReplaceAll(l, in.file, in.path), Text: text})
 	}
 	if res.Exit != 0 && len(out) == 0 {
 		return nil, append(notes, fmt.Sprintf("sh could not check the file (exit %d, no message)", res.Exit)), nil
 	}
 	return out, notes, nil
+}
+
+// shQuoteOpen returns the line of a quote the file never closes, or 0. In
+// a file of NAME="value" lines it is the first line that leaves a quote
+// open read on its own, unless the next such line closes it (a value over
+// several lines): read as one file, the next line's first quote would
+// close the open one and its second open another, and the mistake would
+// seem to be a line later. Else the line the file's open quote starts on.
+func shQuoteOpen(data []byte) int {
+	lines := strings.Split(string(data), "\n")
+	for i := 0; i < len(lines); i++ {
+		if shUnclosed([]byte(lines[i])) == 0 {
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && shUnclosed([]byte(lines[j])) == 0 {
+			j++
+		}
+		if j == len(lines) || shUnclosed([]byte(strings.Join(lines[i:j+1], "\n"))) > 0 {
+			return i + 1
+		}
+		i = j // a value over lines i+1 to j+1
+	}
+	return shUnclosed(data)
+}
+
+// shUnclosed returns the line a quote opens on that text never closes, or
+// 0, read as sh reads it: a ', ", or ` quote, a backslash outside single
+// quotes, and a # that starts a word begins a comment.
+func shUnclosed(data []byte) int {
+	line, open := 1, 0
+	var quote byte
+	word := true // at the start of a word
+	for i := 0; i < len(data); i++ {
+		ch := data[i]
+		switch {
+		case quote == '\'':
+			if ch == '\'' {
+				quote = 0
+			}
+		case ch == '\\' && i+1 < len(data):
+			i++ // the next one is taken as it is, a newline too
+			if data[i] == '\n' {
+				line++
+			}
+			word = false
+			continue
+		case quote != 0:
+			if ch == quote {
+				quote = 0
+			}
+		case ch == '#' && word:
+			for i+1 < len(data) && data[i+1] != '\n' {
+				i++
+			}
+			continue
+		case ch == '\'' || ch == '"' || ch == '`':
+			quote, open = ch, line
+		}
+		if ch == '\n' {
+			line++
+		}
+		word = quote == 0 && strings.IndexByte(" \t\n;&|()", ch) >= 0
+	}
+	if quote != 0 {
+		return open
+	}
+	return 0
 }
 
 var (

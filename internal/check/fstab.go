@@ -253,22 +253,58 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 			return out, append(notes, in.say("findmnt could not check the file; only sc's own rules ran", "findmnt: "+strings.ReplaceAll(msg, in.file, in.path))), nil
 		}
 	}
-	// stdout is one heading per mount point that has messages, each
-	// followed by its indented messages. A heading says which lines the
-	// messages are about: with several lines for one mount point (two swap
-	// lines, both "none") sc cannot tell which, and takes the first line
-	// and the worst case; a heading sc cannot match gets no line.
-	var about []fstabEntry
-	target := ""
-	unread := false
+	// stdout is a heading (the mount point) for each line findmnt has
+	// something to say about, in the file's order, each followed by its
+	// indented messages. Several lines can share a mount point (two swap
+	// lines, both "none"; M3 follow-up 8): when each has a heading, the
+	// k-th heading is the k-th of them; else a message that names one
+	// line's source picks it; else sc cannot tell, and takes the first
+	// line and the worst case. A heading sc cannot match gets no line.
+	type group struct {
+		target string
+		msgs   []string
+	}
+	groups := []group{{}} // messages before any heading: no line
+	headings := map[string]int{}
 	for _, l := range strings.Split(string(res.Out), "\n") {
-		if l == "" || strings.HasPrefix(l, "Success, ") {
-			continue
+		switch {
+		case l == "" || strings.HasPrefix(l, "Success, "):
+		case l[0] != ' ' && l[0] != '\t':
+			groups = append(groups, group{target: l})
+			headings[l]++
+		default:
+			groups[len(groups)-1].msgs = append(groups[len(groups)-1].msgs, l)
 		}
-		if l[0] != ' ' && l[0] != '\t' {
-			target, about = l, byTarget[l]
-			continue
+	}
+	seen := map[string]int{}
+	unread := false
+	for _, g := range groups {
+		target, about := g.target, byTarget[g.target]
+		k := seen[target]
+		seen[target]++
+		if len(about) > 1 && headings[target] == len(about) {
+			about = about[k : k+1]
+		} else if len(about) > 1 {
+			named := slices.DeleteFunc(slices.Clone(about), func(e fstabEntry) bool {
+				return !slices.ContainsFunc(g.msgs, func(m string) bool { return strings.Contains(m, " source: "+e.source+":") })
+			})
+			if len(named) == 1 {
+				about = named
+			}
 		}
+		out, unread = fstabMessages(g.msgs, target, about, flagged, missing, out, unread)
+	}
+	if unread {
+		notes = append(notes, "findmnt could not read the disks (not root): filesystem types were not compared")
+	}
+	return out, notes, nil
+}
+
+// fstabMessages reads findmnt's messages under one heading, about the
+// lines of about, and adds its findings to out.
+func fstabMessages(msgs []string, target string, about []fstabEntry, flagged map[int]bool, missing func(fstabEntry, string) Finding,
+	out []Finding, unread bool) ([]Finding, bool) {
+	for _, l := range msgs {
 		raw := strings.TrimSpace(l)
 		f := Finding{Raw: raw, Severity: Error} // a heading sc cannot match: not known to be required
 		if len(about) > 0 {
@@ -311,10 +347,7 @@ func checkFstab(ctx context.Context, c *Checks, in input) ([]Finding, []string, 
 		}
 		out = append(out, f)
 	}
-	if unread {
-		notes = append(notes, "findmnt could not read the disks (not root): filesystem types were not compared")
-	}
-	return out, notes, nil
+	return out, unread
 }
 
 // belowMount reports whether p lies below the mount point of another line

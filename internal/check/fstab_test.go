@@ -431,3 +431,33 @@ func TestFstabPathSourceUnreadable(t *testing.T) {
 		t.Error("pathMissing")
 	}
 }
+
+// Two swap lines share their mount point, "none". findmnt gives a heading
+// to each line it has something to say about, in the file's order: with a
+// heading for each, the second is the second line's; with one, a message
+// that names a line's source picks it; else the first line and the worst
+// case (M3 follow-up 8).
+func TestFstabHeadings(t *testing.T) {
+	const swaps = "/dev/sda5 none swap sw 0 0\n/dev/sda6 none swap sw,nofail 0 0\n"
+	const swapped = "/dev/sda6 none swap sw,nofail 0 0\n/dev/sda5 none swap sw 0 0\n"
+	for _, tc := range []struct{ name, fstab, out, want string }{
+		{"a heading each", swaps, "none\n   [E] something new about the first\nnone\n   [E] something new about the second\n",
+			"1 fstab-verify error\n2 fstab-verify warning"},
+		{"a heading each, the error under the second", swaps, "none\n   [W] target specified more than once\nnone\n   [E] something new\n",
+			"2 fstab-verify warning"},
+		// A required source (no nofail) missing, on the second line.
+		{"one heading that names a source", swapped, "none\n   [E] unreachable on boot required source: /dev/sda5: No such file or directory\n",
+			"2 fstab-source-missing error"},
+		{"one heading that names none", swaps, "none\n   [E] something new\n", "1 fstab-verify error"},
+	} {
+		golden := writeGolden(t, "headings", tc.out, "")
+		c, _ := fakeMachine(t, []string{"/dev/sda5", "/dev/sda6"}, "findmnt", golden, 1)
+		rep, err := c.Check(context.Background(), "/etc/fstab", []byte(tc.fstab))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := brief(rep.Findings); got != tc.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
+		}
+	}
+}
