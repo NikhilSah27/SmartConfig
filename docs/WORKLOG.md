@@ -2155,3 +2155,20 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     lines (at most five, for the console). Shortened; all checks then
     passed: gofmt, vet, `go test ./...` as a user and as root, `make
     race`, `make m1-compat`.
+- **M3 follow-up 3, an sshd drop-in with sshd_config, done `ef2989d`** (chunk
+  F). `sshd -t` now reads the drop-in where sshd does: in a scratch copy
+  of `sshd_config` whose `Include` names a scratch copy of the drop-in
+  directory (the candidate in place of its namesake).
+  - Probed with OpenSSH 9.6 on this VM: `AuthorizedKeysCommand` in a
+    drop-in with its user in `sshd_config` was a false blocker alone and
+    is clean now. A `Match` a drop-in leaves open ends with the drop-in,
+    and a second `Subsystem sftp` passes: no 9.6 setting makes another
+    file's line fail, so that path is tested with a fake sshd.
+  - The drop-in's own lines are its findings; a line-less refusal or
+    another file's line counts only when a second run with the candidate
+    empty does not give it. Alone, with a note, when `sshd_config` does
+    not include it, a file cannot be read, or another file stops sshd.
+  - Tests: `TestSshdTogether` (real sshd on fake `/etc/ssh` trees, 9
+    cases), `TestSshdTogetherOther`; 9 mutations, each caught.
+  - Checks: gofmt, vet, `go test ./...` as a user and as root, `make
+    race`, `make m1-compat`.

@@ -214,8 +214,9 @@ where nss-systemd supplies root.
    its drop-ins (medium).
 2. Done (`e9133ca`): sshd: a warning for a `ListenAddress` this machine
    does not have (no SSH there, and none at all when it is the only one).
-3. Done: sshd: a drop-in is checked inside the main file, as sshd reads
-   it, not alone (a false blocker when the two only work together).
+3. Done (`ef2989d`): sshd: a drop-in is checked inside the main file, as
+   sshd reads it, not alone (a false blocker when the two only work
+   together).
 4. Notes: keep a validator's raw lines for `-v`.
 5. Ctrl-C or SIGTERM to `sc check`: kill the running validator and remove
    its scratch copy at once (now swept after an hour).
