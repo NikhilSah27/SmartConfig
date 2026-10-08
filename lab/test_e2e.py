@@ -564,6 +564,13 @@ class FakeMux:
         pass
 
 
+def _fake_mux_note(self, kind, data):
+    self.notes = getattr(self, "notes", []) + [(kind, data)]
+
+
+FakeMux.note = _fake_mux_note
+
+
 class FakeWatch:
     """A VgaWatch as the checks see it: one screen (rows), the poll error,
     and the gap before the poll that saw the screen."""
@@ -1086,6 +1093,8 @@ class TestHeldRows(unittest.TestCase):
         five = [c for c in e2e.REGISTRY if c.startswith("5.")]
         self.assertEqual(len(five), 4)
         self.assertEqual([r.status(c) for c in five], ["SKIP"] * 4)
+        self.assertEqual({c: r.status(c) for c in e2e.REGISTRY if c.startswith("6.")},
+                         {c: "SKIP" for c in ("6.1", "6.2", "6.3", "6.4", "6.5")})
 
 
 class TestFreshBuild(unittest.TestCase):
@@ -1508,6 +1517,30 @@ class TestVerdictClasses(unittest.TestCase):
         self.assertTrue(any("once more" in m for m in r.logged), r.logged)
         r = self.lost([slow, slow], gaps_after=[(100.0, 233.0)])
         self.assertEqual(r.ssh("cat x", 300, retry=True).rc, 124)
+        # No pause: the timeout is the guest's, and nothing runs again.
+        calls = []
+        r = fake_run(self)
+        r.machine = argparse.Namespace(ssh_port=1)
+        p = mock.patch.object(e2e.labvm, "ssh", lambda *a, **kw: (calls.append(a[2]), slow)[1])
+        p.start()
+        self.addCleanup(p.stop)
+        r.ssh("cat x", 300, retry=True)
+        self.assertEqual(calls, ["cat x"])
+
+    def test_the_reads_that_run_once_more(self):
+        # Only reads: facts.sh normal and the boots file; nothing that
+        # changes the guest (the chunk H review: the flag was not pinned).
+        seen = []
+        r = fake_run(self)
+
+        def ssh(command, timeout, input=None, lost=False, retry=False):
+            seen.append((command.split()[-1] if "facts.sh" in command else command, retry))
+            return ssh_result(0, out="== end rc=0\n")
+        r.ssh = ssh
+        r.facts("t")
+        r.boots_text()
+        r.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1")
+        self.assertEqual([x[1] for x in seen], [True, True, False], seen)
 
     def test_poll(self):
         r = fake_run(self)
@@ -1806,9 +1839,154 @@ class TestGrubPassword(unittest.TestCase):
             self.assertEqual((s.row.id, s.row.status), ("6.3", "FAIL"), text)
             self.assertNotIn("sclabpw7\r", con.sent)
 
+    POST_HIDDEN = "sclab: post timeout=[0] style=[hidden]\n"
+
+    @staticmethod
+    def outcome(fn, *a):
+        try:
+            return fn(*a)
+        except (e2e.Stop, e2e.LabError, e2e.Retry) as e:
+            return e
+
+    def test_a_prompt_in_the_default_boot_fails_6_2(self):
+        # The recipe broke: GRUB stops at its prompt and nobody types. It
+        # was a [lab] timeout after 600 s; it is 6.2's failure (the chunk H
+        # review). On serial (uefi) and on the VGA screen (bios).
+        r = fake_run(self, con=FakeCon(UEFI_SILENT + PRE_CLEAN + self.POST_HIDDEN + "Enter username: "))
+        end = self.outcome(r.boot6a, attempt("6a", False))
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual((r.rows["6.2"].status, r.rows["6.2"].cause), ("FAIL", "M4"))
+        r = fake_run(self, "bios", con=FakeCon(""))
+        r.b = lambda key: 1
+        end = self.outcome(r.boot6a, attempt("6a", False, vga=FakeWatch(["", "  Enter username:", ""])))
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertIn("GRUB asked", r.rows["6.2"].notes)
+
+    def test_a_prompt_after_ubuntu_fails_6_5(self):
+        con = FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG + UEFI_MENU)
+        r = fake_run(self, con=con)
+
+        def pick(a, g, target, cid="3.2"):
+            g["enter_pos"] = con.size()
+            con.t += "\nEnter username: "
+        r.pick = pick
+        end = self.outcome(r.boot6c, attempt("6c", True))
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual((r.rows["6.5"].status, r.rows["6.5"].cause), ("FAIL", "M4"))
+
+    def test_6a_waits_for_its_verdict(self):
+        # 6.3 sets the flag next: an ok verdict given after that would unset
+        # it (the chunk H review). 6.2 needs boot 6a's ok line.
+        for boots, status in (("", "FAIL"), (OK1.replace(B1, B2) + "\n", "PASS")):
+            r = fake_run(self, con=FakeCon(UEFI_SILENT + PRE_CLEAN + self.POST_HIDDEN + KERNEL))
+            r.wait_healthy_end = lambda a, cid: None
+            r.wait_ssh = lambda a: B2
+            r.boots_text = lambda strict=False: boots
+            r.b = lambda key: 0
+            self.outcome(r.boot6a, attempt("6a", False))
+            self.assertEqual(r.rows["6.2"].status, status, boots)
+
+    def test_a_retried_6b_or_6c_with_the_flag_unknown_is_the_labs(self):
+        # An ok verdict in the attempt before may have cleared the flag: no
+        # menu then is not the recipe's (the chunk H review).
+        for label, fn in (("6b", "boot6b"), ("6c", "boot6c")):
+            r = fake_run(self, con=FakeCon(UEFI_SILENT + PRE_CLEAN + self.POST_HIDDEN + KERNEL))
+            end = self.outcome(getattr(r, fn), attempt(label, None))
+            self.assertIsInstance(end, e2e.LabError, label)
+            self.assertEqual(dict(r.rows), {}, label)
+
+    def rescue_boot(self, cmdline, after_kernel, gap=False):
+        con = FakeCon(UEFI_SILENT + PRE_FLAG + POST_FLAG + UEFI_MENU, typed={"\r": "\nroot@sclab:~# "})
+        r = fake_run(self, con=con)
+        r.mux.gaps = []
+        expect = con.expect
+
+        def expect_with_a_gap(patterns, timeout, **kw):  # the host stands still during the wait
+            if gap and e2e.PROMPT_RX in patterns:
+                r.mux.gaps.append((10.0, 400.0))
+            return expect(patterns, timeout, **kw)
+        con.expect = expect_with_a_gap
+        kernel = "\n" + e2e.RESCUE_ECHO + "\n[    0.000000] Linux version 6.8.0-142-generic\n" + \
+            "[    0.000000] Command line: BOOT_IMAGE=/vmlinuz root=UUID=x %s\n" % cmdline + after_kernel
+
+        def pick(a, g, target, cid="3.2"):
+            g["enter_pos"] = con.size()
+            con.t += kernel
+        r.pick = pick
+        r.grub_login = lambda a, g: None
+        r.qmp = argparse.Namespace(mark=lambda: 0)
+        r.wait_reset = lambda since, budget, names, what: {"event": "RESET", "data": {"guest": True}}
+        r.new_boot = lambda ev: ev
+        self.addCleanup(setattr, FakeMux, "gaps", [])
+        return r, self.outcome(r.boot6b, attempt("6b", True))
+
+    def test_64_the_rescue_boot(self):
+        good = "ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
+        up = "[    2.1] Run /init as init process\nPress Enter for maintenance\n"
+        r, end = self.rescue_boot(good, up)
+        self.assertIsNone(end)
+        self.assertEqual(r.rows["6.4"].status, "PASS")
+        r, end = self.rescue_boot(good.replace("fstab=no ", ""), up)  # the entry lost fstab=no
+        self.assertEqual((r.rows["6.4"].status, "fstab=no" in r.rows["6.4"].notes), ("FAIL", True))
+        # No prompt: before /init, or with the host standing still, the
+        # lab's (as boot 3's ran_out); with userspace up and no gap, 6.4's.
+        for after, gap, want in (("", False, e2e.LabError), ("[    2.1] Run /init as init process\n", True, e2e.LabError),
+                                 ("[    2.1] Run /init as init process\n", False, e2e.Stop)):
+            r, end = self.rescue_boot(good, after, gap)
+            self.assertIsInstance(end, want, (after, gap))
+
+    def test_a_panic_in_the_rescue_boot_fails_its_check(self):
+        r = fake_run(self, con=FakeCon("[    3.0] Kernel panic - not syncing: VFS: Unable to mount root fs\n"))
+        r.at("6.4")
+        end = self.outcome(r.panicked, attempt("6b", True), "Kernel panic - not syncing: VFS")
+        self.assertIsInstance(end, e2e.Stop)
+        self.assertEqual(r.rows["6.4"].status, "FAIL")
+
+    def test_bios_prompts_on_the_vga_screen_since_the_enter(self):
+        r = fake_run(self, "bios")
+        r.b = lambda key: 1
+        r.unexpected = lambda a: None
+        a = attempt("6b", True, vga=FakeWatch(["Enter username:"]))  # the boot's own watch: before the Enter
+        a.vga2 = FakeWatch([""])
+        self.assertFalse(r.grub_prompt(a, {"enter_pos": 0}, e2e.GRUB_USER_RX, 1))
+        a.vga2 = FakeWatch(["", "Enter username: "])
+        self.assertTrue(r.grub_prompt(a, {"enter_pos": 0}, e2e.GRUB_USER_RX, 1))
+        # A watch that failed is the lab's (the chunk H review).
+        a.vga2 = FakeWatch(error="pmemsave: QMP gone")
+        self.assertIsInstance(self.outcome(r.grub_login, a, {"enter_pos": 0}), e2e.LabError)
+        self.assertNotIn("6.3", r.rows)
+
+    def test_bios_types_each_key_then_enter(self):
+        r = fake_run(self, "bios")
+        keys = []
+        r.machine = argparse.Namespace(sendkey=keys.append)
+        r.grub_type("sclabpw7")
+        self.assertEqual(keys, list("sclabpw7") + ["ret"])
+
+    def test_the_stage_sets_the_flag_before_the_rescue_boot(self):
+        r = fake_run(self)
+        r.sudo = lambda command, timeout=None, lost=False, retry=False: ssh_result(0, out=self.OK + "\n")
+        r.reboot_ssh = lambda *a: None
+        seen = []
+        r.boot = lambda label, fn: seen.append((label, r.flag))
+        r.flag = False
+        r.grub_password()
+        self.assertEqual(seen, [("6a", False), ("6b", True), ("6c", True)])
+
+    def test_not_with_no_boot5(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            e2e.main(["--mode", "uefi", "--no-boot5", "--grub-password"])
+
     def test_the_summary_line_says_so(self):
         self.assertTrue(e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes", grubpw=True).endswith(" grubpw=yes"))
         self.assertNotIn("grubpw", e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes"))
+        for no5, want in ((False, True), (True, False)):  # 6.x never run without boot 5
+            r = fake_run(self, outcome="b")
+            r.args.grub_password, r.args.no_boot5 = True, no5
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                r.finish("PASS", None)
+            self.assertEqual("grubpw=yes" in out.getvalue(), want, no5)
 
 
 class TestRebootSsh(unittest.TestCase):

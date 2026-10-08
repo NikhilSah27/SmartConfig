@@ -35,8 +35,10 @@ Environment=GOTRACEBACK=none
 TimeoutStartSec=90s
 # Only what it needs (the M4 final review, C14): it gains no privilege
 # through a set-user-ID file, sees no /home, /root or /run/user, and has
-# no network. Ubuntu's own sysinit units (systemd-resolved, -timesyncd)
-# set up such namespaces this early too.
+# no network. systemd-udevd sets up a mount namespace this early too
+# (PrivateMounts=yes); the lab's broken boot ran this unit with these
+# (818dace, both firmware modes). A namespace that cannot be set up fails
+# the unit (no seen line); the menu then rests on Ubuntu's recordfail.
 NoNewPrivileges=yes
 ProtectHome=yes
 PrivateNetwork=yes

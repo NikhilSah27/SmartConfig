@@ -29,13 +29,15 @@ if [ "x${GRUB_DISABLE_RECOVERY}" = "xtrue" ] ; then
 	no_entry=1
 fi
 
-# The newest kernel that has an initrd, in 10_linux's order: the one
-# GRUB_TOP_LEVEL names first, as 10_linux puts it first (M4 follow-up 3).
+# The newest kernel in /boot that has an initrd, in 10_linux's order: a
+# .old one after its counterpart, with that one's initrd, and the one
+# GRUB_TOP_LEVEL names first (M4 follow-up 3). A kernel at the root of
+# / is not taken: the entry reads /boot's device.
 list=
 for i in "$boot"/vmlinuz-* ; do
 	if grub_file_is_not_garbage "$i" ; then list="$list $i" ; fi
 done
-sorted=$(echo $list | tr ' ' '\n' | version_sort -r)
+sorted=$(echo $list | tr ' ' '\n' | sed -e 's/\.old$/ 1/; / 1$/! s/$/ 2/' | version_sort -r | sed -e 's/ 1$/.old/; s/ 2$//')
 if [ "x${GRUB_TOP_LEVEL}" != "x" ] && command -v grub_move_to_front >/dev/null ; then
 	sorted=$(grub_move_to_front "${GRUB_TOP_LEVEL}" ${sorted})
 fi
@@ -43,7 +45,8 @@ linux=
 initrd=
 for k in ${sorted} ; do
 	version=$(basename "$k" | sed -e "s,^[^0-9]*-,,g")
-	for i in "initrd.img-${version}" "initrd-${version}.img" ; do
+	alt_version=$(echo "$version" | sed -e "s,\.old$,,g")
+	for i in "initrd.img-${version}" "initrd-${version}.img" "initrd.img-${alt_version}" "initrd-${alt_version}.img" ; do
 		if test -e "$boot/$i" ; then
 			linux=$k
 			initrd=$i
@@ -54,8 +57,6 @@ done
 
 if [ -z "$linux" ] && [ -z "$no_entry" ] ; then
 	gettext_printf "SmartConfig rescue: no entry (no kernel in %s has an initrd)\n" "$boot" >&2
-elif [ "x${GRUB_TOP_LEVEL}" != "x" ] && [ "x${GRUB_TOP_LEVEL}" != "x$linux" ] && [ -z "$no_entry" ] ; then
-	gettext_printf "SmartConfig rescue: GRUB_TOP_LEVEL %s is not a kernel with an initrd here; the rescue entry boots %s\n" "${GRUB_TOP_LEVEL}" "$linux" >&2
 fi
 
 # A btrfs or ZFS root needs subvolume or pool arguments that only 10_linux
@@ -97,6 +98,9 @@ if [ -n "$linux" ] && [ -n "$root_device" ] && [ -z "$no_entry" ] ; then
 	set +f
 	args="root=${root_device} ${GRUB_CMDLINE_LINUX}${keep} systemd.mask=grub-initrd-fallback.service ro fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
 	rel_dirname=$(make_system_path_relative_to_its_root /boot)
+	if [ "x${GRUB_TOP_LEVEL}" != "x" ] && [ "x${GRUB_TOP_LEVEL}" != "x$linux" ] ; then
+		gettext_printf "SmartConfig rescue: GRUB_TOP_LEVEL %s is not a kernel in %s with an initrd; the rescue entry boots the newest that is\n" "${GRUB_TOP_LEVEL}" "$boot" >&2
+	fi
 	gettext_printf "Adding SmartConfig rescue entry: %s\n" "$linux" >&2
 	cat <<EOT
 menuentry 'SmartConfig rescue' --class ubuntu --class gnu-linux --class os --id smartconfig-rescue {

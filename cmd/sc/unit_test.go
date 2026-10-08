@@ -103,6 +103,7 @@ func TestBootUnits(t *testing.T) {
 		// (the M4 final review, A7: mutations no test caught).
 		for _, l := range strings.Split(unit, "\n") {
 			key, val, _ := strings.Cut(l, "=")
+			key, val = strings.TrimSpace(key), strings.TrimSpace(val) // as systemd reads "After = x"
 			switch {
 			case name == "sc-boot-seen.service" && slices.Contains([]string{"After", "Requires", "Requisite", "BindsTo", "Wants"}, key) &&
 				(strings.Contains(val, "sysinit.target") || strings.Contains(val, "basic.target")):
@@ -122,6 +123,86 @@ func TestBootUnits(t *testing.T) {
 		// Condition key slipped through that way, the chunk C review).
 		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+name).CombinedOutput(); err != nil || len(out) != 0 {
 			t.Errorf("%s: systemd-analyze verify: %v\n%s", name, err, out)
+		}
+	}
+}
+
+// unitEntries reads a unit file as systemd does: "Section.Key=Value" for
+// each assignment, spaces around "=" trimmed, comments and blank lines
+// left out; but Description and Documentation, which change nothing.
+func unitEntries(t *testing.T, name string) []string {
+	t.Helper()
+	b, err := os.ReadFile("../../scripts/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	section := ""
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, ";"):
+		case strings.HasPrefix(l, "[") && strings.HasSuffix(l, "]"):
+			section = l[1 : len(l)-1]
+		default:
+			key, val, _ := strings.Cut(l, "=")
+			key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+			if key != "Description" && key != "Documentation" {
+				out = append(out, section+"."+key+"="+val)
+			}
+		}
+	}
+	return out
+}
+
+// The boot units are exactly these lines: an ordering, a binding or a
+// sandbox key added or dropped is a decision, not a slip (the chunk H
+// review: a list of what is forbidden let After=sockets.target, a
+// spaced "After = sysinit.target", a dropped Conflicts=shutdown.target
+// and ProtectSystem=, which makes /boot read-only and so costs the menu
+// flag with the unit still green, all pass).
+func TestBootUnitsExact(t *testing.T) {
+	for name, want := range map[string][]string{
+		"sc-boot-seen.service": {
+			"Unit.DefaultDependencies=no",
+			"Unit.After=systemd-remount-fs.service",
+			"Unit.After=boot.mount",
+			"Unit.RequiresMountsFor=/var/lib/smartconfig /usr/local/sbin",
+			"Unit.Before=grub-common.service grub-initrd-fallback.service shutdown.target",
+			"Unit.Conflicts=shutdown.target",
+			"Unit.IgnoreOnIsolate=yes",
+			"Unit.ConditionPathIsReadWrite=/var/lib",
+			"Unit.ConditionFileIsExecutable=/usr/local/sbin/sc",
+			"Unit.ConditionKernelCommandLine=!fstab=no",
+			"Service.Type=oneshot",
+			"Service.ExecStart=/usr/local/sbin/sc boot seen",
+			"Service.SyslogIdentifier=sc-boot",
+			"Service.Environment=GOTRACEBACK=none",
+			"Service.TimeoutStartSec=90s",
+			"Service.NoNewPrivileges=yes",
+			"Service.ProtectHome=yes",
+			"Service.PrivateNetwork=yes",
+			"Install.WantedBy=sysinit.target",
+		},
+		"sc-boot-ok.service": {
+			"Unit.After=multi-user.target sc-boot-seen.service scd.service",
+			"Unit.ConditionPathIsReadWrite=/var/lib",
+			"Unit.ConditionFileIsExecutable=/usr/local/sbin/sc",
+			"Unit.ConditionKernelCommandLine=!fstab=no",
+			"Service.Type=oneshot",
+			"Service.ExecStart=/usr/local/sbin/sc boot verdict",
+			"Service.SyslogIdentifier=sc-boot",
+			"Service.Environment=GOTRACEBACK=none",
+			"Service.TimeoutStartSec=120s",
+			"Service.NoNewPrivileges=yes",
+			"Service.ProtectHome=yes",
+			"Service.PrivateNetwork=yes",
+			"Install.WantedBy=multi-user.target",
+		},
+	} {
+		got := unitEntries(t, name)
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s is\n%s\nnot\n%s", name, strings.Join(got, "\n"), strings.Join(want, "\n"))
 		}
 	}
 }
@@ -281,6 +362,10 @@ func TestLabGuestFacts(t *testing.T) {
 		"etc/systemd/system/scd.service":        "[Unit]\n",
 		"boot/grub/grub.cfg":                    "### BEGIN /etc/grub.d/41_sclab ###\necho x\n### END /etc/grub.d/43_sclab ###\n",
 		"etc/systemd/system/sc-boot-ok.service": "[Unit]\n",
+		"proc/consoles":                         "ttyS0                -W- (EC p a)    4:64\n",
+		"sys/class/tty/console/active":          "tty1 ttyS0\n",
+		"dev/vcs1":                              "root@sclab:~# " + strings.Repeat(" ", 66) + "line two",
+		"dev/vcsa1":                             "\x19\x50\x00\x00",
 	} {
 		os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755)
 		os.WriteFile(filepath.Join(root, p), []byte(data), 0o644)
@@ -290,7 +375,7 @@ func TestLabGuestFacts(t *testing.T) {
 		"systemctl":  `case "$1" in is-active) echo active ;; is-enabled) echo enabled ;; list-units) [ -z "$SCLAB_FAIL" ] || exit 3 ;; esac`,
 		"journalctl": "", "systemd-analyze": `[ -z "$SCLAB_FAIL" ] || exit 3`, "grub-editenv": "", "passwd": "",
 		// It reads its input: a part has none, whatever facts.sh was given.
-		"dmesg": `[ -z "$SCLAB_FAIL" ] || exit 3
+		"dmesg": `[ -z "$SCLAB_FAIL" ] || { echo "kernel line 1"; echo "kernel line 2"; exit 3; }
 cat`,
 		// The real one (the log has its arguments), with 2 s for a part when SCLAB_HANG is set.
 		"timeout": `[ -z "$SCLAB_HANG" ] || { shift 3; set -- -k 5 2 "$@"; }
@@ -425,9 +510,26 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 	// A command that fails under a filter: its block has the command's
 	// status, not the filter's (the chunk D review, B14).
 	out, _ = facts([]string{"SCLAB_FAIL=1"}, "dump")
-	_, rc, _ = labBlocks(t, out)
-	if rc["targets"] != "3" || rc["dmesg"] != "3" || rc["procs"] != "3" {
-		t.Errorf("a failing command under a filter: targets %s, dmesg %s, procs %s", rc["targets"], rc["dmesg"], rc["procs"])
+	_, rc, text = labBlocks(t, out)
+	if rc["targets"] != "3" || rc["dmesg"] != "3" || rc["procs"] != "3" || text["dmesg"] != "kernel line 1\nkernel line 2\n" {
+		t.Errorf("a failing command under a filter (its status, and what it printed: the chunk H review): targets %s, dmesg %s %q, procs %s",
+			rc["targets"], rc["dmesg"], text["dmesg"], rc["procs"])
+	}
+	// The consoles and the text on vcs1, from the test's root; a file
+	// that cannot be read is the block's status, what was read kept.
+	out, _ = facts(nil, "rescue", "abc123")
+	_, rc, text = labBlocks(t, out)
+	if rc["consoles"] != "0" || text["consoles"] != "ttyS0                -W- (EC p a)    4:64\nactive: tty1 ttyS0\n" ||
+		rc["vcs1"] != "0" || text["vcs1"] != "root@sclab:~#\nline two\n" {
+		t.Errorf("consoles %s %q, vcs1 %s %q", rc["consoles"], text["consoles"], rc["vcs1"], text["vcs1"])
+	}
+	os.Remove(filepath.Join(root, "sys/class/tty/console/active"))
+	os.Remove(filepath.Join(root, "dev/vcs1"))
+	os.Mkdir(filepath.Join(root, "dev/vcs1"), 0o755) // readable, and tr fails on it
+	out, _ = facts(nil, "rescue", "abc123")
+	_, rc, text = labBlocks(t, out)
+	if rc["consoles"] == "0" || !strings.HasPrefix(text["consoles"], "ttyS0 ") || rc["vcs1"] == "0" {
+		t.Errorf("unreadable: consoles %s %q, vcs1 %s", rc["consoles"], text["consoles"], rc["vcs1"])
 	}
 	out, _ = facts([]string{"SCLAB_FAIL=1"}, "normal")
 	if _, rc, _ = labBlocks(t, out); rc["blame"] != "3" {
@@ -544,8 +646,24 @@ func TestGrubScriptTopLevel(t *testing.T) {
 		t.Errorf("top level:\n%s\n%s", out, msg)
 	}
 	out, msg = grubScriptErr(t, kernels, "GRUB_TOP_LEVEL=BOOT/vmlinuz-6.9.0-1-generic")
-	if !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=") || !strings.Contains(msg, "is not a kernel with an initrd here; the rescue entry boots ") {
+	if !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-142-generic root=") ||
+		!strings.Contains(msg, "-generic is not a kernel in ") || !strings.Contains(msg, " with an initrd; the rescue entry boots the newest that is\n") {
 		t.Errorf("top level without an initrd:\n%s\n%s", out, msg)
+	}
+	// A .old kernel, as 10_linux boots it: its counterpart's initrd; and
+	// after its counterpart when nothing is named (the chunk H review).
+	old := []string{"6.8.0-100-generic", "6.8.0-100-generic.old!", "6.8.0-90-generic"}
+	out, msg = grubScriptErr(t, old, "GRUB_TOP_LEVEL=BOOT/vmlinuz-6.8.0-100-generic.old")
+	if !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-100-generic.old root=") || !strings.Contains(out, "\tinitrd\t/boot/initrd.img-6.8.0-100-generic\n") ||
+		strings.Contains(msg, "GRUB_TOP_LEVEL") {
+		t.Errorf("a .old top level:\n%s\n%s", out, msg)
+	}
+	if out := grubScript(t, old); !strings.Contains(out, "\tlinux\t/boot/vmlinuz-6.8.0-100-generic root=") {
+		t.Errorf(".old first:\n%s", out)
+	}
+	// No entry (btrfs): no word of the kernel it would have booted.
+	if _, msg := grubScriptErr(t, kernels, "GRUB_TOP_LEVEL=BOOT/vmlinuz-6.9.0-1-generic", "GRUB_FS=btrfs"); strings.Contains(msg, "GRUB_TOP_LEVEL") {
+		t.Errorf("btrfs:\n%s", msg)
 	}
 }
 

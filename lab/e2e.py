@@ -955,7 +955,9 @@ def build_problems(bin_sha, fresh):
 def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False, grubpw=False):
     """The one line on stdout; make lab-e2e reads boot5=no, dirty=yes and
     boot2=a(forced) from it (forced: --boot2 reset-at-timeout, which
-    leaves 2.5 and 2.6 out). grubpw=yes: --grub-password ran 6.x."""
+    leaves 2.5 and 2.6 out). grubpw=yes: --grub-password was given, so
+    a PASS has 6.x passed too (a 6.x row never reached is NOTRUN, which
+    makes a run INCONCLUSIVE)."""
     goal3 = {"a": "early-only", "b": "multi-user", "c": "multi-user"}.get(outcome, "-")
     return "%s %s %s boot2=%s%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s%s" % (
         v, mode, took, outcome or "-", "(forced)" if forced and outcome else "", goal3, boot5, retries, head, dirty,
@@ -1562,7 +1564,7 @@ class E2E:
             raise Retry("panic", line)
         m = re.search(r"Kernel panic - not syncing[^\n]*", text)
         what = "a kernel panic that is not TCG's: %s" % _cell(m.group(0) if m else line, 160)
-        if a.label.startswith("3"):
+        if a.label.startswith("3") or a.label == "6b":
             self.record(self.ctx, problems=["the rescue entry's kernel: " + what], source="scripts/42_smartconfig",
                         evidence=self.sev(a.mark.txt, self.con.size()), strength="H")
         raise LabError(what)
@@ -1625,13 +1627,14 @@ class E2E:
             out.append("no QEMU state: %r" % (e,))
         return self.save("stall-%s-%d.txt" % (a.label, a.n), "\n".join(out))
 
-    def grub_phase(self, a, cid, menu, pick=None, pick_cid="3.2", login=None):
+    def grub_phase(self, a, cid, menu, pick=None, pick_cid="3.2", login=None, asks_none=False):
         """The boot from its reset to the kernel: GRUB's observer lines and
         its menu. menu: True (a 30 s menu must show), False (none may) or
         None (not known after a retry: not checked; nothing is pressed).
         pick: the entry to boot (boot 3, and 6.x), its keys checked as
         pick_cid; otherwise a menu times out. login(a, g), after the
-        Enter: GRUB's password prompts (6.3)."""
+        Enter: GRUB's password prompts (6.3). asks_none: GRUB's username
+        prompt instead of the kernel fails cid (6.2, 6.5)."""
         self.at(cid)
         g = {"obs": [], "menu": None, "menu_lines": [], "menu_ev": "", "kernel": None, "enter_pos": None,
              "menu_seen": False, "obs_ev": "", "keys": []}
@@ -1675,7 +1678,10 @@ class E2E:
             if login is not None:
                 login(a, g)
         start = g["enter_pos"] if g["enter_pos"] is not None else a.mark.txt
-        hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX], budget, start=start, what="the kernel")
+        if asks_none:
+            hit = self.kernel_unless_asked(a, cid, start, budget)
+        else:
+            hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX], budget, start=start, what="the kernel")
         if hit is None:
             if not pick:
                 self.grub_stall(a, budget)
@@ -2404,8 +2410,10 @@ class E2E:
                     source="sc boot verdict (ok unsets it)", evidence=f.ev("grubenv"))
 
     def check_18(self, f):
-        """1.8: boot does not wait for sc-boot-seen: it is ordered before no
-        target but shutdown.target (systemctl show -p Before, read), and
+        """1.8: sc-boot-seen is ordered before no target but
+        shutdown.target (systemctl show -p Before, read): no target waits
+        for it directly (multi-user.target does, through grub-common, by
+        design), and
         critical-chain multi-user.target (read, the target in it) does not
         name it. critical-chain alone could not fail: it follows only units
         that became active, and a oneshot never does (the M4 final review,
@@ -3211,24 +3219,56 @@ class E2E:
         self.boot("6b", self.boot6b)
         self.boot("6c", self.boot6c)
 
-    def grub_asked(self, a, start, end):
-        """GRUB's username prompt in this boot between start and end
-        (serial offsets; bios: on any VGA screen of the boot), or None."""
-        if self.uefi:
-            m = re.search(GRUB_USER_RX, self.con.text(start, end))
-            return m.group(0) if m else None
+    def grub_asked_vga(self, a):
+        """bios: GRUB's username prompt on a VGA screen of this boot, or None."""
         rows = [r for w in (a.vga, a.vga2) if w is not None for r in w.all_rows()]
         return next((r.strip() for r in rows if re.search(GRUB_USER_RX, r)), None)
 
+    def kernel_unless_asked(self, a, cid, start, budget):
+        """grub_phase's wait for the kernel where nobody types (6.2, 6.5):
+        GRUB's username prompt first fails cid (H). Without this GRUB waits
+        for ever, and the wait ran out as a [lab] error (the chunk H
+        review). Serial (uefi), or the VGA screens polled between short
+        waits (bios). The kernel's first line, or None after budget s."""
+        if self.uefi:
+            hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX, GRUB_USER_RX], budget, start=start, what="the kernel")
+            if hit is not None and hit.index == 2:
+                self.record(cid, problems=["GRUB asked: %r" % hit.text.strip()], expected="no %r" % GRUB_USER_RX,
+                            source="README: the recipe marks Ubuntu --unrestricted", evidence=self.sev(start, hit.end))
+            return hit
+        deadline = time.monotonic() + self.left(budget)
+        while True:
+            hit = self.wait_for(a, [LINUX_RX, GRUB_PROMPT_RX], max(0.1, min(2.0, deadline - time.monotonic())),
+                                start=start, what="the kernel")
+            if hit is not None:
+                return hit
+            asked = self.grub_asked_vga(a)
+            if asked:
+                self.record(cid, problems=["GRUB asked: %r" % asked], expected="no %r" % GRUB_USER_RX,
+                            source="README: the recipe marks Ubuntu --unrestricted",
+                            evidence=" ".join(w.files() for w in (a.vga, a.vga2) if w is not None))
+            if time.monotonic() >= deadline:
+                return None
+
     def boot6a(self, a):
-        """6.2: the default boot with the password set: no menu, no prompt."""
-        g = self.grub_phase(a, "6.2", menu=a.flag)
+        """6.2: the default boot with the password set: no menu, no prompt,
+        and its verdict is ok before the next step sets the flag (an ok
+        given later would unset it: the chunk H review)."""
+        self.grub_phase(a, "6.2", menu=a.flag, asks_none=True)
         self.at("6.2")
-        asked = self.grub_asked(a, a.mark.txt, g["kernel"].start)
+        self.wait_healthy_end(a, "6.2")
         b = self.wait_ssh(a)
-        self.record("6.2", problems=["GRUB asked: %r" % asked] if asked else [], seen="no prompt; ssh in boot %s" % b[:8],
-                    expected="no %r; ssh" % GRUB_USER_RX, source="README: the recipe marks Ubuntu --unrestricted",
-                    evidence=g["obs_ev"])
+        ok = self.ok_line(b)
+        self.record("6.2", problems=[] if ok else ["no '%s ok ...' line" % b],
+                    seen="no prompt; %s" % (ok.group(0) if ok else "no ok line"),
+                    expected="no %r; %s ok ..." % (GRUB_USER_RX, b[:8]), source="README: the recipe marks Ubuntu --unrestricted",
+                    evidence="ssh.log")
+
+    def ok_line(self, b):
+        """The boots file's ok line for boot b, polled as boot 5 does; None."""
+        boots = self.poll(lambda: (lambda t: t if ok_line_rx(b).search(t) else "")(self.boots_text()),
+                          self.b("BUDGET_POLL")) or self.boots_text(strict=True)
+        return ok_line_rx(b).search(boots or "")
 
     def grub_prompt(self, a, g, rx, budget):
         """GRUB's rx after the last Enter: serial (uefi) or the VGA screen
@@ -3239,6 +3279,13 @@ class E2E:
         while time.monotonic() < deadline:
             if a.vga2 is not None and a.vga2.first(lambda rows: any(re.search(rx, r) for r in rows)) is not None:
                 return True
+            # What only the lab can lose is never the recipe's (the chunk H review).
+            if a.vga2 is None or a.vga2.error:
+                raise LabError("the VGA watch since the Enter %s, while waiting for %r"
+                               % ("failed: %s" % a.vga2.error if a.vga2 is not None else "was not started", rx))
+            why = self.unexpected(a)
+            if why:
+                raise LabError("%s, while waiting for %r" % (why, rx))
             time.sleep(0.25)
         return False
 
@@ -3274,23 +3321,27 @@ class E2E:
     def boot6b(self, a):
         """6.3, 6.4: the rescue entry from the menu, the password given;
         it boots with fstab=no, and its shell reboots."""
-        g = self.grub_phase(a, "6.3", menu=True, pick=RESCUE_TITLE, pick_cid="6.3", login=self.grub_login)
+        if a.flag is None:
+            raise LabError("boot 6b retried: whether the menu flag is set is not known, so 6.3 cannot be checked")
+        g = self.grub_phase(a, "6.3", menu=a.flag, pick=RESCUE_TITLE, pick_cid="6.3", login=self.grub_login)
         self.at("6.4")
         hit = self.kernel_cmdline(a, g, "6.4")
         line = norm_cmdline(hit.group(1))
         p = [] if "fstab=no" in line.split() else ["the kernel started without fstab=no: %s" % line[-120:]]
+        # As boot 3's waits (ran_out): a stall or a host pause is the lab's.
+        gaps = len(self.mux.gaps)
         pr = self.wait_for(a, [PROMPT_RX], self.b("BUDGET_KERNEL_RESCUE"), start=g["kernel"].start, what="the rescue prompt")
         if pr is None:
-            p.append("no %r %d s after the kernel" % (PROMPT_RX, self.b("BUDGET_KERNEL_RESCUE")))
-        else:
-            self.at_prompt = True
-            start = self.con.size()
-            if not self.con.send("\r", 0):
-                raise LabError("could not send Enter on serial")
-            h = self.wait_for(a, [SHELL_RX], self.b("BUDGET_CMD"), start=start, what="the root shell")
-            self.at_prompt = False
-            if h is None:
-                p.append("no root shell after Enter")
+            self.ran_out("6.4", a, gaps, "no %r %d s after the kernel" % (PROMPT_RX, self.b("BUDGET_KERNEL_RESCUE")))
+        self.at_prompt = True
+        start = self.con.size()
+        gaps = len(self.mux.gaps)
+        if not self.con.send("\r", 0):
+            raise LabError("could not send Enter on serial")
+        h = self.wait_for(a, [SHELL_RX], self.b("BUDGET_CMD"), start=start, what="the root shell")
+        if h is None:
+            self.ran_out("6.4", a, gaps, "no root shell %d s after Enter" % self.b("BUDGET_CMD"))
+        self.at_prompt = False
         if p:
             self.record("6.4", problems=p, seen=line[-120:], evidence=self.sev(hit.start, self.con.size()))
         self.shell = True
@@ -3309,16 +3360,17 @@ class E2E:
     def boot6c(self, a):
         """6.5: the menu again (the rescue boot cannot clear the flag);
         Ubuntu from it asks for no password, and the boot's verdict is ok."""
-        g = self.grub_phase(a, "6.5", menu=True, pick=UBUNTU_TITLE, pick_cid="6.5")
+        if a.flag is None:
+            # Retried after an ok verdict may have cleared it (the chunk H
+            # review): 6.5 cannot be checked; as decided(), the lab's.
+            raise LabError("boot 6c retried: whether the menu flag is set is not known, so 6.5 cannot be checked")
+        self.grub_phase(a, "6.5", menu=a.flag, pick=UBUNTU_TITLE, pick_cid="6.5", asks_none=True)
         self.at("6.5")
-        asked = self.grub_asked(a, g["enter_pos"], g["kernel"].start) if self.uefi else \
-            next((r.strip() for r in (a.vga2.all_rows() if a.vga2 else []) if re.search(GRUB_USER_RX, r)), None)
+        self.wait_healthy_end(a, "6.5")
         b = self.wait_ssh(a)
-        boots = self.poll(lambda: (lambda t: t if ok_line_rx(b).search(t) else "")(self.boots_text()),
-                          self.b("BUDGET_POLL")) or self.boots_text(strict=True)
-        ok = ok_line_rx(b).search(boots or "")
-        p = (["GRUB asked: %r" % asked] if asked else []) + ([] if ok else ["no '%s ok ...' line" % b])
-        self.record("6.5", problems=p, seen="%s; %s" % ("no prompt" if not asked else asked, ok.group(0) if ok else "no ok line"),
+        ok = self.ok_line(b)
+        p = [] if ok else ["no '%s ok ...' line" % b]
+        self.record("6.5", problems=p, seen="no prompt; %s" % (ok.group(0) if ok else "no ok line"),
                     expected="no %r; %s ok ..." % (GRUB_USER_RX, b[:8]), source="README: Ubuntu is --unrestricted",
                     evidence="input.log ssh.log")
         self.flag = False
@@ -3527,6 +3579,8 @@ def main(argv=None):
                     help="after boot 5, the README's GRUB password recipe and three more boots (checks 6.x)")
     ap.add_argument("--keep", action="store_true", help="keep disk.qcow2 and VARS.fd after a PASS too")
     args = ap.parse_args(argv)
+    if args.grub_password and args.no_boot5:
+        ap.error("--grub-password runs after boot 5: not with --no-boot5")
     labvm.install_signal_handlers()
     # Whatever goes wrong in here is the lab's: never exit 1, which make
     # lab-e2e reads as an [M4] failure.

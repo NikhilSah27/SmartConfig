@@ -339,6 +339,25 @@ class TestMux(unittest.TestCase):
         self.assertEqual(mux.mark("RESET", drain=8.0).txt, 26)
         self.assertLess(time.monotonic() - t, 3)
 
+    def test_serial_gone_ends_a_mark_already_waiting(self):
+        # A mark waiting on its drain when the loop finds QEMU's socket
+        # closed: told at once, not at the drain's end (the loop may then
+        # spend seconds reconnecting, with no idle wake to end the wait).
+        mux = serialmux.Mux(self.run, t0=time.time())
+        mux._thread = threading.Thread(target=time.sleep, args=(10,), daemon=True)
+        mux._thread.start()
+        mux._ser = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        got = []
+        t = threading.Thread(target=lambda: got.append(mux.mark("RESET", drain=8.0)))
+        start = time.monotonic()
+        t.start()
+        time.sleep(0.3)
+        mux._serial_gone()
+        t.join(10)
+        self.assertEqual(len(got), 1)
+        self.assertLess(time.monotonic() - start, 3)
+        self.assertIsNone(mux._ser)
+
     def test_a_mark_with_nothing_unread_does_not_wait(self):
         mux = self.start()
         t = time.monotonic()

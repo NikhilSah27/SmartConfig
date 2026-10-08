@@ -18,7 +18,8 @@ logout): it keeps the lab to one command per user whatever the cache.
 ## What one run proves
 
 `lab/e2e.py --mode uefi|bios` (OVMF with a serial console, or SeaBIOS
-with the VGA text screen) runs six boots on one overlay disk:
+with the VGA text screen) runs six boots on one overlay disk (nine with
+`--grub-password`):
 
 | Boot | What happens | Checks |
 |---|---|---|
@@ -41,7 +42,9 @@ TCG starved into emergency mode (slow udev on `LABEL=BOOT`, `LABEL=UEFI`
 or ttyS0), a missed menu or a `grub>` prompt, on bios a gap of over 2 s in
 the VGA polling before the menu's first screen (its countdown cannot be
 held to 30 s then), a login prompt without ssh, a stall (below). Nothing
-else is ever retried. On bios a menu counts as missed only while the
+else is ever retried, but for two reads over ssh (`facts.sh normal` and
+the boots file): one that ran out of time while the host stood still is
+run once more. On bios a menu counts as missed only while the
 screen does not say that GRUB drew none: observer lines still on it with
 `timeout=[0]` or `style=[hidden]` are GRUB's decision, and with the flag
 set that fails x.1. A reboot over ssh that
@@ -67,10 +70,10 @@ out). None of them counts for sign-off.
 
 What the lab could not read is never taken for the guest's answer: an ssh
 call that fails by itself (exit 255), or runs out of time while the host
-stood still, is a [lab] error, and a poll gets back the time the host
+stood still (twice, for the two reads above), is a [lab] error, and a poll gets back the time the host
 stood still. The other way round, a wait that runs out in the rescue boot
 with userspace up and no gap in the lab's own running fails its check
-(3.5, 3.7) as [M4]: sc's report runs before the shell, and one that hangs
+(3.5, 3.7, 6.4) as [M4]: sc's report runs before the shell, and one that hangs
 must not be a run to repeat. 1.1 and 5.1 must have been checked in some
 attempt; if every attempt had a flake first, the mode is INCONCLUSIVE. Preflight (P.2)
 rebuilds the tree with the Makefile's recipe into the run directory and

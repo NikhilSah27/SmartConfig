@@ -404,11 +404,7 @@ class Mux:
                             continue
                         # QEMU closed or reset the connection.
                         sel.unregister(self._ser)
-                        with self._wlock:
-                            self._ser.close()
-                            self._ser = None
-                        with self._cv:
-                            self._cv.notify_all()  # a mark's drain: read to the end
+                        self._serial_gone()
                         self._log("serial: closed by QEMU")
                         ser = self._connect(self.reconnect)
                         if ser is None:
@@ -514,6 +510,17 @@ class Mux:
             if len(self._txt) <= size and not self.closed:
                 self._cv.wait(timeout)
             return len(self._txt)
+
+    def _serial_gone(self):
+        """The loop read QEMU's serial connection to its end: closed, and
+        a mark waiting on its drain told so (nothing more can come before
+        the reconnect, which may take seconds: the chunk D review)."""
+        with self._wlock:
+            if self._ser is not None:
+                self._ser.close()
+            self._ser = None
+        with self._cv:
+            self._cv.notify_all()
 
     def mark(self, label, drain=1.0):
         """Records where the logs are now (a boot starts at a QMP RESET).
