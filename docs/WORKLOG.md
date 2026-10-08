@@ -2563,4 +2563,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   needs the `m4` tag in the clone. Tests for each check (each undone
   fails one), `stage_hand`, `stage_debs`. Full checks and `make lab-test`
   (356) passed. Next: step 8, the README.
+- **M5 step 8, the README, done `d222530`.** README "Install (M5)": `make
+  deb`, `apt install`, `sc version`; the first verdict at the next boot,
+  a failed `update-grub`, an upgrade, the takeover of a hand install,
+  remove and purge (the store kept). The hand-install and removal blocks
+  of the watcher and the rescue path point to it; the Layout lists name
+  the package's scripts. Full checks passed. Next: the M5 review (two
+  reviewers), then the sign-off.
 
