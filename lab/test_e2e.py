@@ -616,7 +616,8 @@ class FakeRun(e2e.E2E):
 
     def __init__(self, mode="uefi", con=None, **values):  # no super(): it makes a run directory in the cache
         self.tmp = tempfile.mkdtemp(prefix="sclab-test-")
-        self.args = argparse.Namespace(mode=mode, boot2="natural", no_boot5=False, keep=False, grub_password=False)
+        self.args = argparse.Namespace(mode=mode, boot2="natural", no_boot5=False, keep=False, grub_password=False, deb=False)
+        self.deb = False
         self.mode = mode
         self.uefi = mode == "uefi"
         self.conf = labvm.load_conf()
@@ -2003,6 +2004,83 @@ class TestGrubPassword(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 r.finish("PASS", None)
             self.assertEqual("grubpw=yes" in out.getvalue(), want, no5)
+
+
+class TestDeb(unittest.TestCase):
+    """--deb (D.x, M5): the package's upgrade, remove and purge, judged
+    from what the guest answers; 0.4 against the package's own files."""
+
+    UP = "0.4.99+git20261008023503.643cec3+lab1"
+
+    def guest(self, **over):
+        """A fake sudo: the answers of a guest where all went well, but
+        what over replaces (by the command's first words)."""
+        answers = {
+            "systemctl show": "611\n12\nabc  -\n",
+            "dpkg -i": "", "dpkg-query": self.UP + "\nactive\n742\n14\nabc  -\n",
+            "grub-editenv": "", "dpkg -r": "",
+            "test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\n# GRUB Environment Block\nstore=kept\n",
+            "dpkg -P": "smartconfig: the change history in /var/lib/smartconfig is kept; to delete it: sudo rm -r /var/lib/smartconfig\n",
+            "test -e /etc/grub.d": "grubd=gone\nstore=kept\n",
+        }
+        answers.update(over)
+        r = fake_run(self)
+        r.deb = True
+        r.v["deb_up_version"] = self.UP
+
+        def sudo(command, timeout=None, lost=False, retry=False):
+            for k, out in answers.items():
+                if command.startswith(k):
+                    rc = 1 if isinstance(out, tuple) else 0
+                    return ssh_result(rc, out=out[0] if isinstance(out, tuple) else out)
+            raise AssertionError("unexpected %r" % command)
+        r.sudo = sudo
+        return r
+
+    def test_all_well(self):
+        r = self.guest()
+        r.deb_lifecycle()
+        self.assertEqual([r.status(c) for c in ("D.1", "D.2", "D.3")], ["PASS"] * 3)
+
+    def test_what_fails_each(self):
+        for over, cid, says in (
+                ({"dpkg-query": self.UP + "\nactive\n611\n14\nabc  -\n"}, "D.1", "not restarted"),
+                ({"dpkg-query": "0.4.99\nactive\n742\n14\nabc  -\n"}, "D.1", "dpkg-query says"),
+                ({"dpkg-query": self.UP + "\nactive\n742\n9\nabc  -\n"}, "D.1", "rows"),
+                ({"dpkg-query": self.UP + "\nactive\n742\n14\nfff  -\n"}, "D.1", "boots file changed"),
+                ({"dpkg -i": ("dpkg: error",)}, "D.1", "dpkg -i: exit 1"),
+                ({"test -e /usr/sbin/sc": "sc=there\nscd=active\nrescue=1\nsmartconfig_pending=1\n"}, "D.2", "sc=there"),
+                ({"test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\nsmartconfig_pending=1\nstore=kept\n"}, "D.2", "smartconfig_pending"),
+                ({"test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\n"}, "D.2", "store=None"),
+                ({"test -e /etc/grub.d": "grubd=there\nstore=kept\n"}, "D.3", "42_smartconfig there"),
+                ({"dpkg -P": ""}, "D.3", "did not say"),
+        ):
+            r = self.guest(**over)
+            s = stops(r.deb_lifecycle)
+            self.assertEqual((s and s.row.id, r.status(cid)), (cid, "FAIL"), over)
+            self.assertIn(says, r.rows[cid].notes, over)
+
+    def test_04_takes_the_package_files(self):
+        r = fake_run(self)
+        r.deb = True
+        for name in ("41_sclab", "43_sclab"):
+            r.sha[name] = "a" * 64
+        for _, dest in e2e.DEB_FILES:
+            r.sha[dest] = "b" * 64
+        lines = ["file=/etc/grub.d/41_sclab 755 root:root " + "a" * 64, "file=/etc/grub.d/43_sclab 755 root:root " + "a" * 64]
+        lines += ["file=%s %s root:root %s" % (dest, mode, "b" * 64) for mode, dest in e2e.DEB_FILES]
+        inst = e2e.parse_kv("\n".join(["manifest=ok", "install_rc=0", "deb_rc=0"] + lines +
+                                       ["enable_rc=0", "enable_scd_rc=0", "update_grub_rc=0", "done=1"]))
+        r.check_04(ssh_result(0), inst, "install.txt")
+        self.assertEqual(r.status("0.4"), "PASS", r.rows["0.4"].notes)
+        inst["file"] = [l.replace(" 755 root", " 644 root") if "/usr/sbin/sc" in l else l for l in inst["file"]]
+        stops(r.check_04, ssh_result(0), inst, "install.txt")
+        self.assertIn("/usr/sbin/sc", r.rows["0.4"].notes)
+
+    def test_the_summary_line_says_so(self):
+        self.assertTrue(e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes", deb=True).endswith(" deb=yes"))
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            e2e.main(["--mode", "uefi", "--no-boot5", "--deb"])
 
 
 class TestRebootSsh(unittest.TestCase):
@@ -3792,7 +3870,7 @@ class TestExecute(unittest.TestCase):
         r, rc = self.execute(lambda r: passing(r, "5.1"))
         self.consistent(r, rc, "INCONCLUSIVE")
         notrun = [c for c, cells in r.result.items() if cells[1] == "NOTRUN"]
-        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5"])
+        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "D.1", "D.2", "D.3"])
         self.assertEqual(r.result["5.1"][8], "not reached")
         self.assertEqual(r.discards, 0)
         self.assertIn("failing: 5.1\tNOTRUN", r.err)

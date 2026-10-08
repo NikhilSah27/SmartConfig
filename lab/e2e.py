@@ -123,6 +123,22 @@ INSTALLED = (
       "/etc/systemd/system/emergency.service.d/50-smartconfig.conf")),
 )
 HELPERS = (("install.sh", "lab/guest/install.sh"), ("facts.sh", "lab/guest/facts.sh"))
+# --deb (M5): the package goes in instead (dpkg -i), with the lab's own
+# observers by install(1); the package's files, mode and where; their
+# sha256 is read from the package itself (stage_files).
+LAB_ONLY = tuple(i for i in INSTALLED if i[0] in ("41_sclab", "43_sclab"))
+DEB_FILES = (
+    ("755", "/usr/sbin/sc"),
+    ("755", "/etc/grub.d/42_smartconfig"),
+    ("644", "/usr/lib/systemd/system/scd.service"),
+    ("644", "/usr/lib/systemd/system/sc-boot-seen.service"),
+    ("644", "/usr/lib/systemd/system/sc-boot-ok.service"),
+    ("644", "/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf"),
+    ("644", "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf"),
+)
+# The second package, for the upgrade (D.1): the same files, a version
+# that sorts after the first's.
+DEB_UP = "+lab1"
 
 # Serial patterns (console.Console.expect: re.M, no re.S). A captured line
 # ends in \n, so a line still arriving is not taken half.
@@ -227,6 +243,9 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("6.3", "M4", "H", "S|V", "--grub-password: the rescue entry asks for the superuser and the password"),
     ("6.4", "M4", "H", "S", "--grub-password: with them it boots (fstab=no), and its shell reboots"),
     ("6.5", "M4", "H", "S|V+SSH", "--grub-password: Ubuntu from the menu asks for none, and the boot is ok"),
+    ("D.1", "M5", "H", "SSH", "--deb: an upgrade (dpkg -i of a later build) restarts scd and keeps the store and boots"),
+    ("D.2", "M5", "H", "SSH", "--deb: dpkg -r stops scd, takes the rescue entry out of grub.cfg and the flag out of grubenv, keeps the store"),
+    ("D.3", "M5", "H", "SSH", "--deb: dpkg -P removes 42_smartconfig and still keeps the store, and says so"),
     ("K.1", "lab", "H", "K", "no lone ESC was ever sent (design section 6)"),
     ("T.1", "lab", "H", "host", "nothing of the run is left: QEMU, its port, the reader threads"),
 ))
@@ -952,7 +971,7 @@ def build_problems(bin_sha, fresh):
     return []
 
 
-def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False, grubpw=False):
+def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced=False, grubpw=False, deb=False):
     """The one line on stdout; make lab-e2e reads boot5=no, dirty=yes and
     boot2=a(forced) from it (forced: --boot2 reset-at-timeout, which
     leaves 2.5 and 2.6 out). grubpw=yes: --grub-password was given, so
@@ -961,7 +980,7 @@ def summary_line(v, mode, took, outcome, retries, head, dirty, sc, boot5, forced
     goal3 = {"a": "early-only", "b": "multi-user", "c": "multi-user"}.get(outcome, "-")
     return "%s %s %s boot2=%s%s goal3=%s boot5=%s retries=%s head=%s dirty=%s sc=%s%s" % (
         v, mode, took, outcome or "-", "(forced)" if forced and outcome else "", goal3, boot5, retries, head, dirty,
-        sc or "-", " grubpw=yes" if grubpw else "")
+        sc or "-", " grubpw=yes" if grubpw else "") + (" deb=yes" if deb else "")
 
 
 def undo_commands(lines):
@@ -1185,6 +1204,7 @@ class E2E:
         self.marks = {}
         self.cur = (None, None)
         self.sha = {}
+        self.deb = bool(getattr(args, "deb", False))  # --deb (M5): the package goes in
         self.stage = None
         self.staged = False
         self.shell = False  # a root shell on the serial console (boot 3)
@@ -2048,16 +2068,47 @@ class E2E:
         self.stage = os.path.join(self.run, "stage")
         os.makedirs(self.stage, 0o700, exist_ok=True)
         lines = []
-        for name, src in [(n, s) for n, s, _, _ in INSTALLED] + list(HELPERS):
+        if self.deb:
+            lines += self.stage_debs()
+        for name, src in [(n, s) for n, s, _, _ in (LAB_ONLY if self.deb else INSTALLED)] + list(HELPERS):
             with open(os.path.join(REPO, src), "rb") as f:
                 data = f.read()
             with open(os.path.join(self.stage, name), "wb") as f:
                 f.write(data)
             self.sha[name] = hashlib.sha256(data).hexdigest()
             lines.append("%s  %s\n" % (self.sha[name], name))
+        if self.deb:
+            with open(os.path.join(REPO, "bin/sc"), "rb") as f:
+                self.sha["sc"] = hashlib.sha256(f.read()).hexdigest()  # P.3: the build in the package
         with open(os.path.join(self.stage, "MANIFEST"), "w") as f:
             f.writelines(lines)
         self.save("artefacts.sha256", "".join(lines) + "# HEAD %s dirty=%s\n" % (self.head, "yes" if self.dirty else "no"))
+
+    def stage_debs(self):
+        """--deb: the package of this tree (scripts/build-deb.sh, bin/sc)
+        as smartconfig.deb, and a later build of it as smartconfig-up.deb
+        (D.1); the sha256 of the files in the first, as DEB_FILES name
+        them. MANIFEST's lines for both."""
+        version = labvm.run_timed(["sh", "scripts/version.sh"], 60, cwd=REPO).out.strip()
+        lines = []
+        for name, v in (("smartconfig.deb", version), ("smartconfig-up.deb", version + DEB_UP)):
+            out = os.path.join(self.stage, name)
+            r = labvm.run_timed(["env", "VERSION=" + v, "sh", "scripts/build-deb.sh", out], 300, cwd=REPO)
+            if r.rc != 0:
+                raise LabError("build-deb.sh %s: exit %s: %s" % (v, r.rc, _cell(r.err or r.out, 300)))
+            with open(out, "rb") as f:
+                self.sha[name] = hashlib.sha256(f.read()).hexdigest()
+            lines.append("%s  %s\n" % (self.sha[name], name))
+        self.v["deb_version"], self.v["deb_up_version"] = version, version + DEB_UP
+        x = os.path.join(self.run, "deb-files")
+        r = labvm.run_timed(["dpkg-deb", "--extract", os.path.join(self.stage, "smartconfig.deb"), x], 120)
+        if r.rc != 0:
+            raise LabError("dpkg-deb --extract: exit %s: %s" % (r.rc, _cell(r.err, 300)))
+        for _, dest in DEB_FILES:
+            with open(x + dest, "rb") as f:
+                self.sha[dest] = hashlib.sha256(f.read()).hexdigest()
+        shutil.rmtree(x, ignore_errors=True)
+        return lines
 
     def start_vm(self):
         """0.1: the overlay, QEMU paused, the mux and QMP attached, then cont.
@@ -2178,21 +2229,26 @@ class E2E:
         p = []
         if r.rc != 0:
             p.append("install.sh exit %s" % r.rc)
-        for k, want in (("manifest", "ok"), ("install_rc", "0"), ("daemon_reload_rc", "0"), ("enable_rc", "0"),
-                        ("enable_scd_rc", "0"), ("update_grub_rc", "0"), ("done", "1")):
+        keys = (("manifest", "ok"), ("install_rc", "0"), ("deb_rc", "0"), ("enable_rc", "0"), ("enable_scd_rc", "0"),
+                ("update_grub_rc", "0"), ("done", "1")) if self.deb else \
+            (("manifest", "ok"), ("install_rc", "0"), ("daemon_reload_rc", "0"), ("enable_rc", "0"),
+             ("enable_scd_rc", "0"), ("update_grub_rc", "0"), ("done", "1"))
+        for k, want in keys:
             if inst.get(k) != [want]:
                 p.append("%s=%s" % (k, ",".join(inst.get(k, ["(none)"]))))
         got = {}
         for line in inst.get("file", []):
             parts = line.split(" ", 1)
             got[parts[0]] = parts[1] if len(parts) > 1 else ""
-        n = 0
-        for name, _, mode, dests in INSTALLED:
-            for dest in dests:
-                n += 1
-                want = "%s root:root %s" % (mode, self.sha[name])
-                if got.get(dest) != want:
-                    p.append("%s: %s, not %s" % (dest, got.get(dest), want))
+        files = [(dest, mode, self.sha[name]) for name, _, mode, dests in (LAB_ONLY if self.deb else INSTALLED)
+                 for dest in dests]
+        if self.deb:
+            files += [(dest, mode, self.sha[dest]) for mode, dest in DEB_FILES]
+        n = len(files)
+        for dest, mode, sha in files:
+            want = "%s root:root %s" % (mode, sha)
+            if got.get(dest) != want:
+                p.append("%s: %s, not %s" % (dest, got.get(dest), want))
         self.record("0.4", problems=p, seen="%d files as MANIFEST says; enable and update-grub exit %s" % (
             n, ",".join(inst.get("update_grub_rc", ["?"]))), expected="0755 sc/42/41/43, 0644 units and drop-ins, "
                     "root:root, sha256 = host; enable (no --now), enable --now scd", source="evidence/artefacts.sha256",
@@ -2267,7 +2323,7 @@ class E2E:
         p = []
         drop = show_units(f.lines("dropins"))
         for u in ("rescue.service", "emergency.service"):
-            want = "/etc/systemd/system/%s.d/50-smartconfig.conf" % u
+            want = "%s/%s.d/50-smartconfig.conf" % ("/usr/lib/systemd/system" if self.deb else "/etc/systemd/system", u)
             if want not in drop.get(u, {}).get("DropInPaths", "").split():
                 p.append("%s DropInPaths: %s" % (u, drop.get(u, {}).get("DropInPaths")))
         n = sum(1 for line in f.lines("units-cat") if line.strip() == DROPIN_LINE)
@@ -3380,6 +3436,63 @@ class E2E:
                     evidence="input.log ssh.log")
         self.flag = False
 
+    # -- --deb: the package's upgrade, remove and purge (D.x, M5) --------------
+
+    def deb_lifecycle(self):
+        """D.1-D.3: on the guest that ran the scenario from the package, a
+        later build of it (dpkg -i), then dpkg -r, then dpkg -P. The guest
+        is powered off next (5.2); nothing after needs sc."""
+        self.at("D.1")
+        q = "systemctl show -p MainPID --value scd.service; sc log -n 0 | wc -l; sha256sum </var/lib/smartconfig/boots"
+        before = self.sudo(q).out.split()
+        r = self.sudo("dpkg -i %s/smartconfig-up.deb" % GUEST_DIR, self.b("BUDGET_CMD_SC"))
+        after = self.sudo("dpkg-query -W -f='${Version}\\n' smartconfig; systemctl is-active scd.service; " + q).out.split()
+        p = [] if r.rc == 0 else ["dpkg -i: exit %s: %s" % (r.rc, _cell(r.err or r.out, 200))]
+        want = self.v["deb_up_version"]
+        if len(before) < 3 or len(after) < 5:
+            p.append("could not read the state: before %s, after %s" % (before, after))
+        else:
+            if after[0] != want:
+                p.append("dpkg-query says %s, not %s" % (after[0], want))
+            if after[1] != "active" or after[2] in ("0", before[0]):
+                p.append("scd %s, MainPID %s (before %s): not restarted" % (after[1], after[2], before[0]))
+            if int(after[3]) < int(before[1]):
+                p.append("sc log has %s rows, before %s" % (after[3], before[1]))
+            if after[4] != before[2]:
+                p.append("the boots file changed")
+        self.record("D.1", problems=p, seen=" ".join(after), expected="%s active; a new MainPID; rows kept; boots unchanged" % want,
+                    source="scripts/deb/postinst", evidence="ssh.log")
+        self.at("D.2")
+        self.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1")
+        r = self.sudo("dpkg -r smartconfig", self.b("BUDGET_CMD_SC"))
+        st = self.sudo("test -e /usr/sbin/sc && echo sc=there || echo sc=gone; echo scd=$(systemctl is-active scd.service); "
+                       "echo rescue=$(grep -c -- '--id smartconfig-rescue' /boot/grub/grub.cfg); "
+                       "grub-editenv /boot/grub/grubenv list; test -d /var/lib/smartconfig && echo store=kept").out
+        kv = dict(l.split("=", 1) for l in st.split("\n") if "=" in l)
+        p = [] if r.rc == 0 else ["dpkg -r: exit %s: %s" % (r.rc, _cell(r.err or r.out, 200))]
+        for k, want in (("sc", "gone"), ("rescue", "0"), ("store", "kept")):
+            if kv.get(k) != want:
+                p.append("%s=%s, not %s" % (k, kv.get(k), want))
+        if kv.get("scd") == "active":
+            p.append("scd still active")
+        if "smartconfig_pending" in kv:
+            p.append("grubenv: smartconfig_pending=%s" % kv["smartconfig_pending"])
+        self.record("D.2", problems=p, seen=" ".join("%s=%s" % i for i in sorted(kv.items())),
+                    expected="sc gone, scd not active, no rescue entry, no flag, the store kept", source="scripts/deb/postrm",
+                    evidence="ssh.log")
+        self.at("D.3")
+        r = self.sudo("dpkg -P smartconfig 2>&1", self.b("BUDGET_CMD_SC"))
+        st = self.sudo("test -e /etc/grub.d/42_smartconfig && echo grubd=there || echo grubd=gone; "
+                       "test -d /var/lib/smartconfig && echo store=kept").out
+        kv = dict(l.split("=", 1) for l in st.split("\n") if "=" in l)
+        p = [] if r.rc == 0 else ["dpkg -P: exit %s: %s" % (r.rc, _cell(r.out, 200))]
+        if kv.get("grubd") != "gone" or kv.get("store") != "kept":
+            p.append("42_smartconfig %s, the store %s" % (kv.get("grubd"), kv.get("store")))
+        if "the change history in /var/lib/smartconfig is kept" not in r.out:
+            p.append("dpkg -P did not say the store is kept")
+        self.record("D.3", problems=p, seen="42_smartconfig %s; store %s" % (kv.get("grubd"), kv.get("store")),
+                    expected="42_smartconfig gone; the store kept, and said", source="scripts/deb/postrm", evidence="ssh.log")
+
     # -- the whole mode -------------------------------------------------------
 
     def flow(self):
@@ -3397,7 +3510,7 @@ class E2E:
         self.boot("3", self.boot3)
         self.boot("4", self.boot4)
         if self.args.no_boot5:
-            for cid in [c for c in REGISTRY if c.startswith("5.") or c.startswith("6.")]:
+            for cid in [c for c in REGISTRY if c[:2] in ("5.", "6.", "D.")]:
                 self.skip(cid, "--no-boot5")
             return
         self.reboot_ssh("5.1")
@@ -3412,6 +3525,11 @@ class E2E:
         else:
             for cid in [c for c in REGISTRY if c.startswith("6.")]:
                 self.skip(cid, "no --grub-password")
+        if self.deb:
+            self.deb_lifecycle()
+        else:
+            for cid in [c for c in REGISTRY if c.startswith("D.")]:
+                self.skip(cid, "no --deb")
         self.at("5.2")
         ev = self.reboot_ssh("5.2", "poweroff")
         rc = self.machine.wait_exit(60)
@@ -3553,7 +3671,8 @@ class E2E:
         line = summary_line(v, self.mode, took, self.v.get("outcome"), self.retries, self.head,
                             "yes" if self.dirty else "no", self.sha.get("sc", "")[:12],
                             "no" if self.args.no_boot5 else "yes", self.args.boot2 == "reset-at-timeout",
-                            getattr(self.args, "grub_password", False) and not self.args.no_boot5)
+                            getattr(self.args, "grub_password", False) and not self.args.no_boot5,
+                            self.deb and not self.args.no_boot5)
         if v != "PASS":
             failing = [r for r in rows if r.status == "FAIL"] or [r for r in rows if r.status == "NOTRUN"][:1]
             sys.stderr.write("\n%s: %s\nrun directory: %s\n" % (self.mode, v, self.run))
@@ -3580,12 +3699,14 @@ def main(argv=None):
     ap.add_argument("--boot2", choices=("natural", "reset-at-timeout"), default="natural",
                     help="reset-at-timeout: reset boot 2 right at the device timeout (forces outcome a)")
     ap.add_argument("--no-boot5", action="store_true", help="leave out boot 5 (while iterating)")
+    ap.add_argument("--deb", action="store_true",
+                    help="install the package (make deb's) instead of the files, and check its upgrade, remove and purge (D.x)")
     ap.add_argument("--grub-password", action="store_true",
                     help="after boot 5, the README's GRUB password recipe and three more boots (checks 6.x)")
     ap.add_argument("--keep", action="store_true", help="keep disk.qcow2 and VARS.fd after a PASS too")
     args = ap.parse_args(argv)
-    if args.grub_password and args.no_boot5:
-        ap.error("--grub-password runs after boot 5: not with --no-boot5")
+    if (args.grub_password or args.deb) and args.no_boot5:
+        ap.error("--grub-password and --deb run after boot 5: not with --no-boot5")
     labvm.install_signal_handlers()
     # Whatever goes wrong in here is the lab's: never exit 1, which make
     # lab-e2e reads as an [M4] failure.

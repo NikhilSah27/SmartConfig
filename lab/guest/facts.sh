@@ -110,7 +110,10 @@ p_paths() {
 	for p in /usr/sbin/sc /etc/grub.d/41_sclab /etc/grub.d/42_smartconfig /etc/grub.d/43_sclab \
 		/etc/systemd/system/scd.service /etc/systemd/system/sc-boot-seen.service \
 		/etc/systemd/system/sc-boot-ok.service /etc/systemd/system/rescue.service.d/50-smartconfig.conf \
-		/etc/systemd/system/emergency.service.d/50-smartconfig.conf /etc/default/grub.d/60-sclab.cfg \
+		/etc/systemd/system/emergency.service.d/50-smartconfig.conf /usr/lib/systemd/system/scd.service \
+		/usr/lib/systemd/system/sc-boot-seen.service /usr/lib/systemd/system/sc-boot-ok.service \
+		/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf \
+		/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf /etc/default/grub.d/60-sclab.cfg \
 		/etc/cloud/cloud-init.disabled /var/lib/smartconfig /var/lib/smartconfig/boots; do
 		f=$R$p
 		if [ -L "$f" ]; then

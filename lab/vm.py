@@ -1520,11 +1520,13 @@ def _text(b):
     return b.decode(errors="replace") if isinstance(b, bytes) else b
 
 
-def run_timed(argv, timeout, input=None):
-    """Run argv with a hard timeout (the child is killed then): a Result."""
+def run_timed(argv, timeout, input=None, cwd=None):
+    """Run argv with a hard timeout (the child is killed then), in cwd: a Result."""
     t = time.monotonic()
     kw = {"stdin": subprocess.DEVNULL} if input is None else \
         {"input": input.encode() if isinstance(input, str) else input}
+    if cwd is not None:
+        kw["cwd"] = cwd
     try:
         cp = subprocess.run(argv, capture_output=True, timeout=timeout, **kw)
         return Result(argv, cp.returncode, _text(cp.stdout), _text(cp.stderr), False,

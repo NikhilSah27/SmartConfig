@@ -32,6 +32,14 @@
 #   verify_rc=N                    verify_out=LINE...
 #   done=1                         the last line: it ran to the end
 #
+# With smartconfig.deb in DIR (lab/e2e.py --deb, M5): only the lab's own
+# 41_sclab and 43_sclab go in by install(1); the package goes in by
+# dpkg -i (its postinst enables and starts the units and runs
+# update-grub), and file= lines are the package's files. Then the keys
+# are deb_rc and deb_out (dpkg), enable_rc (systemctl is-enabled of the
+# three units) and enable_scd_rc (systemctl is-active scd), no
+# daemon_reload, and the rest as above.
+#
 # Exit status 0 when it ran to the end, whatever the steps gave; 2 when it
 # could not start (not root, or a file not in MANIFEST or not matching
 # it): then nothing is installed and the last line is manifest=fail or
@@ -60,6 +68,30 @@ sc-boot-seen.service /etc/systemd/system/sc-boot-seen.service 0644
 sc-boot-ok.service /etc/systemd/system/sc-boot-ok.service 0644
 smartconfig-rescue.conf /etc/systemd/system/rescue.service.d/50-smartconfig.conf 0644
 smartconfig-rescue.conf /etc/systemd/system/emergency.service.d/50-smartconfig.conf 0644'
+
+# The package's files, where it puts them (the deb mode).
+debfiles='/usr/sbin/sc
+/etc/grub.d/42_smartconfig
+/usr/lib/systemd/system/scd.service
+/usr/lib/systemd/system/sc-boot-seen.service
+/usr/lib/systemd/system/sc-boot-ok.service
+/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf
+/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf'
+deb=
+if [ -f smartconfig.deb ]; then
+	deb=1
+	files='41_sclab /etc/grub.d/41_sclab 0755
+43_sclab /etc/grub.d/43_sclab 0755'
+fi
+
+# fileline DEST: file=DEST MODE USER:GROUP SHA256, or file=DEST -.
+fileline() {
+	if [ -f "$R$1" ]; then
+		printf 'file=%s %s %s\n' "$1" "$(stat -c '%a %U:%G' "$R$1")" "$(sha256sum <"$R$1" | cut -d' ' -f1)"
+	else
+		printf 'file=%s -\n' "$1"
+	fi
+}
 
 # lines KEY TEXT: each line of TEXT as KEY=LINE; nothing for no text.
 lines() {
@@ -111,19 +143,22 @@ while read -r name dest mode; do
 	install -D -o root -g root -m "$mode" "$name" "$R$dest" </dev/null
 	rc=$?
 	[ "$rc" -le "$worst" ] || worst=$rc
-	if [ -f "$R$dest" ]; then
-		printf 'file=%s %s %s\n' "$dest" "$(stat -c '%a %U:%G' "$R$dest")" "$(sha256sum <"$R$dest" | cut -d' ' -f1)"
-	else
-		printf 'file=%s -\n' "$dest"
-	fi
+	fileline "$dest"
 done <<EOF
 $files
 EOF
 echo "install_rc=$worst"
 
-step daemon_reload systemctl daemon-reload
-step enable systemctl enable sc-boot-seen.service sc-boot-ok.service
-step enable_scd systemctl enable --now scd.service
+if [ -n "$deb" ]; then
+	step deb dpkg -i smartconfig.deb
+	for dest in $debfiles; do fileline "$dest"; done
+	step enable systemctl is-enabled sc-boot-seen.service sc-boot-ok.service scd.service
+	step enable_scd systemctl is-active scd.service
+else
+	step daemon_reload systemctl daemon-reload
+	step enable systemctl enable sc-boot-seen.service sc-boot-ok.service
+	step enable_scd systemctl enable --now scd.service
+fi
 # update-grub writes grub.cfg itself; what it says (42_smartconfig's
 # "Adding SmartConfig rescue entry: ...") is on stderr.
 out=$(update-grub 2>&1 >/dev/null </dev/null)

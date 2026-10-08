@@ -67,7 +67,7 @@ clean:
 # left out (--no-boot5), so such a PASS never reads as a whole one, and
 # grubpw=yes when --grub-password ran the README's GRUB password recipe too.
 lab-e2e: build
-	@rc=0; tags="$(if $(findstring --no-boot5,$(LAB_E2E_ARGS)), boot5=no)$(if $(findstring --grub-password,$(LAB_E2E_ARGS)), grubpw=yes)"; for m in $(LAB_MODES); do \
+	@rc=0; tags="$(if $(findstring --no-boot5,$(LAB_E2E_ARGS)), boot5=no)$(if $(findstring --grub-password,$(LAB_E2E_ARGS)), grubpw=yes)$(if $(findstring --deb,$(LAB_E2E_ARGS)), deb=yes)"; for m in $(LAB_MODES); do \
 	  line=$$(timeout --foreground $(LAB_TIMEOUT) $(LAB) lab/e2e.py --mode $$m $(LAB_E2E_ARGS)); r=$$?; \
 	  [ -n "$$line" ] && echo "$$line"; \
 	  for t in boot5=no dirty=yes "boot2=a(forced)"; do \

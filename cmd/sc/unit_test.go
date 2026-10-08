@@ -579,11 +579,19 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 	// The script's own /boot line points at the made-up one: it takes no
 	// variable for it from root's environment (M4 follow-up 5).
 	src, _ := os.ReadFile("../../scripts/42_smartconfig")
-	if strings.Count(string(src), "\nboot=/boot\n") != 1 || strings.Contains(string(src), "SC_GRUB_BOOT") {
-		t.Fatal("42_smartconfig: no single boot=/boot line, or a variable for it")
+	if strings.Count(string(src), "\nboot=/boot\n") != 1 || strings.Count(string(src), "\nsc=/usr/sbin/sc\n") != 1 ||
+		strings.Contains(string(src), "SC_GRUB_BOOT") {
+		t.Fatal("42_smartconfig: no single boot=/boot or sc=/usr/sbin/sc line, or a variable for it")
+	}
+	sc := "/bin/true" // an sc installed
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, "SC="); ok {
+			sc = v
+		}
 	}
 	script := filepath.Join(pkg, "42_smartconfig")
-	os.WriteFile(script, []byte(strings.Replace(string(src), "\nboot=/boot\n", "\nboot="+boot+"\n", 1)), 0o755)
+	src = []byte(strings.Replace(string(src), "\nboot=/boot\n", "\nboot="+boot+"\n", 1))
+	os.WriteFile(script, []byte(strings.Replace(string(src), "\nsc=/usr/sbin/sc\n", "\nsc="+sc+"\n", 1)), 0o755)
 	cmd := exec.Command("sh", script)
 	cmd.Env = append([]string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "pkgdatadir=" + pkg,
 		"GRUB_DEVICE=/dev/sda2", "GRUB_DEVICE_UUID=sc-no-such-uuid", "GRUB_DEVICE_PARTUUID=sc-no-such-partuuid", "GRUB_FS=ext2",
@@ -594,7 +602,7 @@ func grubScriptErr(t *testing.T, kernels []string, env ...string) (string, strin
 	if err != nil {
 		t.Fatalf("42_smartconfig: %v\n%s", err, stderr.String())
 	}
-	if check, err := exec.LookPath("grub-script-check"); err == nil {
+	if check, err := exec.LookPath("grub-script-check"); err == nil && len(out) > 0 { // it rejects an empty file
 		f := t.TempDir() + "/grub.cfg"
 		os.WriteFile(f, out, 0o644)
 		if msg, err := exec.Command(check, f).CombinedOutput(); err != nil {
@@ -632,6 +640,11 @@ func TestGrubScript(t *testing.T) {
 	}
 	if out := grubScript(t, nil); strings.Contains(out, "menuentry") || !strings.Contains(out, "smartconfig_pending") {
 		t.Errorf("no kernel:\n%s", out)
+	}
+	// The package removed, not purged: the script is left, sc is not;
+	// it adds nothing, entry or flag (M5).
+	if out, msg := grubScriptErr(t, []string{"6.8.0-142-generic"}, "SC=/nonexistent/sc"); out != "" || msg != "" {
+		t.Errorf("no sc:\n%s\n%s", out, msg)
 	}
 }
 
@@ -751,6 +764,60 @@ func TestGrubScriptDetails(t *testing.T) {
 	// A no_entry from the environment does not drop the entry.
 	if out := grubScript(t, []string{"6.8.0-1-generic"}, "no_entry=1"); !strings.Contains(out, "menuentry") {
 		t.Errorf("no_entry from the environment:\n%s", out)
+	}
+}
+
+// install.sh with the package staged (lab/e2e.py --deb, M5): the lab's
+// two observers by install(1), the package by dpkg -i, the package's
+// files reported where it puts them, the units checked enabled and scd
+// active (its postinst did that), then update-grub as without it. Never
+// as root, as TestLabGuestInstall.
+func TestLabGuestInstallDeb(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("never as root")
+	}
+	stage := t.TempDir()
+	var manifest strings.Builder
+	for name, from := range map[string]string{"41_sclab": "../../lab/guest/", "43_sclab": "../../lab/guest/",
+		"install.sh": "../../lab/guest/", "smartconfig.deb": ""} {
+		data := []byte("a package\n")
+		if from != "" {
+			data, _ = os.ReadFile(from + name)
+		}
+		os.WriteFile(filepath.Join(stage, name), data, 0o644)
+		fmt.Fprintf(&manifest, "%x  %s\n", sha256.Sum256(data), name)
+	}
+	os.WriteFile(filepath.Join(stage, "MANIFEST"), []byte(manifest.String()), 0o644)
+	files := []string{"/usr/sbin/sc", "/etc/grub.d/42_smartconfig", "/usr/lib/systemd/system/scd.service",
+		"/usr/lib/systemd/system/sc-boot-seen.service", "/usr/lib/systemd/system/sc-boot-ok.service",
+		"/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf", "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf"}
+	dir := t.TempDir()
+	labStubs(t, dir, map[string]string{
+		"dpkg":        `for f in ` + strings.Join(files, " ") + `; do mkdir -p "$SCLAB_TEST/root$(dirname $f)"; echo "$f" >"$SCLAB_TEST/root$f"; done`,
+		"systemctl":   `case "$1" in is-enabled) echo enabled; echo enabled; echo enabled ;; is-active) echo active ;; esac`,
+		"update-grub": `echo "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic" >&2`, "grub-script-check": "", "systemd-analyze": "",
+		"install": `while [ $# -gt 2 ]; do case "$1" in -m) m=$2; shift 2 ;; -o | -g) shift 2 ;; *) shift ;; esac; done
+mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
+	})
+	cmd := exec.Command("sh", filepath.Join(stage, "install.sh"))
+	cmd.Env = append(os.Environ(), "SCLAB_TEST="+dir)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	var want []string
+	for _, f := range files {
+		want = append(want, fmt.Sprintf(`file=%s \d+ \S+:\S+ %x`, regexp.QuoteMeta(f), sha256.Sum256([]byte(f+"\n"))))
+	}
+	re := regexp.MustCompile(`(?s)^uid=\d+\nmanifest=ok\n(manifest_out=\S+: OK\n){4}file=/etc/grub.d/41_sclab 755 .*\nfile=/etc/grub.d/43_sclab 755 .*\n` +
+		`install_rc=0\ndeb_rc=0\n` + strings.Join(want, `\n`) + `\nenable_rc=0\nenable_out=enabled\nenable_out=enabled\nenable_out=enabled\n` +
+		`enable_scd_rc=0\nenable_scd_out=active\nupdate_grub_rc=0\nupdate_grub_err=Adding SmartConfig rescue entry: .*\n` +
+		`grub_script_check_rc=0\nverify_rc=0\ndone=1\n$`)
+	if err != nil || !re.MatchString(out) {
+		t.Errorf("%v:\n%s", err, out)
+	}
+	log, _ := os.ReadFile(filepath.Join(dir, "log"))
+	if got := regexp.MustCompile(`(?m)^install .*\n`).ReplaceAllString(string(log), ""); !strings.HasPrefix(got,
+		"dpkg -i smartconfig.deb\nsystemctl is-enabled sc-boot-seen.service sc-boot-ok.service scd.service\nsystemctl is-active scd.service\nupdate-grub \n") {
+		t.Errorf("commands:\n%s", got)
 	}
 }
 
