@@ -2570,4 +2570,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   of the watcher and the rescue path point to it; the Layout lists name
   the package's scripts. Full checks passed. Next: the M5 review (two
   reviewers), then the sign-off.
+- **The lab's `--deb` run on `82e4168`: PASS, both modes** (2026-10-08).
+  `make lab-e2e LAB_E2E_ARGS=--deb`, log
+  `~/smartconfig-work/signoff/lab-e2e-20261008T062524Z-82e4168-deb.log`,
+  run files in `~/smartconfig-work/signoff/lab-e2e-82e4168/`. UEFI 27m01s,
+  BIOS 32m59s, no retries, `dirty=no`, `deb=yes`: the M4 scenario on the
+  package, D.1-D.3, and D.4 for the first time (all 7 hand files aside,
+  scd from `/usr/sbin/sc`, one rescue entry). BIOS chained its five double
+  RESETs in time; the new QMP round trip was not needed this run. Next:
+  the M5 review.
 
