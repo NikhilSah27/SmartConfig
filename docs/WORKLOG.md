@@ -230,9 +230,18 @@ step is built (your call, 2026-09-30).
 **Still waiting for you:**
 
 - [ ] Reboot this VM when it suits you (it ends a running session); the
-  next session runs the read-only check above.
-- [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-6 (dpkg-deb or nfpm,
-  `/usr/sbin`, purge, the hand install, the package's name, the license).
+  next session runs the read-only check above. Since 2026-10-08 09:44 UTC
+  the M5 package is installed here (the log, "M5 sign-off"): the reboot
+  is its first boot.
+- [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-7 (dpkg-deb or nfpm,
+  `/usr/sbin`, purge, the hand install, the package's name, the license,
+  the command's name).
+- [ ] This VM's `/usr/sbin/policy-rc.d` (from its image, 2025-10-30, in
+  no package) answers 101 to every service action package scripts ask
+  for: no package's upgrade restarts its service here, and the package's
+  postinst could not restart scd, nor will its prerm stop it on a
+  remove. Keep it, or remove it (`sudo rm /usr/sbin/policy-rc.d`)? The
+  rest of M5's sign-off on this VM (remove, install again) waits on it.
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
@@ -2600,4 +2609,39 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `make lab-test` (364) passed; every mutation the reviewers saw survive
   now fails a test. Next: the sign-off, `make lab-e2e LAB_E2E_ARGS=--deb`
   on the fixed tree, then the install on this VM.
+- **M5 sign-off, the lab: PASS on `4b34d12`, both modes** (2026-10-08).
+  `make lab-e2e LAB_E2E_ARGS=--deb`, log
+  `~/smartconfig-work/signoff/lab-e2e-20261008T084346Z-4b34d12-deb.log`,
+  run files in `~/smartconfig-work/signoff/lab-e2e-4b34d12/`. UEFI
+  29m36s, BIOS 30m04s, no retries, `dirty=no`, `deb=yes`: the M4
+  scenario on the package (0.5 now holds postinst's own `update-grub`),
+  D.1-D.5. `make deb` here gives the lab's package byte for byte
+  (`781246c8c6b6`).
+- **M5 sign-off, this VM: installed, two problems found** (2026-10-08,
+  as root, your OK of 2026-10-07). Script
+  `~/smartconfig-work/signoff/signoff-m5-4b34d12.sh`, log
+  `signoff-m5-20261008T094446Z-4b34d12.log`. `apt-get install` of the
+  package over the follow-ups' hand install: the takeover is right
+  (all 7 files `.dpkg-old`, not executable; the units from `/usr/lib`,
+  enabled; the drop-ins from `/usr/lib`; one rescue entry; `dpkg
+  --verify` clean; rows kept; no new failed unit; backups in
+  `/var/backups/smartconfig`: `sc-d686341`, `manifest-pre-m5.txt`,
+  `sha256-pre-m5.txt`, `failed-pre-m5.txt`). It stopped on:
+  1. scd not restarted: this VM's `/usr/sbin/policy-rc.d` answers 101 to
+     everything (`deb-systemd-invoke` says so), so the hand scd ran on
+     its moved-aside `sc`. Restarted by hand (`systemctl restart scd`):
+     now `/usr/sbin/sc`, `Type=notify`, baseline in 589 ms. The lab's
+     image has no policy-rc.d.
+  2. `sudo sc status` exits 2 after the takeover: it lists the hand
+     install's `/etc/systemd/system` units and drop-ins as "error:
+     deleted" (the package's own units under `/usr/lib` stand in for
+     them) and suggests `sc restore` of a drop-in, which would undo the
+     takeover. Until the next healthy boot only, but wrong advice.
+
+  Not run yet: the remove and the install again (they wait on the
+  policy-rc.d, under "Still waiting for you"). Next: fixes for both (a
+  postinst that says when scd still runs another `sc`; `sc status` not
+  calling a deleted `/etc` override with a unit or drop-in of the same
+  name under `/usr/lib` an error), the lab holding `sc status` after the
+  takeover, then the rest of the sign-off.
 
