@@ -2579,4 +2579,25 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   scd from `/usr/sbin/sc`, one rescue entry). BIOS chained its five double
   RESETs in time; the new QMP round trip was not needed this run. Next:
   the M5 review.
+- **The M5 review is closed** (2026-10-08):
+  [reviews/2026-10-08-m5.md](reviews/2026-10-08-m5.md). Two reviewers in
+  clones of `82e4168`: A on the package (with the real dpkg on a fake
+  root), B on the lab's `--deb` mode. Two highs, both fixed: a remove and
+  install again lost the rescue entry (preinst took the package's own
+  `42_smartconfig` for a hand install), and the lab never showed
+  postinst's `update-grub` (install.sh ran its own). The fixes:
+  - the takeover on a first install only, with `abort-install` (`5e9f1e3`);
+  - the version's commit count (`8284709`);
+  - Installed-Size (`9ab3586`);
+  - [M5] FAILs counted as FAILs (`37207e9`);
+  - the lab's D.x hold the store, the tree and postinst's `update-grub`, plus D.5,
+    a remove and install again (`99d91ba`);
+  - `accept-m4` step 7 (`8cd9c8d`);
+  - the docs (`84f9959`).
+
+  Not code fixes: A6, `DPKG_ROOT`, is plan C6; A11, the name clash with
+  Ubuntu's `sc` spreadsheet, is plan question 7, for you. Full checks and
+  `make lab-test` (364) passed; every mutation the reviewers saw survive
+  now fails a test. Next: the sign-off, `make lab-e2e LAB_E2E_ARGS=--deb`
+  on the fixed tree, then the install on this VM.
 
