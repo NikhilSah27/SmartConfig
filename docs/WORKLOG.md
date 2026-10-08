@@ -2552,4 +2552,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   lab-test` (353) passed. Found while reading for M5 step 8: the plan's
   step 7 also asks for the takeover of a hand install in the lab, which
   only `TestDebPreinstHandInstall` covers. Next: that, as D.4.
+- **M5 step 7b, the takeover in the lab (D.4), done `4df3912`.** After
+  the purge, the lab puts in the README's hand install up to M4 from the
+  `m4` tag's own files (the package's `sc` in `/usr/local/sbin`, scd
+  running from it), then `dpkg -i` of the package: each of the 7 files
+  must be `NAME.dpkg-old`, not executable, and named; scd restarted from
+  `/usr/sbin/sc`; the units from `/usr/lib`, enabled; the drop-ins from
+  `/usr/lib` only; one rescue entry; `sc` in root's PATH `/usr/sbin/sc`.
+  A hand install that does not come up is a [lab] error. `--deb` now
+  needs the `m4` tag in the clone. Tests for each check (each undone
+  fails one), `stage_hand`, `stage_debs`. Full checks and `make lab-test`
+  (356) passed. Next: step 8, the README.
 
