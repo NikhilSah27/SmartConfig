@@ -2523,4 +2523,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `update-grub`, remove and purge; the takeover with a foreign unit left
   alone. Full checks passed (twice: the restart came from rereading the
   takeover, after the first run).
+- **M5 step 5, CI builds the package, done `922e5cc`.** CI fetches the
+  tags, runs `make deb`, prints its control and contents, and keeps it as
+  the `deb` artifact (2.7 MB; the upload action pinned by commit, as the
+  others). The plan gains Q6: the license its copyright file names.
 
