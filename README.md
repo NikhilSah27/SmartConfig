@@ -65,10 +65,13 @@ One package, `smartconfig`, for Ubuntu 24.04 on amd64: `sc` in
 `/usr/sbin`, scd, the boot units, the rescue entry and its report.
 
 ```sh
-make deb                                   # dist/smartconfig_<version>_amd64.deb, dpkg-deb only
-sudo apt install ./dist/smartconfig_*.deb  # scd starts; update-grub adds the rescue entry
+make deb                    # dpkg-deb only; it prints the file: dist/smartconfig_<version>_amd64.deb
+sudo apt install ./dist/smartconfig_<version>_amd64.deb   # that file; scd starts, update-grub adds the rescue entry
 sc version
 ```
+
+With the file under a home directory only its owner can read, apt says
+`Download is performed unsandboxed as root ...`: that is harmless.
 
 The first boot verdict comes at the next boot. If `update-grub` fails
 during the install, the package is in and says so; fix what it reports
@@ -77,9 +80,12 @@ keeps the store.
 
 An install by hand from before the package (this README up to M4: `sc`
 in `/usr/local/sbin`, the units and drop-ins in `/etc/systemd/system`,
-`/etc/grub.d/42_smartconfig`) is taken over: its units are disabled and
-each of its files is kept as `NAME.dpkg-old`, which systemd, GRUB and
-PATH pass over; anything else at those paths is left, and named.
+`/etc/grub.d/42_smartconfig`) is taken over on the first install: its
+units are disabled and each of its files is kept as `NAME.dpkg-old`,
+which systemd, GRUB and PATH pass over; anything else at those paths is
+left, and named. If dpkg cannot unpack the package, the hand install's
+`42_smartconfig` is put back and nothing else of it was touched. A purge
+deletes `42_smartconfig.dpkg-old`, as dpkg does next to a conffile.
 
 `sudo apt remove smartconfig` stops scd, takes the rescue entry out of
 `grub.cfg` and unsets the menu flag; the history in `/var/lib/smartconfig`

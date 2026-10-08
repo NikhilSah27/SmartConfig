@@ -72,7 +72,8 @@ github.com/goreleaser/nfpm/v2/cmd/nfpm@vX`). The project's rule is no new
 dependency without asking: that is Q1.
 
 Version: `0.5.0` at the tag `m5`; between tags
-`0.4.99+git<UTC date>.<sha7>` so a later build always sorts higher.
+`0.4.99+git<count since m4>.<UTC time>.<sha7>` so a later build always
+sorts higher (C3).
 `sc version` prints the same.
 
 ## 3. The maintainer scripts
@@ -159,3 +160,25 @@ worklog line, push and CI green.
    `copyright` file names one. Until you choose, it says "No license has
    been chosen yet: all rights reserved". Which license (for example MIT,
    Apache-2.0 or GPL-3.0)?
+7. The command's name (from the review, A11). Ubuntu's universe has a
+   package `sc`, a spreadsheet, whose `/usr/bin/sc` the package's
+   `/usr/sbin/sc` hides for anyone with both installed (`/usr/sbin` comes
+   first in Ubuntu's PATH), and Debian policy 10.1 asks for other names.
+   Keep `sc` and say so in the README (recommended for now: the project,
+   its docs and the rescue report all say `sc`; nothing is published to
+   an archive), add `Conflicts: sc`, or rename the command before a
+   wider release?
+
+## 9. Changes while it is built
+
+The questions run on their recommended answers until you say otherwise;
+the plan above is as drafted, and these are where the build differs.
+
+| # | Date | Change | Why | Commit |
+|---|---|---|---|---|
+| C1 | 2026-10-08 | `postinst` restarts scd on every configure, a first install too (section 3 said start); it runs no `grub-script-check` (goal 2, section 3): `grub-mkconfig` checks its output before it replaces `grub.cfg`. | A hand install's scd may still run its old `sc`, and start leaves a running unit as it is. | `e710ce2` |
+| C2 | 2026-10-08 | The hand install is recognised by SmartConfig's marks in each file (the repo's URL in a unit, `sc status --console` in a drop-in, the header line of `42_smartconfig`, the store's Go package path in `sc`), not by matching a released build (goal 5). | Every hand install since M2 carries them, and a build of any commit is SmartConfig's. | `e710ce2` |
+| C3 | 2026-10-08 | From the review: the takeover runs on a first install only (dpkg passes no version); `preinst` moves only `42_smartconfig` (its conffile prompt), `postinst`'s first configure the rest, and `postrm abort-install` puts `42_smartconfig` back. The version is `0.N.99+git<count since mN>.<time>.<sha7>` (section 2 said `<UTC date>.<sha7>`), and no `mN` tag is an error. | [reviews/2026-10-08-m5.md](reviews/2026-10-08-m5.md): a remove and install again lost the rescue entry; a failed install left the hand install moved aside; a commit could sort below its parent. | review fixes |
+| C4 | 2026-10-08 | CI prints the package's control and contents (step 5 said "checked against a list"); `TestBuildDeb` holds the contents to the list, with a stand-in `sc`. | One list, in a test that runs everywhere. | `922e5cc` |
+| C5 | 2026-10-08 | The lab installs with `dpkg -i` (step 6 said `apt install`): the guest has the dependencies, and both run the same maintainer scripts; `apt install` is the README's and this VM's sign-off's. `lab/guest/install.sh` stays, for both modes (section 4 said it goes). The lab also checks the takeover of the `m4` tag's hand install (D.4) and a remove and install again (D.5). | The files mode is still the M4 scenario's own run. | `7c4e466`, `4df3912`, review fixes |
+| C6 | 2026-10-08 | With `DPKG_ROOT` set (dpkg's `--force-script-chrootless`), the scripts keep to that root for their own files, but `daemon-reload`, the restart and `update-grub` act on the running system when their guards find `run/systemd/system` or `boot/grub/grub.cfg` under it. | No tool takes a root for them, and the tests need `DPKG_ROOT` for the files; such installs are rare and need the force flag. | review (A6) |

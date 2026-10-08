@@ -1,7 +1,7 @@
 #!/bin/sh
 # 42_smartconfig: SmartConfig's part of grub.cfg (M4 plan 3.3, 3.4).
-# Install it by hand (README): install -m 0755 scripts/42_smartconfig
-# /etc/grub.d/, then update-grub, which runs it.
+# The package puts it in /etc/grub.d (a conffile), and its postinst runs
+# update-grub, which runs it (M5).
 #
 # 1. The menu entry "SmartConfig rescue": the newest kernel with its
 #    initrd, root read-only, /etc/fstab ignored (fstab=no), straight into
