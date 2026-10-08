@@ -32,8 +32,11 @@ records, and `sc scope` explains what SmartConfig does with a path.
 **SmartConfig rescue**, opens a root shell however broken `/etc/fstab`
 is, `sc status` says above its prompt what changed since the last
 healthy boot and how to put it back, and the menu comes back by itself
-after a failed boot. Milestones 5 to 7 (package, incident factory,
-local model) are planned.
+after a failed boot.
+
+**Milestone 5 is in progress** (plan [docs/M5_PLAN.md](docs/M5_PLAN.md)):
+the package. Milestones 6 and 7 (incident factory, local model) are
+planned.
 
 ## Build
 
@@ -55,6 +58,33 @@ make accept-m4  # M4 acceptance run in the VM, the parts that need no reboot (as
 make lab-test   # the QEMU rescue lab's own tests (no VM)
 make lab-e2e    # the M4 owner scenario in a QEMU VM, UEFI and BIOS (no sudo; see lab/README.md)
 ```
+
+## Install (M5)
+
+One package, `smartconfig`, for Ubuntu 24.04 on amd64: `sc` in
+`/usr/sbin`, scd, the boot units, the rescue entry and its report.
+
+```sh
+make deb                                   # dist/smartconfig_<version>_amd64.deb, dpkg-deb only
+sudo apt install ./dist/smartconfig_*.deb  # scd starts; update-grub adds the rescue entry
+sc version
+```
+
+The first boot verdict comes at the next boot. If `update-grub` fails
+during the install, the package is in and says so; fix what it reports
+and run `sudo update-grub`. A newer package over it restarts scd and
+keeps the store.
+
+An install by hand from before the package (this README up to M4: `sc`
+in `/usr/local/sbin`, the units and drop-ins in `/etc/systemd/system`,
+`/etc/grub.d/42_smartconfig`) is taken over: its units are disabled and
+each of its files is kept as `NAME.dpkg-old`, which systemd, GRUB and
+PATH pass over; anything else at those paths is left, and named.
+
+`sudo apt remove smartconfig` stops scd, takes the rescue entry out of
+`grub.cfg` and unsets the menu flag; the history in `/var/lib/smartconfig`
+is kept, after `sudo apt purge smartconfig` too (it says how to delete
+it).
 
 ## Use
 
@@ -89,22 +119,17 @@ sudo ./bin/sc watch                  # foreground; Ctrl-C stops it (exit 0)
 ./bin/sc watch --root ~/some/dir     # as a normal user, on a directory of your own
 ```
 
-Installed by hand until the package milestone:
+The package runs it as scd (Install, above):
 
 ```sh
-sudo install -m 0755 bin/sc /usr/sbin/sc
-sudo install -m 0644 scripts/scd.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now scd
 sudo journalctl -u scd -p warning   # boot- and access-critical changes (needs sudo)
 ```
 
 `scd` creates `/var/lib/smartconfig` itself; `sc init` is not needed. It
 counts as started (`Type=notify`) once its startup rescan is recorded, which
 boot does not wait for; a file held back (low space, a store error) is
-counted in the `baseline:` line and recorded later. To update, run the
-same lines, `sc` first, then `sudo systemctl restart scd`: an older `sc`
-(the `m4` tag's or before) never says it is ready, and this unit gives it
-up after 5 minutes. What is
+counted in the `baseline:` line and recorded later. An upgrade of the
+package restarts it. What is
 watched is the built-in scope (`internal/scope/default.scope`): all of `/etc`
 minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 `custom.cfg`, and each login's `authorized_keys`, `rc` and `environment`.
@@ -116,16 +141,9 @@ storing new content and logs that once. A file that a program rewrites
 without pause gets 20 rows, then one every 5 minutes with its newest
 content, marked `(rate-limited)`, and one warning line.
 
-To remove the watcher, keep the store. With the rescue path (M4)
-installed, remove that first ("When the machine does not boot"). The M1 binary
+Removing the package (Install, above) keeps the store. The M1 binary
 (`/var/backups/smartconfig/sc-m1` on the dev VM) still reads it and restores
 file rows.
-
-```sh
-sudo systemctl disable --now scd
-sudo rm /etc/systemd/system/scd.service /usr/sbin/sc
-sudo systemctl daemon-reload
-```
 
 ## Check before it breaks (M3)
 
@@ -267,17 +285,8 @@ shows by itself, and SmartConfig rescue prints the report. Or log in and
 run `sudo sc status` in a terminal; it gives the same commands, each to
 run with `sudo` (not tried in the sign-off).
 
-Installed by hand until the package milestone, next to scd (`sc` must
-be `/usr/sbin/sc`). The first verdict is given at the next boot:
-
-```sh
-sudo install -m 0755 bin/sc /usr/sbin/sc && sudo systemctl try-restart scd
-sudo install -m 0644 scripts/sc-boot-seen.service scripts/sc-boot-ok.service /etc/systemd/system/
-sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/rescue.service.d/50-smartconfig.conf
-sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/emergency.service.d/50-smartconfig.conf
-sudo systemctl daemon-reload && sudo systemctl enable sc-boot-seen sc-boot-ok
-sudo install -m 0755 scripts/42_smartconfig /etc/grub.d/ && sudo update-grub
-```
+The package installs all of it (Install, above); the first verdict is
+given at the next boot.
 
 On a running system, `sudo sc status` gives the report as a table: one
 row per file changed since the last healthy boot, newest first, judged
@@ -376,20 +385,9 @@ If the new one is taken, every boot stops at the password prompt until
 you redo the edit and run `sudo update-grub`. unattended-upgrades skips
 such an update, so install it by hand.
 
-To remove the rescue path:
-
-```sh
-sudo systemctl disable sc-boot-seen sc-boot-ok
-sudo rm /etc/systemd/system/sc-boot-seen.service /etc/systemd/system/sc-boot-ok.service \
-  /etc/systemd/system/rescue.service.d/50-smartconfig.conf \
-  /etc/systemd/system/emergency.service.d/50-smartconfig.conf /etc/grub.d/42_smartconfig
-sudo rmdir --ignore-fail-on-non-empty /etc/systemd/system/rescue.service.d \
-  /etc/systemd/system/emergency.service.d
-sudo grub-editenv /boot/grub/grubenv unset smartconfig_pending
-sudo systemctl daemon-reload && sudo update-grub
-```
-
-The boot verdicts, `/var/lib/smartconfig/boots`, stay with the store.
+`sudo apt remove smartconfig` removes the rescue path with the rest
+(Install, above). The boot verdicts, `/var/lib/smartconfig/boots`, stay
+with the store.
 
 ## Layout
 
@@ -401,7 +399,8 @@ internal/scope/    which paths are watched, their tiers, fingerprint-only rules
 internal/watch/    the watcher: inotify, debounced worker, rescans, limits, checks
 internal/check/    checkers: the file graph, rules and explanations, the validator runner
 internal/boot/     boot verdicts: the boots file, ok or bad, the last healthy boot
-scripts/           scd.service, the M4 units, drop-in and 42_smartconfig, and the
+scripts/           scd.service, the M4 units, drop-in and 42_smartconfig; the package:
+                   build-deb.sh, deb/ (its maintainer scripts), version.sh; and the
                    acceptance runs: smoke.sh (M1), accept-m2.sh, accept-m3.sh, accept-m4.sh
 lab/               the QEMU rescue lab (make lab-e2e): dev only, not shipped
 docs/              worklog, plans, reviews, visual explainers

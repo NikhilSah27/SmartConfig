@@ -39,6 +39,7 @@ internal/watch    the watcher (sc watch): inotify, worker, rescans, limits
 internal/check    M3 checkers: findings, rules, the one place that runs validators
 internal/boot     M4 boot verdicts: $SC_HOME/boots, the last healthy boot
 scripts/          scd.service, the M4 units and rescue drop-in, 42_smartconfig,
+                  the package (build-deb.sh, deb/, version.sh),
                   smoke.sh, accept-m2.sh, accept-m3.sh, accept-m4.sh, build-sc-m1.sh
 lab/              QEMU rescue lab, make lab-e2e (dev only, stdlib Python, not shipped, not in CI)
 docs/             WORKLOG (read first), plans, reviews, visual explainers
