@@ -2527,4 +2527,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   tags, runs `make deb`, prints its control and contents, and keeps it as
   the `deb` artifact (2.7 MB; the upload action pinned by commit, as the
   others). The plan gains Q6: the license its copyright file names.
+- **M5 step 6, the lab's `--deb`, done `7c4e466`.** The lab installs the
+  package of the tree in its clean guest (`dpkg -i`), holds 0.4 to the
+  package's own files, runs the M4 scenario on it, then D.1 (a later
+  build over it: scd restarted, store and boots kept), D.2 (`dpkg -r`:
+  sc gone, no rescue entry, flag unset, store kept) and D.3 (`dpkg -P`:
+  `42_smartconfig` gone, store kept and said). `42_smartconfig` now adds
+  nothing without `sc` (a removed package leaves it, a conffile).
+  Tests: `install.sh`'s deb mode, D.1-D.3 against canned answers (each
+  failure), 0.4's package variant, the tags; the GRUB script without
+  `sc`. Full checks and `make lab-test` (350) passed. Next: `make
+  lab-e2e LAB_E2E_ARGS=--deb`, both modes.
 
