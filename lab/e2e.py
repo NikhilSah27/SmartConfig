@@ -137,6 +137,17 @@ DEB_FILES = (
     ("644", "/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf"),
     ("644", "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf"),
 )
+# Where each of the package's files comes from in this tree: stage_debs
+# holds the package to them (the M5 review, B6).
+DEB_SOURCES = {
+    "/usr/sbin/sc": "bin/sc",
+    "/etc/grub.d/42_smartconfig": "scripts/42_smartconfig",
+    "/usr/lib/systemd/system/scd.service": "scripts/scd.service",
+    "/usr/lib/systemd/system/sc-boot-seen.service": "scripts/sc-boot-seen.service",
+    "/usr/lib/systemd/system/sc-boot-ok.service": "scripts/sc-boot-ok.service",
+    "/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf": "scripts/smartconfig-rescue.conf",
+    "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf": "scripts/smartconfig-rescue.conf",
+}
 # The second package, for the upgrade (D.1): the same files, a version
 # that sorts after the first's.
 DEB_UP = "+lab1"
@@ -169,10 +180,20 @@ systemctl enable --now scd
 install -m 0755 hand-42_smartconfig /etc/grub.d/42_smartconfig
 update-grub 2>&1
 """ % GUEST_DIR
-# D.4's questions to the guest: scd's MainPID and what it runs; the rescue
-# entries in grub.cfg.
+# D.x's questions to the guest, answered in key=value lines (parse_kv):
+# scd's MainPID and what it runs; the rescue entries in grub.cfg; the
+# store's rows and the boots file's sha256, by the installed sc (SC_Q) or,
+# where the package is out, by the package's own sc taken out of it into
+# the lab's directory (STORE_Q).
 SCD_EXE = "pid=$(systemctl show -p MainPID --value scd.service); echo pid=$pid; echo exe=$(readlink /proc/$pid/exe); "
 RESCUE_N = "echo rescue=$(grep -c -- '--id smartconfig-rescue' /boot/grub/grub.cfg); "
+BOOTS_Q = "echo boots=$(sha256sum </var/lib/smartconfig/boots | cut -d' ' -f1); "
+SC_Q = "echo pid=$(systemctl show -p MainPID --value scd.service); echo rows=$(sc log -n 0 | wc -l); " + BOOTS_Q
+XSC = GUEST_DIR + "/x/usr/sbin/sc"
+STORE_Q = ("[ -x %s ] || dpkg-deb -x %s/smartconfig.deb %s/x; echo rows=$(%s log -n 0 | wc -l); "
+           % (XSC, GUEST_DIR, GUEST_DIR, XSC)) + BOOTS_Q
+UNITS_Q = ("for u in scd sc-boot-seen sc-boot-ok; do "
+           "echo \"unit=$u $(systemctl show -p FragmentPath --value $u.service) $(systemctl is-enabled $u.service)\"; done; ")
 
 # Serial patterns (console.Console.expect: re.M, no re.S). A captured line
 # ends in \n, so a line still arriving is not taken half.
@@ -277,11 +298,14 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("6.3", "M4", "H", "S|V", "--grub-password: the rescue entry asks for the superuser and the password"),
     ("6.4", "M4", "H", "S", "--grub-password: with them it boots (fstab=no), and its shell reboots"),
     ("6.5", "M4", "H", "S|V+SSH", "--grub-password: Ubuntu from the menu asks for none, and the boot is ok"),
-    ("D.1", "M5", "H", "SSH", "--deb: an upgrade (dpkg -i of a later build) restarts scd and keeps the store and boots"),
-    ("D.2", "M5", "H", "SSH", "--deb: dpkg -r stops scd, takes the rescue entry out of grub.cfg and the flag out of grubenv, keeps the store"),
-    ("D.3", "M5", "H", "SSH", "--deb: dpkg -P removes 42_smartconfig and still keeps the store, and says so"),
+    ("D.1", "M5", "H", "SSH", "--deb: an upgrade (dpkg -i of a later build) restarts scd, runs update-grub, keeps the store and boots"),
+    ("D.2", "M5", "H", "SSH", "--deb: dpkg -r stops scd, leaves no unit enabled, takes the rescue entry out of grub.cfg and the "
+                              "flag out of grubenv, keeps the store's rows and boots"),
+    ("D.3", "M5", "H", "SSH", "--deb: dpkg -P removes 42_smartconfig and still keeps the store's rows and boots, and says so"),
     ("D.4", "M5", "H", "SSH", "--deb: over the README's hand install (the m4 tag's, scd running) dpkg -i moves each file aside "
                               "as NAME.dpkg-old; the units from /usr/lib, enabled; scd from /usr/sbin/sc; one rescue entry"),
+    ("D.5", "M5", "H", "SSH", "--deb: dpkg -r, then dpkg -i again: the package's 42_smartconfig stays; scd from /usr/sbin/sc; "
+                              "postinst's update-grub, one rescue entry; dpkg --verify clean"),
     ("K.1", "lab", "H", "K", "no lone ESC was ever sent (design section 6)"),
     ("T.1", "lab", "H", "host", "nothing of the run is left: QEMU, its port, the reader threads"),
 ))
@@ -559,6 +583,35 @@ def parse_kv(text):
 def one(kv, k):
     """parse_kv's kv[k] as one string; "-" for none."""
     return ",".join(kv.get(k, [])) or "-"
+
+
+def store_kept(now, then):
+    """D.x: the store's rows (sc log, at least as many) and the boots file
+    (the same sha256) of now against then, both parse_kv answers; the
+    problems (the M5 review, B3: not only the directory)."""
+    p = []
+    try:
+        if not int(one(now, "rows")) >= int(one(then, "rows")) > 0:
+            raise ValueError
+    except ValueError:
+        p.append("sc log has %s rows, before %s" % (one(now, "rows"), one(then, "rows")))
+    if one(now, "boots") in ("-", "") or one(now, "boots") != one(then, "boots"):
+        p.append("the boots file: %s, before %s" % (one(now, "boots")[:12], one(then, "boots")[:12]))
+    return p
+
+
+def postinst_grub(out, kv):
+    """D.x after a dpkg -i: its output has postinst's update-grub adding
+    the rescue entry, with no failure, and grub.cfg has one (the M5
+    review, B1); the problems."""
+    p = []
+    if "Adding SmartConfig rescue entry: /boot/vmlinuz-" not in out:
+        p.append("postinst's update-grub added no rescue entry")
+    if "smartconfig: update-grub failed" in out:
+        p.append("postinst: update-grub failed")
+    if one(kv, "rescue") != "1":
+        p.append("%s rescue entries in grub.cfg" % one(kv, "rescue"))
+    return p
 
 
 def mounts_map(lines):
@@ -2148,7 +2201,8 @@ class E2E:
                 self.sha["sc"] = hashlib.sha256(f.read()).hexdigest()  # P.3: the build in the package
         with open(os.path.join(self.stage, "MANIFEST"), "w") as f:
             f.writelines(lines)
-        self.save("artefacts.sha256", "".join(lines) + "# HEAD %s dirty=%s\n" % (self.head, "yes" if self.dirty else "no"))
+        sc = "# %s  bin/sc, the package's /usr/sbin/sc\n" % self.sha["sc"] if self.deb else ""
+        self.save("artefacts.sha256", "".join(lines) + sc + "# HEAD %s dirty=%s\n" % (self.head, "yes" if self.dirty else "no"))
 
     def stage_debs(self):
         """--deb: the package of this tree (scripts/build-deb.sh, bin/sc)
@@ -2159,7 +2213,10 @@ class E2E:
         lines = []
         for name, v in (("smartconfig.deb", version), ("smartconfig-up.deb", version + DEB_UP)):
             out = os.path.join(self.stage, name)
-            r = labvm.run_timed(["env", "VERSION=" + v, "sh", "scripts/build-deb.sh", out], 300, cwd=REPO)
+            # What build-deb.sh would take from the environment (the tests'
+            # stand-ins) is not the lab's to pass on.
+            r = labvm.run_timed(["env", "-u", "SC_BIN", "-u", "DEB_MAINTAINER", "-u", "SOURCE_DATE_EPOCH", "-u", "REVISION",
+                                 "VERSION=" + v, "sh", "scripts/build-deb.sh", out], 300, cwd=REPO)
             if r.rc != 0:
                 raise LabError("build-deb.sh %s: exit %s: %s" % (v, r.rc, _cell(r.err or r.out, 300)))
             with open(out, "rb") as f:
@@ -2173,6 +2230,9 @@ class E2E:
         for _, dest in DEB_FILES:
             with open(x + dest, "rb") as f:
                 self.sha[dest] = hashlib.sha256(f.read()).hexdigest()
+            with open(os.path.join(REPO, DEB_SOURCES[dest]), "rb") as f:
+                if hashlib.sha256(f.read()).hexdigest() != self.sha[dest]:
+                    raise LabError("the package's %s is not this tree's %s" % (dest, DEB_SOURCES[dest]))
         shutil.rmtree(x, ignore_errors=True)
         return lines + self.stage_hand()
 
@@ -2312,7 +2372,7 @@ class E2E:
         if r.rc != 0:
             p.append("install.sh exit %s" % r.rc)
         keys = (("manifest", "ok"), ("install_rc", "0"), ("deb_rc", "0"), ("enable_rc", "0"), ("enable_scd_rc", "0"),
-                ("update_grub_rc", "0"), ("done", "1")) if self.deb else \
+                ("done", "1")) if self.deb else \
             (("manifest", "ok"), ("install_rc", "0"), ("daemon_reload_rc", "0"), ("enable_rc", "0"),
              ("enable_scd_rc", "0"), ("update_grub_rc", "0"), ("done", "1"))
         for k, want in keys:
@@ -2331,17 +2391,26 @@ class E2E:
             want = "%s root:root %s" % (mode, sha)
             if got.get(dest) != want:
                 p.append("%s: %s, not %s" % (dest, got.get(dest), want))
-        self.record("0.4", problems=p, seen="%d files as MANIFEST says; enable and update-grub exit %s" % (
-            n, ",".join(inst.get("update_grub_rc", ["?"]))), expected="0755 sc/42/41/43, 0644 units and drop-ins, "
-                    "root:root, sha256 = host; enable (no --now), enable --now scd", source="evidence/artefacts.sha256",
-                    evidence=ev)
+        if self.deb:
+            seen = "%d files as MANIFEST says; dpkg -i exit %s" % (n, one(inst, "deb_rc"))
+            expected = ("0755 sc/42/41/43, 0644 units and drop-ins, root:root, sha256 = the package's; dpkg -i exit 0; "
+                        "the three units enabled, scd active")
+        else:
+            seen = "%d files as MANIFEST says; enable and update-grub exit %s" % (n, one(inst, "update_grub_rc"))
+            expected = "0755 sc/42/41/43, 0644 units and drop-ins, root:root, sha256 = host; enable (no --now), enable --now scd"
+        self.record("0.4", problems=p, seen=seen, expected=expected, source="evidence/artefacts.sha256", evidence=ev)
 
     def check_05(self, inst, cfg, ev):
         p = []
         kernel = self.conf["KERNEL"]
         adding = "Adding SmartConfig rescue entry: /boot/vmlinuz-%s" % kernel
-        if adding not in inst.get("update_grub_err", []):
-            p.append("update-grub said %s" % inst.get("update_grub_err"))
+        # --deb: the package's postinst ran update-grub (the M5 review, B1);
+        # install.sh ran none, and grub.cfg is the one postinst's wrote.
+        said = inst.get("deb_out" if self.deb else "update_grub_err", [])
+        if adding not in said:
+            p.append("%s said %s" % ("dpkg -i (postinst's update-grub)" if self.deb else "update-grub", said))
+        if self.deb and any(l.startswith("smartconfig: update-grub failed") for l in said):
+            p.append("postinst: update-grub failed")
         if inst.get("grub_script_check_rc") != ["0"]:
             p.append("grub-script-check: %s %s" % (inst.get("grub_script_check_rc"), inst.get("grub_script_check_out")))
         entries = grub_entries(cfg)
@@ -2397,8 +2466,8 @@ class E2E:
         self.v["EXP_DEFAULT"] = exp_default
         self.v["EXP_RESCUE"] = exp_rescue
         self.record("0.5", problems=p, warnings=warnings, seen="EXP_DEFAULT=%s | EXP_RESCUE=%s" % (exp_default, exp_rescue),
-                    expected="%s; grub-script-check 0; one entry; no quiet/splash; ro last; %s; same root=; "
-                             "flag block after recordfail's timeout=0" % (adding, RESCUE_ARGS),
+                    expected="%s%s; grub-script-check 0; one entry; no quiet/splash; ro last; %s; same root=; "
+                             "flag block after recordfail's timeout=0" % ("postinst's " if self.deb else "", adding, RESCUE_ARGS),
                     source="scripts/42_smartconfig", evidence="%s evidence/grub.cfg" % ev)
 
     def check_06(self, inst, f, ev):
@@ -3521,61 +3590,72 @@ class E2E:
     # -- --deb: the package's upgrade, remove, purge, takeover (D.x, M5) ------
 
     def deb_lifecycle(self):
-        """D.1-D.4: on the guest that ran the scenario from the package, a
+        """D.1-D.5: on the guest that ran the scenario from the package, a
         later build of it (dpkg -i), then dpkg -r, then dpkg -P, then the
-        takeover of a hand install (deb_takeover). The guest is powered off
-        next (5.2)."""
+        takeover of a hand install (deb_takeover), then dpkg -r and -i once
+        more (deb_reinstall). The guest is powered off next (5.2)."""
         self.at("D.1")
-        q = "systemctl show -p MainPID --value scd.service; sc log -n 0 | wc -l; sha256sum </var/lib/smartconfig/boots"
-        before = self.sudo(q).out.split()
-        r = self.sudo("dpkg -i %s/smartconfig-up.deb" % GUEST_DIR, self.b("BUDGET_CMD_SC"))
-        after = self.sudo("dpkg-query -W -f='${Version}\\n' smartconfig; systemctl is-active scd.service; " + q).out.split()
-        p = [] if r.rc == 0 else ["dpkg -i: exit %s: %s" % (r.rc, _cell(r.err or r.out, 200))]
+        before = parse_kv(self.sudo(SC_Q).out)
+        r = self.sudo("dpkg -i %s/smartconfig-up.deb 2>&1" % GUEST_DIR, self.b("BUDGET_CMD_SC"))
+        after = parse_kv(self.sudo("echo version=$(dpkg-query -W -f='${Version}' smartconfig); "
+                                   "echo scd=$(systemctl is-active scd.service); " + SC_Q + RESCUE_N).out)
+        p = [] if r.rc == 0 else ["dpkg -i: exit %s: %s" % (r.rc, _cell(r.out, 200))]
         want = self.v["deb_up_version"]
-        if len(before) < 3 or len(after) < 5:
-            p.append("could not read the state: before %s, after %s" % (before, after))
-        else:
-            if after[0] != want:
-                p.append("dpkg-query says %s, not %s" % (after[0], want))
-            if after[1] != "active" or after[2] in ("0", before[0]):
-                p.append("scd %s, MainPID %s (before %s): not restarted" % (after[1], after[2], before[0]))
-            if int(after[3]) < int(before[1]):
-                p.append("sc log has %s rows, before %s" % (after[3], before[1]))
-            if after[4] != before[2]:
-                p.append("the boots file changed")
-        self.record("D.1", problems=p, seen=" ".join(after), expected="%s active; a new MainPID; rows kept; boots unchanged" % want,
-                    source="scripts/deb/postinst", evidence="ssh.log")
+        if one(after, "version") != want:
+            p.append("dpkg-query says %s, not %s" % (one(after, "version"), want))
+        if one(after, "scd") != "active":
+            p.append("scd is %s" % one(after, "scd"))
+        if one(after, "pid") in ("0", "-", one(before, "pid")):
+            p.append("scd's MainPID %s (before %s): not restarted" % (one(after, "pid"), one(before, "pid")))
+        p += store_kept(after, before)
+        p += postinst_grub(r.out, after)
+        self.record("D.1", problems=p, seen="%s scd %s pid %s rows %s rescue=%s" % (
+            one(after, "version"), one(after, "scd"), one(after, "pid"), one(after, "rows"), one(after, "rescue")),
+            expected="%s; scd active under a new MainPID; rows kept; boots unchanged; postinst's update-grub, one entry" % want,
+            source="scripts/deb/postinst", evidence="ssh.log")
+
         self.at("D.2")
-        self.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1")
-        r = self.sudo("dpkg -r smartconfig", self.b("BUDGET_CMD_SC"))
-        st = self.sudo("test -e /usr/sbin/sc && echo sc=there || echo sc=gone; echo scd=$(systemctl is-active scd.service); "
-                       "echo rescue=$(grep -c -- '--id smartconfig-rescue' /boot/grub/grub.cfg); "
-                       "grub-editenv /boot/grub/grubenv list; test -d /var/lib/smartconfig && echo store=kept").out
-        kv = dict(l.split("=", 1) for l in st.split("\n") if "=" in l)
-        p = [] if r.rc == 0 else ["dpkg -r: exit %s: %s" % (r.rc, _cell(r.err or r.out, 200))]
-        for k, want in (("sc", "gone"), ("rescue", "0"), ("store", "kept")):
-            if kv.get(k) != want:
-                p.append("%s=%s, not %s" % (k, kv.get(k), want))
-        if kv.get("scd") == "active":
+        st = self.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1 && "
+                       "grub-editenv /boot/grub/grubenv list | grep -qx smartconfig_pending=1 && echo flag=set; " + SC_Q)
+        before = parse_kv(st.out)
+        if one(before, "flag") != "set":
+            raise LabError("D.2: the menu flag could not be set before dpkg -r: %s" % _cell(st.out + st.err, 200))
+        r = self.sudo("dpkg -r smartconfig 2>&1", self.b("BUDGET_CMD_SC"))
+        kv = parse_kv(self.sudo(
+            "test -e /usr/sbin/sc && echo sc=there || echo sc=gone; echo scd=$(systemctl is-active scd.service); " + RESCUE_N +
+            "grub-editenv /boot/grub/grubenv list | sed -n 's/^smartconfig_pending=/flag=/p'; " + UNITS_Q + STORE_Q).out)
+        p = [] if r.rc == 0 else ["dpkg -r: exit %s: %s" % (r.rc, _cell(r.out, 200))]
+        for k, want in (("sc", "gone"), ("rescue", "0")):
+            if one(kv, k) != want:
+                p.append("%s=%s, not %s" % (k, one(kv, k), want))
+        if one(kv, "scd") == "active":
             p.append("scd still active")
-        if "smartconfig_pending" in kv:
-            p.append("grubenv: smartconfig_pending=%s" % kv["smartconfig_pending"])
-        self.record("D.2", problems=p, seen=" ".join("%s=%s" % i for i in sorted(kv.items())),
-                    expected="sc gone, scd not active, no rescue entry, no flag, the store kept", source="scripts/deb/postrm",
-                    evidence="ssh.log")
+        if "flag" in kv:
+            p.append("grubenv: smartconfig_pending=%s" % one(kv, "flag"))
+        units = kv.get("unit", [])
+        if len(units) != 3 or any(u.endswith(" enabled") for u in units):
+            p.append("the units: %s" % ", ".join(units))
+        p += store_kept(kv, before)
+        self.record("D.2", problems=p, seen="sc=%s scd=%s rescue=%s rows=%s units: %s" % (
+            one(kv, "sc"), one(kv, "scd"), one(kv, "rescue"), one(kv, "rows"), "; ".join(units)),
+            expected="sc gone, scd not active, no rescue entry, no flag, the units not enabled, rows and boots kept",
+            source="scripts/deb/prerm, postrm", evidence="ssh.log")
+
         self.at("D.3")
         r = self.sudo("dpkg -P smartconfig 2>&1", self.b("BUDGET_CMD_SC"))
-        st = self.sudo("test -e /etc/grub.d/42_smartconfig && echo grubd=there || echo grubd=gone; "
-                       "test -d /var/lib/smartconfig && echo store=kept").out
-        kv = dict(l.split("=", 1) for l in st.split("\n") if "=" in l)
+        purged = parse_kv(self.sudo("test -e /etc/grub.d/42_smartconfig && echo grubd=there || echo grubd=gone; " +
+                                    STORE_Q).out)
         p = [] if r.rc == 0 else ["dpkg -P: exit %s: %s" % (r.rc, _cell(r.out, 200))]
-        if kv.get("grubd") != "gone" or kv.get("store") != "kept":
-            p.append("42_smartconfig %s, the store %s" % (kv.get("grubd"), kv.get("store")))
+        if one(purged, "grubd") != "gone":
+            p.append("42_smartconfig %s" % one(purged, "grubd"))
+        p += store_kept(purged, kv)
         if "the change history in /var/lib/smartconfig is kept" not in r.out:
             p.append("dpkg -P did not say the store is kept")
-        self.record("D.3", problems=p, seen="42_smartconfig %s; store %s" % (kv.get("grubd"), kv.get("store")),
-                    expected="42_smartconfig gone; the store kept, and said", source="scripts/deb/postrm", evidence="ssh.log")
+        self.record("D.3", problems=p, seen="42_smartconfig %s; rows %s" % (one(purged, "grubd"), one(purged, "rows")),
+                    expected="42_smartconfig gone; rows and boots kept, and said", source="scripts/deb/postrm",
+                    evidence="ssh.log")
         self.deb_takeover()
+        self.deb_reinstall()
 
     def deb_takeover(self):
         """D.4, on the purged guest: the README's hand install up to M4
@@ -3591,12 +3671,10 @@ class E2E:
         kv = parse_kv(self.sudo(
             "for f in %s; do [ -e \"$f\" ] && echo \"there=$f\"; "
             "[ -f \"$f.dpkg-old\" ] && [ ! -x \"$f.dpkg-old\" ] && echo \"aside=$f\"; done; "
-            "echo scd=$(systemctl is-active scd.service); %s%s"
-            "for u in scd sc-boot-seen sc-boot-ok; do "
-            "echo \"unit=$u $(systemctl show -p FragmentPath --value $u.service) $(systemctl is-enabled $u.service)\"; done; "
+            "echo scd=$(systemctl is-active scd.service); %s%s%s"
             "for s in rescue emergency; do echo \"dropin=$s $(systemctl show -p DropInPaths --value $s.service)\"; done; "
             "echo grubd=$(sha256sum </etc/grub.d/42_smartconfig | cut -d' ' -f1); echo which=$(command -v sc)"
-            % (" ".join(HAND_PATHS), SCD_EXE, RESCUE_N)).out)
+            % (" ".join(HAND_PATHS), SCD_EXE, RESCUE_N, UNITS_Q)).out)
         p = [] if r.rc == 0 else ["dpkg -i: exit %s: %s" % (r.rc, _cell(r.out, 200))]
         there, aside = set(kv.get("there", [])), set(kv.get("aside", []))
         for f in HAND_PATHS:
@@ -3606,31 +3684,64 @@ class E2E:
                 p.append("%s still there" % f)
             if "%s is now %s.dpkg-old" % (f, f) not in r.out:
                 p.append("dpkg -i did not name %s" % f)
-        if kv.get("grubd") != [self.sha["/etc/grub.d/42_smartconfig"]]:
-            p.append("/etc/grub.d/42_smartconfig is not the package's")
-        if kv.get("scd") != ["active"] or kv.get("pid") in (["0"], pre.get("pid")) or kv.get("exe") != ["/usr/sbin/sc"]:
-            p.append("scd %s, MainPID %s (the hand one's %s), runs %s"
-                     % (one(kv, "scd"), one(kv, "pid"), one(pre, "pid"), one(kv, "exe")))
-        for u in ("scd", "sc-boot-seen", "sc-boot-ok"):
-            got = next((x for x in kv.get("unit", []) if x.startswith(u + " ")), u + " (no answer)")
-            if got != "%s /usr/lib/systemd/system/%s.service enabled" % (u, u):
-                p.append("unit " + got)
+        p += self.package_running(kv, pre)
+        p += postinst_grub(r.out, kv)
         for s in ("rescue", "emergency"):
             got = next((x for x in kv.get("dropin", []) if x.startswith(s + " ")), s)
             paths = got.split()[1:]
             if "/usr/lib/systemd/system/%s.service.d/50-smartconfig.conf" % s not in paths or \
                     "/etc/systemd/system/%s.service.d/50-smartconfig.conf" % s in paths:
                 p.append("%s.service drop-ins: %s" % (s, " ".join(paths) or "none"))
-        if kv.get("rescue") != ["1"]:
-            p.append("%s rescue entries in grub.cfg" % one(kv, "rescue"))
         if kv.get("which") != ["/usr/sbin/sc"]:
             p.append("sc in PATH is %s" % one(kv, "which"))
         self.record("D.4", problems=p, seen="%d of %d aside; scd %s %s; rescue=%s; sc %s"
                     % (len(aside & set(HAND_PATHS)), len(HAND_PATHS), one(kv, "scd"), one(kv, "exe"), one(kv, "rescue"),
                        one(kv, "which")),
                     expected="each NAME.dpkg-old, not executable, and named; the units from /usr/lib, enabled; scd "
-                             "restarted from /usr/sbin/sc; one rescue entry",
-                    source="scripts/deb/preinst (M5 plan, question 4)", evidence="ssh.log")
+                             "restarted from /usr/sbin/sc; postinst's update-grub, one rescue entry",
+                    source="scripts/deb/preinst, postinst (M5 plan, question 4)", evidence="ssh.log")
+
+    def deb_reinstall(self):
+        """D.5, after D.4: dpkg -r, then dpkg -i of the same package. dpkg
+        then passes the old version (the conffiles are left), and the
+        package's own 42_smartconfig is no hand install (the M5 review,
+        A1): it stays, and the rescue entry comes back."""
+        self.at("D.5")
+        pre = parse_kv(self.sudo(SCD_EXE).out)
+        r1 = self.sudo("dpkg -r smartconfig 2>&1", self.b("BUDGET_CMD_SC"))
+        r = self.sudo("dpkg -i %s/smartconfig.deb 2>&1" % GUEST_DIR, self.b("BUDGET_CMD_SC"))
+        kv = parse_kv(self.sudo("echo grubd=$(sha256sum </etc/grub.d/42_smartconfig | cut -d' ' -f1); "
+                                "echo scd=$(systemctl is-active scd.service); " + SCD_EXE + RESCUE_N + UNITS_Q +
+                                "dpkg --verify smartconfig | sed 's/^/verify=/'").out)
+        p = ["%s: exit %s: %s" % (w, x.rc, _cell(x.out, 200)) for w, x in (("dpkg -r", r1), ("dpkg -i", r)) if x.rc != 0]
+        if "hand-installed" in r.out:
+            p.append("the package's own files taken for a hand install: %s" % _cell(r.out, 200))
+        p += self.package_running(kv, pre)
+        p += postinst_grub(r.out, kv)
+        if kv.get("verify"):
+            p.append("dpkg --verify: %s" % "; ".join(kv["verify"]))
+        self.record("D.5", problems=p, seen="42_smartconfig %s; scd %s %s; rescue=%s; verify %s" % (
+            "the package's" if one(kv, "grubd") == self.sha["/etc/grub.d/42_smartconfig"] else one(kv, "grubd"),
+            one(kv, "scd"), one(kv, "exe"), one(kv, "rescue"), "clean" if not kv.get("verify") else "not clean"),
+            expected="42_smartconfig the package's; scd from /usr/sbin/sc, the units enabled; postinst's update-grub, "
+                     "one rescue entry; dpkg --verify clean", source="scripts/deb/preinst (the M5 review, A1)",
+            evidence="ssh.log")
+
+    def package_running(self, kv, pre):
+        """D.4 and D.5: 42_smartconfig the package's, scd active under a
+        MainPID not pre's, running /usr/sbin/sc, the three units from
+        /usr/lib and enabled."""
+        p = []
+        if kv.get("grubd") != [self.sha["/etc/grub.d/42_smartconfig"]]:
+            p.append("/etc/grub.d/42_smartconfig is not the package's")
+        if kv.get("scd") != ["active"] or kv.get("pid") in (["0"], pre.get("pid")) or kv.get("exe") != ["/usr/sbin/sc"]:
+            p.append("scd %s, MainPID %s (before %s), runs %s"
+                     % (one(kv, "scd"), one(kv, "pid"), one(pre, "pid"), one(kv, "exe")))
+        for u in ("scd", "sc-boot-seen", "sc-boot-ok"):
+            got = next((x for x in kv.get("unit", []) if x.startswith(u + " ")), u + " (no answer)")
+            if got != "%s /usr/lib/systemd/system/%s.service enabled" % (u, u):
+                p.append("unit " + got)
+        return p
 
     # -- the whole mode -------------------------------------------------------
 

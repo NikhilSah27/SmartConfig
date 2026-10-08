@@ -769,9 +769,10 @@ func TestGrubScriptDetails(t *testing.T) {
 
 // install.sh with the package staged (lab/e2e.py --deb, M5): the lab's
 // two observers by install(1), the package by dpkg -i, the package's
-// files reported where it puts them, the units checked enabled and scd
-// active (its postinst did that), then update-grub as without it. Never
-// as root, as TestLabGuestInstall.
+// files reported where it puts them, the units checked enabled one at a
+// time and scd active (its postinst did that), and no update-grub of its
+// own: postinst's is in deb_out (the M5 review, B1). The package must be
+// in MANIFEST too. Never as root, as TestLabGuestInstall.
 func TestLabGuestInstallDeb(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("never as root")
@@ -793,8 +794,9 @@ func TestLabGuestInstallDeb(t *testing.T) {
 		"/usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf", "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf"}
 	dir := t.TempDir()
 	labStubs(t, dir, map[string]string{
-		"dpkg":        `for f in ` + strings.Join(files, " ") + `; do mkdir -p "$SCLAB_TEST/root$(dirname $f)"; echo "$f" >"$SCLAB_TEST/root$f"; done`,
-		"systemctl":   `case "$1" in is-enabled) echo enabled; echo enabled; echo enabled ;; is-active) echo active ;; esac`,
+		"dpkg": `for f in ` + strings.Join(files, " ") + `; do mkdir -p "$SCLAB_TEST/root$(dirname $f)"; echo "$f" >"$SCLAB_TEST/root$f"; done
+echo "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic" >&2`,
+		"systemctl":   `case "$1" in is-enabled) echo enabled ;; is-active) echo active ;; esac`,
 		"update-grub": `echo "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic" >&2`, "grub-script-check": "", "systemd-analyze": "",
 		"install": `while [ $# -gt 2 ]; do case "$1" in -m) m=$2; shift 2 ;; -o | -g) shift 2 ;; *) shift ;; esac; done
 mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
@@ -808,17 +810,41 @@ mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
 		want = append(want, fmt.Sprintf(`file=%s \d+ \S+:\S+ %x`, regexp.QuoteMeta(f), sha256.Sum256([]byte(f+"\n"))))
 	}
 	re := regexp.MustCompile(`(?s)^uid=\d+\nmanifest=ok\n(manifest_out=\S+: OK\n){4}file=/etc/grub.d/41_sclab 755 .*\nfile=/etc/grub.d/43_sclab 755 .*\n` +
-		`install_rc=0\ndeb_rc=0\n` + strings.Join(want, `\n`) + `\nenable_rc=0\nenable_out=enabled\nenable_out=enabled\nenable_out=enabled\n` +
-		`enable_scd_rc=0\nenable_scd_out=active\nupdate_grub_rc=0\nupdate_grub_err=Adding SmartConfig rescue entry: .*\n` +
-		`grub_script_check_rc=0\nverify_rc=0\ndone=1\n$`)
+		`install_rc=0\ndeb_rc=0\ndeb_out=Adding SmartConfig rescue entry: .*\n` + strings.Join(want, `\n`) +
+		`\nenable_out=enabled\nenable_out=enabled\nenable_out=enabled\nenable_rc=0\n` +
+		`enable_scd_rc=0\nenable_scd_out=active\ngrub_script_check_rc=0\nverify_rc=0\ndone=1\n$`)
 	if err != nil || !re.MatchString(out) {
 		t.Errorf("%v:\n%s", err, out)
 	}
 	log, _ := os.ReadFile(filepath.Join(dir, "log"))
 	if got := regexp.MustCompile(`(?m)^install .*\n`).ReplaceAllString(string(log), ""); !strings.HasPrefix(got,
-		"dpkg -i smartconfig.deb\nsystemctl is-enabled sc-boot-seen.service sc-boot-ok.service scd.service\nsystemctl is-active scd.service\nupdate-grub \n") {
+		"dpkg -i smartconfig.deb\nsystemctl is-enabled sc-boot-seen.service\nsystemctl is-enabled sc-boot-ok.service\n"+
+			"systemctl is-enabled scd.service\nsystemctl is-active scd.service\ngrub-script-check ") || strings.Contains(got, "update-grub") {
 		t.Errorf("commands:\n%s", got)
 	}
+	// The package not in MANIFEST: nothing installed.
+	var short []string
+	for _, l := range strings.Split(strings.TrimSpace(manifest.String()), "\n") {
+		if !strings.HasSuffix(l, " smartconfig.deb") {
+			short = append(short, l)
+		}
+	}
+	os.WriteFile(filepath.Join(stage, "MANIFEST"), []byte(strings.Join(short, "\n")+"\n"), 0o644)
+	os.Remove(filepath.Join(dir, "log"))
+	b, err = installSh(stage, dir).CombinedOutput()
+	if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 2 || !strings.HasSuffix(string(b), "smartconfig.deb: not in MANIFEST\nmanifest=fail\n") {
+		t.Errorf("no package in MANIFEST: %v\n%s", err, b)
+	}
+	if log, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Contains(string(log), "dpkg") {
+		t.Errorf("dpkg ran:\n%s", log)
+	}
+}
+
+// installSh: install.sh in stage, with the test hook dir.
+func installSh(stage, dir string) *exec.Cmd {
+	cmd := exec.Command("sh", filepath.Join(stage, "install.sh"))
+	cmd.Env = append(os.Environ(), "SCLAB_TEST="+dir)
+	return cmd
 }
 
 // install.sh (lab/guest) installs what MANIFEST vouches for, each file

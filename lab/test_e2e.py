@@ -2037,40 +2037,56 @@ class TestGrubPassword(unittest.TestCase):
 
 
 class TestDeb(unittest.TestCase):
-    """--deb (D.x, M5): the package's upgrade, remove and purge, judged
-    from what the guest answers; 0.4 against the package's own files."""
+    """--deb (D.x, M5): the package's upgrade, remove, purge, takeover of a
+    hand install and install again, judged from what the guest answers,
+    one fault at a time (the M5 review, B5); 0.4 against the package's own
+    files."""
 
-    UP = "0.4.99+git20261008023503.643cec3+lab1"
-    DEB4 = "dpkg -i %s/smartconfig.deb" % e2e.GUEST_DIR  # D.4's; D.1 installs smartconfig-up.deb
+    UP = "0.4.99+git3.20261008023503.643cec3+lab1"
+    DEB4 = "dpkg -i %s/smartconfig.deb" % e2e.GUEST_DIR  # D.4's and D.5's; D.1 installs smartconfig-up.deb
+    ADDING = "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic\ndone\n"
     TAKEN = "".join("smartconfig: the hand-installed %s is now %s.dpkg-old\n" % (f, f) for f in e2e.HAND_PATHS)
+    UNITS = "".join("unit=%s /usr/lib/systemd/system/%s.service enabled\n" % (u, u) for u in ("scd", "sc-boot-seen", "sc-boot-ok"))
     POST = ("".join("aside=%s\n" % f for f in e2e.HAND_PATHS) +
-            "there=/etc/grub.d/42_smartconfig\nscd=active\npid=1300\nexe=/usr/sbin/sc\nrescue=1\n" +
-            "".join("unit=%s /usr/lib/systemd/system/%s.service enabled\n" % (u, u) for u in ("scd", "sc-boot-seen", "sc-boot-ok")) +
+            "there=/etc/grub.d/42_smartconfig\nscd=active\npid=1300\nexe=/usr/sbin/sc\nrescue=1\n" + UNITS +
             "".join("dropin=%s /usr/lib/systemd/system/%s.service.d/50-smartconfig.conf\n" % (s, s) for s in ("rescue", "emergency")) +
             "grubd=" + "c" * 64 + "\nwhich=/usr/sbin/sc\n")
+    REMOVED = ("sc=gone\nscd=inactive\nrescue=0\n" +
+               "".join("unit=%s /dev/null masked\n" % u for u in ("scd", "sc-boot-seen", "sc-boot-ok")) + "rows=14\nboots=abc\n")
+    AGAIN = "grubd=" + "c" * 64 + "\nscd=active\npid=1400\nexe=/usr/sbin/sc\nrescue=1\n" + UNITS
 
     def guest(self, **over):
         """A fake sudo: the answers of a guest where all went well, but
-        what over replaces (by the command's first words)."""
+        what over replaces (by the command's first words). An answer in a
+        tuple exits 1; a list is one answer for each call, in turn."""
         answers = {
-            self.DEB4: self.TAKEN + "Setting up smartconfig\n",
-            "set -e": "", "echo scd=": "scd=active\npid=900\nexe=/usr/local/sbin/sc\nrescue=1\n", "for f in": self.POST,
-            "systemctl show": "611\n12\nabc  -\n",
-            "dpkg -i": "", "dpkg-query": self.UP + "\nactive\n742\n14\nabc  -\n",
-            "grub-editenv": "", "dpkg -r": "",
-            "test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\n# GRUB Environment Block\nstore=kept\n",
+            "echo pid=": "pid=611\nrows=12\nboots=abc\n",
+            "dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: "Setting up smartconfig (%s) ...\n%s" % (self.UP, self.ADDING),
+            "echo version=": "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n" % self.UP,
+            "grub-editenv": "flag=set\npid=742\nrows=14\nboots=abc\n",
+            "dpkg -r": ["", ""],
+            "test -e /usr/sbin/sc": self.REMOVED,
             "dpkg -P": "smartconfig: the change history in /var/lib/smartconfig is kept; to delete it: sudo rm -r /var/lib/smartconfig\n",
-            "test -e /etc/grub.d": "grubd=gone\nstore=kept\n",
+            "test -e /etc/grub.d": "grubd=gone\nrows=14\nboots=abc\n",
+            "set -e": "", "echo scd=": "scd=active\npid=900\nexe=/usr/local/sbin/sc\nrescue=1\n",
+            self.DEB4: [self.TAKEN + "Setting up smartconfig\n" + self.ADDING, "Setting up smartconfig\n" + self.ADDING],
+            "for f in": self.POST,
+            "pid=$(systemctl": "pid=1300\nexe=/usr/sbin/sc\n",
+            "echo grubd=": self.AGAIN,
         }
         answers.update(over)
         r = fake_run(self)
         r.deb = True
         r.v["deb_up_version"] = self.UP
         r.sha["/etc/grub.d/42_smartconfig"] = "c" * 64
+        r.asked = []
 
         def sudo(command, timeout=None, lost=False, retry=False):
+            r.asked.append(command)
             for k, out in answers.items():
                 if command.startswith(k):
+                    if isinstance(out, list):
+                        out = out.pop(0)
                     rc = 1 if isinstance(out, tuple) else 0
                     return ssh_result(rc, out=out[0] if isinstance(out, tuple) else out)
             raise AssertionError("unexpected %r" % command)
@@ -2080,49 +2096,111 @@ class TestDeb(unittest.TestCase):
     def test_all_well(self):
         r = self.guest()
         r.deb_lifecycle()
-        self.assertEqual([r.status(c) for c in ("D.1", "D.2", "D.3", "D.4")], ["PASS"] * 4)
+        self.assertEqual([r.status(c) for c in ("D.1", "D.2", "D.3", "D.4", "D.5")], ["PASS"] * 5)
         self.assertEqual(r.rows["D.4"].seen, "7 of 7 aside; scd active /usr/sbin/sc; rescue=1; sc /usr/sbin/sc")
+        self.assertEqual(r.rows["D.5"].seen, "42_smartconfig the package's; scd active /usr/sbin/sc; rescue=1; verify clean")
+        # D.4 asks for each NAME.dpkg-old that is a file and cannot run.
+        post = [c for c in r.asked if c.startswith("for f in")]
+        self.assertIn('[ -f "$f.dpkg-old" ] && [ ! -x "$f.dpkg-old" ] && echo "aside=$f"', post[0])
+        # D.2 set the flag, and read it back, before the remove (B4).
+        flag = [c for c in r.asked if c.startswith("grub-editenv")]
+        self.assertEqual(len(flag), 1)
+        self.assertIn("grub-editenv /boot/grub/grubenv list | grep -qx smartconfig_pending=1 && echo flag=set", flag[0])
 
     def test_what_fails_each(self):
+        def up(old, new):
+            after = "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n" % self.UP
+            self.assertIn(old, after)
+            return {"echo version=": after.replace(old, new)}
+
+        def removed(old, new):
+            self.assertIn(old, self.REMOVED)
+            return {"test -e /usr/sbin/sc": self.REMOVED.replace(old, new)}
+
+        def post(old, new):
+            self.assertIn(old, self.POST)
+            return {"for f in": self.POST.replace(old, new)}
+
+        def again(old, new):
+            self.assertIn(old, self.AGAIN)
+            return {"echo grubd=": self.AGAIN.replace(old, new)}
+
+        purged = "grubd=gone\nrows=14\nboots=abc\n"
+        taken = self.TAKEN + "Setting up smartconfig\n" + self.ADDING
         for over, cid, says in (
-                ({"dpkg-query": self.UP + "\nactive\n611\n14\nabc  -\n"}, "D.1", "not restarted"),
-                ({"dpkg-query": "0.4.99\nactive\n742\n14\nabc  -\n"}, "D.1", "dpkg-query says"),
-                ({"dpkg-query": self.UP + "\nactive\n742\n9\nabc  -\n"}, "D.1", "rows"),
-                ({"dpkg-query": self.UP + "\nactive\n742\n14\nfff  -\n"}, "D.1", "boots file changed"),
-                ({"dpkg -i": ("dpkg: error",)}, "D.1", "dpkg -i: exit 1"),
-                ({"test -e /usr/sbin/sc": "sc=there\nscd=active\nrescue=1\nsmartconfig_pending=1\n"}, "D.2", "sc=there"),
-                ({"test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\nsmartconfig_pending=1\nstore=kept\n"}, "D.2", "smartconfig_pending"),
-                ({"test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\n"}, "D.2", "store=None"),
-                ({"test -e /etc/grub.d": "grubd=there\nstore=kept\n"}, "D.3", "42_smartconfig there"),
+                (up("version=" + self.UP, "version=0.4.99"), "D.1", "dpkg-query says 0.4.99"),
+                (up("scd=active", "scd=failed"), "D.1", "scd is failed"),
+                (up("pid=742", "pid=611"), "D.1", "not restarted"),
+                (up("rows=14", "rows=9"), "D.1", "sc log has 9 rows, before 12"),
+                (up("boots=abc", "boots=fff"), "D.1", "the boots file: fff, before abc"),
+                (up("rescue=1", "rescue=2"), "D.1", "2 rescue entries"),
+                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: ("dpkg: error\n" + self.ADDING,)}, "D.1", "dpkg -i: exit 1"),
+                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: "Setting up smartconfig\n"}, "D.1",
+                 "postinst's update-grub added no rescue entry"),
+                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: self.ADDING +
+                  "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub\n"}, "D.1",
+                 "postinst: update-grub failed"),
+                ({"dpkg -r": [("dpkg: error",), ""]}, "D.2", "dpkg -r: exit 1"),
+                (removed("sc=gone", "sc=there"), "D.2", "sc=there, not gone"),
+                (removed("scd=inactive", "scd=active"), "D.2", "scd still active"),
+                (removed("rescue=0", "rescue=1"), "D.2", "rescue=1, not 0"),
+                (removed("rescue=0\n", "rescue=0\nflag=1\n"), "D.2", "grubenv: smartconfig_pending=1"),
+                (removed("unit=sc-boot-seen /dev/null masked", "unit=sc-boot-seen /usr/lib/systemd/system/sc-boot-seen.service enabled"),
+                 "D.2", "the units: "),
+                (removed("rows=14", "rows=0"), "D.2", "sc log has 0 rows"),
+                (removed("boots=abc", "boots="), "D.2", "the boots file"),
+                ({"dpkg -P": ("smartconfig: the change history in /var/lib/smartconfig is kept",)}, "D.3", "dpkg -P: exit 1"),
+                ({"test -e /etc/grub.d": purged.replace("grubd=gone", "grubd=there")}, "D.3", "42_smartconfig there"),
+                ({"test -e /etc/grub.d": purged.replace("rows=14", "rows=0")}, "D.3", "sc log has 0 rows"),
+                ({"test -e /etc/grub.d": purged.replace("boots=abc", "boots=fff")}, "D.3", "the boots file"),
                 ({"dpkg -P": ""}, "D.3", "did not say"),
-                ({self.DEB4: (self.TAKEN,)}, "D.4", "dpkg -i: exit 1"),
-                ({self.DEB4: self.TAKEN.replace("/etc/grub.d/42_smartconfig is", "x is")}, "D.4",
+                ({self.DEB4: [(taken,), ""]}, "D.4", "dpkg -i: exit 1"),
+                ({self.DEB4: [taken.replace("/etc/grub.d/42_smartconfig is", "x is"), self.ADDING]}, "D.4",
                  "did not name /etc/grub.d/42_smartconfig"),
-                ({"for f in": self.POST.replace("aside=/etc/systemd/system/scd.service\n", "")}, "D.4",
-                 "no /etc/systemd/system/scd.service.dpkg-old"),
-                ({"for f in": self.POST + "there=/usr/local/sbin/sc\n"}, "D.4", "/usr/local/sbin/sc still there"),
-                ({"for f in": self.POST.replace("exe=/usr/sbin/sc", "exe=/usr/local/sbin/sc.dpkg-old")}, "D.4",
-                 "runs /usr/local/sbin/sc.dpkg-old"),
-                ({"for f in": self.POST.replace("pid=1300", "pid=900")}, "D.4", "MainPID 900 (the hand one's 900)"),
-                ({"for f in": self.POST.replace("scd=active", "scd=failed")}, "D.4", "scd failed"),
-                ({"for f in": self.POST.replace("unit=scd /usr/lib/systemd/system/scd.service",
-                                                "unit=scd /etc/systemd/system/scd.service")}, "D.4",
+                ({self.DEB4: [self.TAKEN, self.ADDING]}, "D.4", "postinst's update-grub added no rescue entry"),
+                (post("aside=/etc/systemd/system/scd.service\n", ""), "D.4", "no /etc/systemd/system/scd.service.dpkg-old"),
+                (post("there=/etc/grub.d/42_smartconfig\n", "there=/etc/grub.d/42_smartconfig\nthere=/usr/local/sbin/sc\n"),
+                 "D.4", "/usr/local/sbin/sc still there"),
+                (post("exe=/usr/sbin/sc", "exe=/usr/local/sbin/sc.dpkg-old"), "D.4", "runs /usr/local/sbin/sc.dpkg-old"),
+                (post("pid=1300", "pid=900"), "D.4", "MainPID 900 (before 900)"),
+                (post("pid=1300", "pid=0"), "D.4", "MainPID 0"),
+                (post("scd=active", "scd=failed"), "D.4", "scd failed"),
+                (post("unit=scd /usr/lib/systemd/system/scd.service", "unit=scd /etc/systemd/system/scd.service"), "D.4",
                  "unit scd /etc/systemd/system/scd.service enabled"),
-                ({"for f in": self.POST.replace("sc-boot-ok.service enabled", "sc-boot-ok.service disabled")}, "D.4",
+                (post("sc-boot-ok.service enabled", "sc-boot-ok.service disabled"), "D.4",
                  "unit sc-boot-ok /usr/lib/systemd/system/sc-boot-ok.service disabled"),
-                ({"for f in": self.POST.replace("dropin=rescue ", "dropin=rescue /etc/systemd/system/rescue.service.d/50-smartconfig.conf ")},
-                 "D.4", "rescue.service drop-ins: /etc/"),
-                ({"for f in": self.POST.replace("dropin=emergency /usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf",
-                                                "dropin=emergency ")}, "D.4", "emergency.service drop-ins: none"),
-                ({"for f in": self.POST.replace("rescue=1", "rescue=2")}, "D.4", "2 rescue entries"),
-                ({"for f in": self.POST.replace("which=/usr/sbin/sc", "which=/usr/local/sbin/sc")}, "D.4",
-                 "sc in PATH is /usr/local/sbin/sc"),
-                ({"for f in": self.POST.replace("grubd=" + "c" * 64, "grubd=" + "f" * 64)}, "D.4", "not the package's"),
+                (post("dropin=rescue ", "dropin=rescue /etc/systemd/system/rescue.service.d/50-smartconfig.conf "), "D.4",
+                 "rescue.service drop-ins: /etc/"),
+                (post("dropin=emergency /usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf", "dropin=emergency "),
+                 "D.4", "emergency.service drop-ins: none"),
+                (post("rescue=1", "rescue=2"), "D.4", "2 rescue entries"),
+                (post("which=/usr/sbin/sc", "which=/usr/local/sbin/sc"), "D.4", "sc in PATH is /usr/local/sbin/sc"),
+                (post("grubd=" + "c" * 64, "grubd=" + "f" * 64), "D.4", "not the package's"),
+                ({"dpkg -r": ["", ("dpkg: error",)]}, "D.5", "dpkg -r: exit 1"),
+                ({self.DEB4: [taken, "smartconfig: the hand-installed /etc/grub.d/42_smartconfig is now "
+                                     "/etc/grub.d/42_smartconfig.dpkg-old\n" + self.ADDING]}, "D.5",
+                 "the package's own files taken for a hand install"),
+                ({self.DEB4: [taken, "Setting up smartconfig\n"]}, "D.5", "postinst's update-grub added no rescue entry"),
+                (again("grubd=" + "c" * 64, "grubd="), "D.5", "42_smartconfig is not the package's"),
+                (again("rescue=1", "rescue=0"), "D.5", "0 rescue entries"),
+                (again("exe=/usr/sbin/sc", "exe=/usr/local/sbin/sc"), "D.5", "runs /usr/local/sbin/sc"),
+                (again("pid=1400", "pid=1300"), "D.5", "MainPID 1300 (before 1300)"),
+                (again("unit=scd /usr/lib/systemd/system/scd.service enabled", "unit=scd /usr/lib/systemd/system/scd.service disabled"),
+                 "D.5", "unit scd /usr/lib/systemd/system/scd.service disabled"),
+                ({"echo grubd=": self.AGAIN + "verify=missing   c /etc/grub.d/42_smartconfig\n"}, "D.5",
+                 "dpkg --verify: missing   c /etc/grub.d/42_smartconfig"),
         ):
             r = self.guest(**over)
             s = stops(r.deb_lifecycle)
             self.assertEqual((s and s.row.id, r.status(cid)), (cid, "FAIL"), over)
             self.assertIn(says, r.rows[cid].notes, over)
+            self.assertEqual(len(r.rows[cid].notes.split("; ")), 1, (over, r.rows[cid].notes))  # one fault, one problem
+
+    def test_the_flag_not_set_is_the_labs(self):
+        r = self.guest(**{"grub-editenv": "pid=742\nrows=14\nboots=abc\n"})
+        with self.assertRaisesRegex(e2e.LabError, "D.2: the menu flag could not be set"):
+            r.deb_lifecycle()
+        self.assertFalse(any(c.startswith("dpkg -r") for c in r.asked))
 
     def test_a_hand_install_that_does_not_come_up_is_the_labs(self):
         for over in ({"set -e": ("install: cannot stat",)}, {"echo scd=": "scd=failed\npid=0\nexe=\nrescue=1\n"},
@@ -2177,19 +2255,31 @@ class TestDeb(unittest.TestCase):
                 with open(argv[-1], "wb") as f:
                     f.write(argv[1].encode())
             elif argv[0] == "dpkg-deb":
-                for _, dest in e2e.DEB_FILES:
+                for _, dest in e2e.DEB_FILES:  # this tree's files, but the one other
+                    with open(os.path.join(e2e.REPO, e2e.DEB_SOURCES[dest]), "rb") as f:
+                        data = f.read() if dest != other else b"another\n"
                     os.makedirs(os.path.dirname(argv[-1] + dest), exist_ok=True)
                     with open(argv[-1] + dest, "wb") as f:
-                        f.write(dest.encode())
+                        f.write(data)
             return labvm.Result(argv, 0, "[Unit]\n" if argv[0] == "git" else "", "", False, 0.1)
 
+        other = None
+        if not os.path.exists(os.path.join(e2e.REPO, "bin/sc")):
+            self.skipTest("no bin/sc (make build)")
         with mock.patch.object(e2e.labvm, "run_timed", run_timed):
             lines = r.stage_debs()
         names = [l.split()[1] for l in lines]
         self.assertEqual(names, ["smartconfig.deb", "smartconfig-up.deb"] + [n for n, _ in e2e.HAND])
         self.assertEqual((r.v["deb_version"], r.v["deb_up_version"]), ("0.4.99+git1.abc", "0.4.99+git1.abc+lab1"))
-        self.assertEqual(r.sha["/usr/sbin/sc"], e2e.hashlib.sha256(b"/usr/sbin/sc").hexdigest())
-        self.assertEqual(calls[1:3], [["env", "VERSION=0.4.99+git1.abc", "sh"], ["env", "VERSION=0.4.99+git1.abc+lab1", "sh"]])
+        with open(os.path.join(e2e.REPO, "bin/sc"), "rb") as f:
+            self.assertEqual(r.sha["/usr/sbin/sc"], e2e.hashlib.sha256(f.read()).hexdigest())
+        # The build's stand-ins in the environment are not passed on (B6).
+        self.assertEqual(calls[1:3], [["env", "-u", "SC_BIN"]] * 2)
+        # A package file not this tree's: the lab cannot vouch for it.
+        for other in ("/usr/sbin/sc", "/usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf"):
+            with mock.patch.object(e2e.labvm, "run_timed", run_timed), \
+                    self.assertRaisesRegex(e2e.LabError, "the package's %s is not this tree's" % other):
+                r.stage_debs()
 
     def test_04_takes_the_package_files(self):
         r = fake_run(self)
@@ -2204,6 +2294,12 @@ class TestDeb(unittest.TestCase):
                                        ["enable_rc=0", "enable_scd_rc=0", "update_grub_rc=0", "done=1"]))
         r.check_04(ssh_result(0), inst, "install.txt")
         self.assertEqual(r.status("0.4"), "PASS", r.rows["0.4"].notes)
+        for k, bad in (("deb_rc", "1"), ("enable_rc", "1"), ("enable_scd_rc", "3"), ("manifest", "fail"), ("done", "0")):
+            r = fake_run(self)
+            r.deb, r.sha = True, dict(r.sha, **{n: "a" * 64 for n in ("41_sclab", "43_sclab")},
+                                      **{dest: "b" * 64 for _, dest in e2e.DEB_FILES})
+            stops(r.check_04, ssh_result(0), dict(inst, **{k: [bad]}), "install.txt")
+            self.assertEqual(r.rows["0.4"].notes, "%s=%s" % (k, bad))
         inst["file"] = [l.replace(" 755 root", " 644 root") if "/usr/sbin/sc" in l else l for l in inst["file"]]
         stops(r.check_04, ssh_result(0), inst, "install.txt")
         self.assertIn("/usr/sbin/sc", r.rows["0.4"].notes)
@@ -2212,6 +2308,42 @@ class TestDeb(unittest.TestCase):
         self.assertTrue(e2e.summary_line("PASS", "uefi", "1m", "b", 0, "h", "no", "s", "yes", deb=True).endswith(" deb=yes"))
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             e2e.main(["--mode", "uefi", "--no-boot5", "--deb"])
+
+
+class TestFlowSkips(unittest.TestCase):
+    """flow()'s skip lists (the M5 review, B5): --no-boot5 skips 5.x, 6.x
+    and D.x; without --grub-password 6.x are skipped, without --deb D.x."""
+
+    def flow(self, no_boot5=False, deb=False, grubpw=False):
+        r = fake_run(self)
+        r.args.no_boot5, r.args.grub_password, r.deb = no_boot5, grubpw, deb
+        ran = []
+        r.boot = lambda label, fn: argparse.Namespace(flag=False)
+        for name in ("reboot_ssh", "decided", "edit", "reset_settled", "deb_lifecycle", "grub_password"):
+            setattr(r, name, (lambda n: lambda *a, **k: ran.append(n) or {"data": {"guest": True}})(name))
+        r.machine = argparse.Namespace(wait_exit=lambda timeout: 0)
+        r.flow()
+        return r, ran
+
+    def skipped(self, r, prefix):
+        return {r.status(c) for c in e2e.REGISTRY if c.startswith(prefix)}
+
+    def test_no_boot5(self):
+        r, ran = self.flow(no_boot5=True, deb=True, grubpw=True)
+        for prefix in ("5.", "6.", "D."):
+            self.assertEqual(self.skipped(r, prefix), {"SKIP"}, prefix)
+        self.assertNotIn("deb_lifecycle", ran)
+
+    def test_deb_without_grub_password(self):
+        r, ran = self.flow(deb=True)
+        self.assertEqual(self.skipped(r, "6."), {"SKIP"})
+        self.assertIn("deb_lifecycle", ran)
+        self.assertNotIn("SKIP", self.skipped(r, "D."))
+
+    def test_without_deb(self):
+        r, ran = self.flow(grubpw=True)
+        self.assertEqual(self.skipped(r, "D."), {"SKIP"})
+        self.assertEqual((r.status("5.2"), "grub_password" in ran, "deb_lifecycle" in ran), ("PASS", True, False))
 
 
 class TestRebootSsh(unittest.TestCase):
@@ -2716,6 +2848,47 @@ class TestBoot0Faults(FaultCase):
             r, end = self.check_05(**kw)
             self.assert_fails(r, end, "0.5", "H", name)
             self.assertIn(said, r.rows["0.5"].notes, name)
+
+    def test_05_deb_holds_postinst(self):
+        """--deb (the M5 review, B1): 0.5 holds the package's postinst to the
+        update-grub it ran, in dpkg's output; install.sh runs none."""
+        k = labvm.load_conf()["KERNEL"]
+        adding = "Adding SmartConfig rescue entry: /boot/vmlinuz-%s\n" % k
+        deb = ("uid=0\nmanifest=ok\ninstall_rc=0\ndeb_rc=0\ndeb_out=Setting up smartconfig (0.5.0) ...\n"
+               "deb_out=Generating grub configuration file ...\ndeb_out=" + adding + "deb_out=done\n"
+               "grub_script_check_rc=0\nverify_rc=0\ndone=1\n")
+
+        def run(install):
+            r = fake_run(self)
+            r.deb = True
+            return r, outcome_of(r.check_05, e2e.parse_kv(install), GRUB_CFG, "evidence/install.txt")
+
+        r, end = run(deb)
+        self.assertIsNone(end)
+        self.assert_passes(r, "0.5")
+        for name, install, said in (
+                ("postinst ran no update-grub", deb.replace("deb_out=" + adding, ""), "dpkg -i (postinst's update-grub) said"),
+                ("an update-grub of install.sh's own does not count",
+                 deb.replace("deb_out=" + adding, "") + "update_grub_rc=0\nupdate_grub_err=" + adding, "postinst's update-grub"),
+                ("postinst's update-grub failed",
+                 deb + "deb_out=smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub\n",
+                 "postinst: update-grub failed")):
+            r, end = run(install)
+            self.assert_fails(r, end, "0.5", "H", name)
+            self.assertIn(said, r.rows["0.5"].notes, name)
+
+    def test_06_deb_drop_ins_from_usr_lib(self):
+        lib = installed_facts(dropins=(0, [l.replace("/etc/systemd/system/", "/usr/lib/systemd/system/")
+                                           for l in installed_facts().lines("dropins")]))
+        for f, ok in ((lib, True), (installed_facts(), False)):
+            r = fake_run(self)
+            r.deb = True
+            end = outcome_of(r.check_06, e2e.parse_kv(INSTALL), f, "evidence/install.txt")
+            if ok:
+                self.assertIsNone(end)
+                self.assert_passes(r, "0.6")
+            else:
+                self.assert_fails(r, end, "0.6", "H", "the drop-ins from /etc")
 
     def check_06(self, f=None, install=INSTALL):
         r = fake_run(self)
@@ -4017,7 +4190,7 @@ class TestExecute(unittest.TestCase):
         r, rc = self.execute(lambda r: passing(r, "5.1"))
         self.consistent(r, rc, "INCONCLUSIVE")
         notrun = [c for c, cells in r.result.items() if cells[1] == "NOTRUN"]
-        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "D.1", "D.2", "D.3", "D.4"])
+        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "D.1", "D.2", "D.3", "D.4", "D.5"])
         self.assertEqual(r.result["5.1"][8], "not reached")
         self.assertEqual(r.discards, 0)
         self.assertIn("failing: 5.1\tNOTRUN", r.err)

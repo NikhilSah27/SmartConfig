@@ -32,13 +32,16 @@
 #   verify_rc=N                    verify_out=LINE...
 #   done=1                         the last line: it ran to the end
 #
-# With smartconfig.deb in DIR (lab/e2e.py --deb, M5): only the lab's own
-# 41_sclab and 43_sclab go in by install(1); the package goes in by
-# dpkg -i (its postinst enables and starts the units and runs
-# update-grub), and file= lines are the package's files. Then the keys
-# are deb_rc and deb_out (dpkg), enable_rc (systemctl is-enabled of the
-# three units) and enable_scd_rc (systemctl is-active scd), no
-# daemon_reload, and the rest as above.
+# With smartconfig.deb in DIR (lab/e2e.py --deb, M5; it must be in
+# MANIFEST too): only the lab's own 41_sclab and 43_sclab go in by
+# install(1); the package goes in by dpkg -i (its postinst enables and
+# starts the units and runs update-grub), and file= lines are the
+# package's files. Then the keys are deb_rc and deb_out (dpkg's, and its
+# scripts', output: postinst's update-grub says what it added there),
+# enable_rc (the worst of systemctl is-enabled, one unit at a time) and
+# enable_scd_rc (systemctl is-active scd); no daemon_reload, and no
+# update-grub of its own: grub_script_check reads the grub.cfg that
+# postinst's wrote.
 #
 # Exit status 0 when it ran to the end, whatever the steps gave; 2 when it
 # could not start (not root, or a file not in MANIFEST or not matching
@@ -120,6 +123,9 @@ fi
 # Every file it installs must be in MANIFEST, and all of MANIFEST match.
 out=$(sha256sum --strict -c MANIFEST 2>&1)
 rc=$?
+need=$files
+[ -z "$deb" ] || need="$files
+smartconfig.deb - -"
 while read -r name dest mode; do
 	re=$(printf '%s' "$name" | sed 's/\./\\./g')
 	if ! grep -q "^[0-9a-f]\{64\} [ *]$re\$" MANIFEST 2>/dev/null; then
@@ -128,7 +134,7 @@ $name: not in MANIFEST"
 		rc=1
 	fi
 done <<EOF
-$files
+$need
 EOF
 if [ "$rc" != 0 ]; then
 	lines manifest_out "$out"
@@ -152,18 +158,26 @@ echo "install_rc=$worst"
 if [ -n "$deb" ]; then
 	step deb dpkg -i smartconfig.deb
 	for dest in $debfiles; do fileline "$dest"; done
-	step enable systemctl is-enabled sc-boot-seen.service sc-boot-ok.service scd.service
+	# One unit at a time: is-enabled of several exits 0 if any one is.
+	worst=0
+	for u in sc-boot-seen.service sc-boot-ok.service scd.service; do
+		out=$(systemctl is-enabled "$u" </dev/null 2>&1)
+		rc=$?
+		[ "$rc" -le "$worst" ] || worst=$rc
+		lines enable_out "$out"
+	done
+	echo "enable_rc=$worst"
 	step enable_scd systemctl is-active scd.service
 else
 	step daemon_reload systemctl daemon-reload
 	step enable systemctl enable sc-boot-seen.service sc-boot-ok.service
 	step enable_scd systemctl enable --now scd.service
+	# update-grub writes grub.cfg itself; what it says (42_smartconfig's
+	# "Adding SmartConfig rescue entry: ...") is on stderr.
+	out=$(update-grub 2>&1 >/dev/null </dev/null)
+	echo "update_grub_rc=$?"
+	lines update_grub_err "$out"
 fi
-# update-grub writes grub.cfg itself; what it says (42_smartconfig's
-# "Adding SmartConfig rescue entry: ...") is on stderr.
-out=$(update-grub 2>&1 >/dev/null </dev/null)
-echo "update_grub_rc=$?"
-lines update_grub_err "$out"
 step grub_script_check grub-script-check "$R/boot/grub/grub.cfg"
 # By name: the files as installed, with the drop-in in both services.
 step verify systemd-analyze verify --man=no sc-boot-seen.service sc-boot-ok.service scd.service rescue.service emergency.service
