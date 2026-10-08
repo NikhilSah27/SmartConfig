@@ -1,12 +1,66 @@
 #!/bin/sh
-# postinst: smartconfig's (M5 plan 3). The units as dh_installsystemd
-# enables them, scd restarted (Type=notify, so this waits for its startup
-# rescan), then update-grub for the rescue entry.
+# postinst: smartconfig's (M5 plan 3). On a first configure, the rest of a
+# hand install taken over (preinst did 42_smartconfig); then the units as
+# dh_installsystemd enables them, scd restarted (Type=notify, so this
+# waits for its startup rescan), then update-grub for the rescue entry.
 # Every step can run again: dpkg reruns a script that failed.
+# DPKG_ROOT is honoured for the files; daemon-reload, the restart and
+# update-grub act on the running system, as their guards find it there.
 set -e
+R=${DPKG_ROOT:-}
 UNITS="sc-boot-seen.service sc-boot-ok.service scd.service"
+
+# aside PATH: the hand-installed PATH moved aside as PATH.dpkg-old, which
+# systemd and PATH pass over, and said; a file not a link loses its x bits.
+aside() {
+	mv -f "$R$1" "$R$1.dpkg-old"
+	[ -L "$R$1.dpkg-old" ] || chmod a-x "$R$1.dpkg-old"
+	echo "smartconfig: the hand-installed $1 is now $1.dpkg-old" >&2
+}
+
+# takeover: a hand install (M5 plan, question 4) would shadow the package:
+# units and drop-ins in /etc/systemd/system override /usr/lib's, and
+# /usr/local/sbin/sc comes first in PATH. What is recognised as
+# SmartConfig's is disabled and moved aside; anything else is left, and
+# named.
+takeover() {
+	for u in scd sc-boot-seen sc-boot-ok; do
+		f=/etc/systemd/system/$u.service
+		[ -f "$R$f" ] || continue
+		if grep -qs "github.com/NikhilSah27/SmartConfig" "$R$f"; then
+			if command -v systemctl >/dev/null; then
+				systemctl --root="${R:-/}" disable "$u.service" >/dev/null 2>&1 || true
+			fi
+			aside "$f"
+		else
+			echo "smartconfig: $f is not SmartConfig's: left; it overrides the package's $u.service" >&2
+		fi
+	done
+	for s in rescue emergency; do
+		f=/etc/systemd/system/$s.service.d/50-smartconfig.conf
+		[ -f "$R$f" ] || continue
+		if grep -qs "sc status --console" "$R$f"; then
+			aside "$f"
+		else
+			echo "smartconfig: $f is not SmartConfig's: left; it overrides the package's drop-in" >&2
+		fi
+	done
+	f=/usr/local/sbin/sc
+	if [ -f "$R$f" ]; then
+		if grep -qas "smartconfig/internal/store" "$R$f"; then
+			aside "$f"
+		else
+			echo "smartconfig: $f is not SmartConfig's: left; it comes before /usr/sbin/sc in PATH" >&2
+		fi
+	fi
+}
+
 case "$1" in
 configure | abort-upgrade | abort-deconfigure | abort-remove)
+	# A first configure only: dpkg passes no version then.
+	if [ "$1" = configure ] && [ -z "${2:-}" ]; then
+		takeover
+	fi
 	for u in $UNITS; do
 		deb-systemd-helper unmask "$u" >/dev/null || true
 		# was-enabled is true for a first install: enable then; on an
@@ -17,14 +71,14 @@ configure | abort-upgrade | abort-deconfigure | abort-remove)
 			deb-systemd-helper update-state "$u" >/dev/null || true
 		fi
 	done
-	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
+	if [ -d "$R/run/systemd/system" ]; then
 		systemctl --system daemon-reload >/dev/null || true
 		# Restart, not start, on a first install too: a hand install's scd
-		# may still run its old sc, which preinst moved aside, and start
-		# leaves a running unit as it is. It starts one that is not.
+		# may still run its old sc, now moved aside, and start leaves a
+		# running unit as it is. It starts one that is not.
 		deb-systemd-invoke restart scd.service >/dev/null || true
 	fi
-	if [ -e "${DPKG_ROOT:-}/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
+	if [ -e "$R/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
 		update-grub || echo "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub" >&2
 	fi
 	;;

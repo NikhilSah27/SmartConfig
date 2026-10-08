@@ -1,41 +1,25 @@
 #!/bin/sh
 # preinst: smartconfig's (M5 plan 3, question 4). A hand install, as the
-# README gave it before the package, would shadow or clash with the
-# package's files: units and drop-ins in /etc/systemd/system override
-# /usr/lib's, an /etc/grub.d/42_smartconfig of its own makes dpkg ask
-# about a conffile, and /usr/local/sbin/sc comes first in PATH. On a first
-# install the copies it recognises are disabled and moved aside as
-# NAME.dpkg-old (which systemd, grub-mkconfig and PATH all pass over);
-# anything else at those paths is left, and named.
+# README gave it before the package, has its own
+# /etc/grub.d/42_smartconfig, which would make dpkg ask about the
+# package's conffile. On a first install (dpkg knows no version of the
+# package: no $2; after a remove it passes the version whose conffiles
+# are left, and this one is then the package's own), one it recognises
+# is disabled as GRUB has it (not executable) and moved aside as
+# 42_smartconfig.dpkg-old, which grub-mkconfig passes over; one that is
+# not SmartConfig's is left, and named. postinst takes over the rest of a
+# hand install once the package's files are in; postrm abort-install puts
+# 42_smartconfig back if the install fails before that.
 set -e
 R=${DPKG_ROOT:-}
-aside() {
-	mv -f "$R$1" "$R$1.dpkg-old"
-	chmod a-x "$R$1.dpkg-old"
-	echo "smartconfig: the hand-installed $1 is now $1.dpkg-old" >&2
-}
-case "$1" in
-install)
-	for u in scd sc-boot-seen sc-boot-ok; do
-		f=/etc/systemd/system/$u.service
-		[ -f "$R$f" ] || continue
-		if grep -qs "github.com/NikhilSah27/SmartConfig" "$R$f"; then
-			if command -v systemctl >/dev/null; then
-				systemctl --root="${R:-/}" disable "$u.service" >/dev/null 2>&1 || true
-			fi
-			aside "$f"
-		else
-			echo "smartconfig: $f is not SmartConfig's: left; it overrides the package's $u.service" >&2
-		fi
-	done
-	for s in rescue emergency; do
-		f=/etc/systemd/system/$s.service.d/50-smartconfig.conf
-		if [ -f "$R$f" ] && grep -qs "sc status --console" "$R$f"; then aside "$f"; fi
-	done
-	f=/etc/grub.d/42_smartconfig
-	if [ -f "$R$f" ] && grep -qs "42_smartconfig: SmartConfig's part of grub.cfg" "$R$f"; then aside "$f"; fi
-	f=/usr/local/sbin/sc
-	if [ -f "$R$f" ] && grep -qas "smartconfig/internal/store" "$R$f"; then aside "$f"; fi
-	;;
-esac
+f=/etc/grub.d/42_smartconfig
+if [ "$1" = install ] && [ -z "${2:-}" ] && [ -f "$R$f" ]; then
+	if grep -qs "42_smartconfig: SmartConfig's part of grub.cfg" "$R$f"; then
+		mv -f "$R$f" "$R$f.dpkg-old"
+		[ -L "$R$f.dpkg-old" ] || chmod a-x "$R$f.dpkg-old"
+		echo "smartconfig: the hand-installed $f is now $f.dpkg-old" >&2
+	else
+		echo "smartconfig: $f is not SmartConfig's: left; dpkg asks what to do with it" >&2
+	fi
+fi
 exit 0

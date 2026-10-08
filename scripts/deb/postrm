@@ -2,20 +2,31 @@
 # postrm: smartconfig's (M5 plan 3). On remove: the units masked as
 # dh_installsystemd does, the rescue entry out of grub.cfg, the menu flag
 # unset. On purge: the units' state forgotten; the store is kept (the
-# history is the point of it: M5 plan, question 3), and said where.
+# history is the point of it: M5 plan, question 3), and said where. A
+# first install that failed (abort-install, no version): the hand
+# install's 42_smartconfig that preinst moved aside goes back.
 set -e
+R=${DPKG_ROOT:-}
 UNITS="sc-boot-seen.service sc-boot-ok.service scd.service"
 case "$1" in
+abort-install)
+	f=/etc/grub.d/42_smartconfig
+	if [ -z "${2:-}" ] && [ -f "$R$f.dpkg-old" ] && [ ! -e "$R$f" ]; then
+		mv -f "$R$f.dpkg-old" "$R$f"
+		[ -L "$R$f" ] || chmod a+x "$R$f"
+		echo "smartconfig: the install failed: $f is back" >&2
+	fi
+	;;
 remove)
 	for u in $UNITS; do deb-systemd-helper mask "$u" >/dev/null || true; done
-	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
+	if [ -d "$R/run/systemd/system" ]; then
 		systemctl --system daemon-reload >/dev/null || true
 	fi
-	if [ -e "${DPKG_ROOT:-}/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
+	if [ -e "$R/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
 		update-grub || echo "smartconfig: update-grub failed; grub.cfg still has the rescue entry: run sudo update-grub" >&2
 	fi
-	if [ -e "${DPKG_ROOT:-}/boot/grub/grubenv" ] && command -v grub-editenv >/dev/null; then
-		grub-editenv "${DPKG_ROOT:-}/boot/grub/grubenv" unset smartconfig_pending || true
+	if [ -e "$R/boot/grub/grubenv" ] && command -v grub-editenv >/dev/null; then
+		grub-editenv "$R/boot/grub/grubenv" unset smartconfig_pending || true
 	fi
 	;;
 purge)
@@ -23,7 +34,7 @@ purge)
 		deb-systemd-helper purge "$u" >/dev/null || true
 		deb-systemd-helper unmask "$u" >/dev/null || true
 	done
-	if [ -d "${DPKG_ROOT:-}/var/lib/smartconfig" ]; then
+	if [ -d "$R/var/lib/smartconfig" ]; then
 		echo "smartconfig: the change history in /var/lib/smartconfig is kept; to delete it: sudo rm -r /var/lib/smartconfig" >&2
 	fi
 	;;
