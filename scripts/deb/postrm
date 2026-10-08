@@ -1,0 +1,31 @@
+#!/bin/sh
+# postrm: smartconfig's (M5 plan 3). On remove: the units masked as
+# dh_installsystemd does, the rescue entry out of grub.cfg, the menu flag
+# unset. On purge: the units' state forgotten; the store is kept (the
+# history is the point of it: M5 plan, question 3), and said where.
+set -e
+UNITS="sc-boot-seen.service sc-boot-ok.service scd.service"
+case "$1" in
+remove)
+	for u in $UNITS; do deb-systemd-helper mask "$u" >/dev/null || true; done
+	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
+		systemctl --system daemon-reload >/dev/null || true
+	fi
+	if [ -e "${DPKG_ROOT:-}/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
+		update-grub || echo "smartconfig: update-grub failed; grub.cfg still has the rescue entry: run sudo update-grub" >&2
+	fi
+	if [ -e "${DPKG_ROOT:-}/boot/grub/grubenv" ] && command -v grub-editenv >/dev/null; then
+		grub-editenv "${DPKG_ROOT:-}/boot/grub/grubenv" unset smartconfig_pending || true
+	fi
+	;;
+purge)
+	for u in $UNITS; do
+		deb-systemd-helper purge "$u" >/dev/null || true
+		deb-systemd-helper unmask "$u" >/dev/null || true
+	done
+	if [ -d "${DPKG_ROOT:-}/var/lib/smartconfig" ]; then
+		echo "smartconfig: the change history in /var/lib/smartconfig is kept; to delete it: sudo rm -r /var/lib/smartconfig" >&2
+	fi
+	;;
+esac
+exit 0

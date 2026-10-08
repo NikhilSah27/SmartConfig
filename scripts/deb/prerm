@@ -1,0 +1,11 @@
+#!/bin/sh
+# prerm: smartconfig's (M5 plan 3): scd stops before its files go.
+set -e
+case "$1" in
+remove)
+	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
+		deb-systemd-invoke stop scd.service >/dev/null || true
+	fi
+	;;
+esac
+exit 0

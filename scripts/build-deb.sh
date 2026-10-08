@@ -66,7 +66,7 @@ Description: record and check every config file change, with a rescue boot
 EOF
 echo /etc/grub.d/42_smartconfig >"$r/DEBIAN/conffiles"
 (cd "$r" && find . -type f ! -path './DEBIAN/*' | sed 's|^\./||' | LC_ALL=C sort | xargs md5sum) >"$r/DEBIAN/md5sums"
-for f in postinst prerm postrm; do
+for f in preinst postinst prerm postrm; do
 	if [ -f "scripts/deb/$f" ]; then install -m 0755 "scripts/deb/$f" "$r/DEBIAN/$f"; fi
 done
 chmod 0644 "$r/DEBIAN/control" "$r/DEBIAN/conffiles" "$r/DEBIAN/md5sums"

@@ -1,0 +1,32 @@
+#!/bin/sh
+# postinst: smartconfig's (M5 plan 3). The units as dh_installsystemd
+# enables them, scd restarted (Type=notify, so this waits for its startup
+# rescan), then update-grub for the rescue entry.
+# Every step can run again: dpkg reruns a script that failed.
+set -e
+UNITS="sc-boot-seen.service sc-boot-ok.service scd.service"
+case "$1" in
+configure | abort-upgrade | abort-deconfigure | abort-remove)
+	for u in $UNITS; do
+		deb-systemd-helper unmask "$u" >/dev/null || true
+		# was-enabled is true for a first install: enable then; on an
+		# upgrade it keeps what the owner chose.
+		if deb-systemd-helper --quiet was-enabled "$u"; then
+			deb-systemd-helper enable "$u" >/dev/null || true
+		else
+			deb-systemd-helper update-state "$u" >/dev/null || true
+		fi
+	done
+	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
+		systemctl --system daemon-reload >/dev/null || true
+		# Restart, not start, on a first install too: a hand install's scd
+		# may still run its old sc, which preinst moved aside, and start
+		# leaves a running unit as it is. It starts one that is not.
+		deb-systemd-invoke restart scd.service >/dev/null || true
+	fi
+	if [ -e "${DPKG_ROOT:-}/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
+		update-grub || echo "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub" >&2
+	fi
+	;;
+esac
+exit 0
