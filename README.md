@@ -69,6 +69,7 @@ sudo ./bin/sc log /etc/fstab                          # history, newest first
 sudo ./bin/sc diff 2c6                                # snapshot vs file on disk
 sudo ./bin/sc cat 2c6901                              # print a snapshot
 sudo ./bin/sc restore 2c6                             # put it back, atomically
+./bin/sc version                                      # the package version and the commit it was built from
 ```
 
 `sc log` shows `link`, `deleted` or `digest` in its SIZE column for symlinks,

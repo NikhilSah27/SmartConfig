@@ -11,8 +11,13 @@ LAB_E2E_ARGS ?=
 LAB_IMAGE_FROM ?=
 LAB_FORCE ?=
 
+# The package version (M5 plan 2): 0.N.0 at the tag mN, else
+# 0.N.99+git<commit time>.<sha7> after mN; from the commit, so the same
+# tree builds the same bytes (the lab's P.2 builds it again to compare).
+VERSION ?= $(shell sh scripts/version.sh 2>/dev/null || echo devel)
+
 build:
-	go build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/sc
+	go build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o $(BIN) ./cmd/sc
 
 test:
 	go test ./...
