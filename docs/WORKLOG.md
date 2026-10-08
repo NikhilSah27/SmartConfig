@@ -2496,4 +2496,10 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   modes, `--grub-password`), `accept-m2/m3/m4` as root and the install
   (`d686341`, the same `sc`); details in "Now". The root steps ran from
   this session with your OK; auto mode allowed them this time.
-
+- **M5 step 1, `sc version`, done `50e1128`.** `sc version` prints the
+  package version, the commit (Go's own stamp, `-dirty` for a changed
+  tree) and Go's version. `scripts/version.sh`: `0.N.0` at the tag `mN`,
+  else `0.N.99+git<commit time>.<sha7>`, from the commit alone (the
+  lab's P.2 builds again and compares); `make build` passes it with
+  `-X main.version`. `TestVersion`, `TestVersionScript` (a git repo of
+  its own: no tag, at `m4`, after it). Full checks passed.
