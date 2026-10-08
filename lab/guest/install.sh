@@ -51,7 +51,7 @@ LC_ALL=C SYSTEMD_PAGER= SYSTEMD_COLORS=0
 export PATH LC_ALL SYSTEMD_PAGER SYSTEMD_COLORS
 
 # What goes where: repo name, destination, mode.
-files='sc /usr/local/sbin/sc 0755
+files='sc /usr/sbin/sc 0755
 42_smartconfig /etc/grub.d/42_smartconfig 0755
 41_sclab /etc/grub.d/41_sclab 0755
 43_sclab /etc/grub.d/43_sclab 0755

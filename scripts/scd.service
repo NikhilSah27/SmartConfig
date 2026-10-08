@@ -25,7 +25,7 @@ Type=notify
 # than hold the verdict back for good: a boot with no verdict counts as
 # failed.
 TimeoutStartSec=5min
-ExecStart=/usr/local/sbin/sc watch
+ExecStart=/usr/sbin/sc watch
 # systemctl reload scd: a rescan (SIGHUP never stops the watcher).
 ExecReload=/bin/kill -HUP $MAINPID
 SyslogIdentifier=scd

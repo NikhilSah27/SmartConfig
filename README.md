@@ -92,7 +92,7 @@ sudo ./bin/sc watch                  # foreground; Ctrl-C stops it (exit 0)
 Installed by hand until the package milestone:
 
 ```sh
-sudo install -m 0755 bin/sc /usr/local/sbin/sc
+sudo install -m 0755 bin/sc /usr/sbin/sc
 sudo install -m 0644 scripts/scd.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now scd
 sudo journalctl -u scd -p warning   # boot- and access-critical changes (needs sudo)
@@ -123,7 +123,7 @@ file rows.
 
 ```sh
 sudo systemctl disable --now scd
-sudo rm /etc/systemd/system/scd.service /usr/local/sbin/sc
+sudo rm /etc/systemd/system/scd.service /usr/sbin/sc
 sudo systemctl daemon-reload
 ```
 
@@ -268,10 +268,10 @@ run `sudo sc status` in a terminal; it gives the same commands, each to
 run with `sudo` (not tried in the sign-off).
 
 Installed by hand until the package milestone, next to scd (`sc` must
-be `/usr/local/sbin/sc`). The first verdict is given at the next boot:
+be `/usr/sbin/sc`). The first verdict is given at the next boot:
 
 ```sh
-sudo install -m 0755 bin/sc /usr/local/sbin/sc && sudo systemctl try-restart scd
+sudo install -m 0755 bin/sc /usr/sbin/sc && sudo systemctl try-restart scd
 sudo install -m 0644 scripts/sc-boot-seen.service scripts/sc-boot-ok.service /etc/systemd/system/
 sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/rescue.service.d/50-smartconfig.conf
 sudo install -D -m 0644 scripts/smartconfig-rescue.conf /etc/systemd/system/emergency.service.d/50-smartconfig.conf
@@ -301,10 +301,10 @@ LUKS and multipath roots are not supported (M4 plan, non-goals). With
 `GRUB_DISABLE_RECOVERY=true` there is no rescue entry either. The menu
 flag needs GRUB's 1024-byte `grubenv`; on a separate `/boot` that failed
 to mount, the menu after a failed boot depends on Ubuntu's own
-`recordfail`. The rescue boot mounts only `/`: with `/var` or
-`/usr/local` on a filesystem of its own, run `mount /var` (or `mount
-/usr/local`) and then `sc status`; with a separate `/boot`, run `mount
-/boot` before restoring a file under `/boot/grub`. `sc restore` refuses
+`recordfail`. The rescue boot mounts only `/`: with `/var` on a
+filesystem of its own, run `mount /var` and then `sc status`; with a
+separate `/boot`, run `mount /boot` before restoring a file under
+`/boot/grub`. `sc restore` refuses
 to write under a mount point of `/etc/fstab` that is not mounted (or
 another mount covers), and says which to mount, the outermost first: the
 file would land on the root filesystem's copy. `sc status` puts those

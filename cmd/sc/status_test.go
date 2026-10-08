@@ -488,7 +488,7 @@ func TestStatusUndoQuoted(t *testing.T) {
 func TestStatusScdState(t *testing.T) {
 	statusEnv(t, "ro", false)
 	for _, tc := range []struct{ cmdline, want string }{
-		{"/usr/local/sbin/sc\x00watch\x00", "running (pid 4242)"},
+		{"/usr/sbin/sc\x00watch\x00", "running (pid 4242)"},
 		{"sc\x00watch\x00--root\x00/home/u/x\x00", "not running"},
 		{"/usr/bin/vim\x00sc\x00watch\x00", "not running"},
 	} {

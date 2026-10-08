@@ -32,7 +32,7 @@ func TestUnitFile(t *testing.T) {
 		"\nDefaultDependencies=no\n", "\nRequires=sysinit.target\n", "\nAfter=sysinit.target basic.target\n",
 		"\nConflicts=shutdown.target\n", "\nBefore=shutdown.target\n",
 		"\nEnvironment=GOTRACEBACK=none\n", "\nStartLimitBurst=", "\nIOSchedulingClass=",
-		"\nExecStart=/usr/local/sbin/sc watch\n", "\nSyslogIdentifier=scd\n",
+		"\nExecStart=/usr/sbin/sc watch\n", "\nSyslogIdentifier=scd\n",
 		"\nExecReload=/bin/kill -HUP $MAINPID\n", "\nAfter=remote-fs.target\n",
 	} {
 		if !strings.Contains(unit, want) {
@@ -76,14 +76,14 @@ func unitLines(t *testing.T, name string) string {
 func TestBootUnits(t *testing.T) {
 	for name, want := range map[string][]string{
 		"sc-boot-seen.service": {"\nDefaultDependencies=no\n", "\nAfter=systemd-remount-fs.service\n",
-			"\nRequiresMountsFor=/var/lib/smartconfig /usr/local/sbin\n", "\nConditionPathIsReadWrite=/var/lib\n",
-			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
-			"\nIgnoreOnIsolate=yes\n", "\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=boot.mount\n",
+			"\nRequiresMountsFor=/var/lib/smartconfig /usr/sbin\n", "\nConditionPathIsReadWrite=/var/lib\n",
+			"\nType=oneshot\n", "\nExecStart=/usr/sbin/sc boot seen\n", "\nWantedBy=sysinit.target\n", "\nTimeoutStartSec=90s\n",
+			"\nIgnoreOnIsolate=yes\n", "\nConditionFileIsExecutable=/usr/sbin/sc\n", "\nAfter=boot.mount\n",
 			"\nBefore=grub-common.service grub-initrd-fallback.service shutdown.target\n",
 			"\nConditionKernelCommandLine=!fstab=no\n", "\nNoNewPrivileges=yes\n", "\nProtectHome=yes\n", "\nPrivateNetwork=yes\n"},
 		"sc-boot-ok.service": {"\nNoNewPrivileges=yes\n", "\nProtectHome=yes\n", "\nConditionPathIsReadWrite=/var/lib\n", "\nConditionKernelCommandLine=!fstab=no\n",
-			"\nType=oneshot\n", "\nExecStart=/usr/local/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
-			"\nConditionFileIsExecutable=/usr/local/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service scd.service\n"},
+			"\nType=oneshot\n", "\nExecStart=/usr/sbin/sc boot verdict\n", "\nWantedBy=multi-user.target\n", "\nTimeoutStartSec=120s\n",
+			"\nConditionFileIsExecutable=/usr/sbin/sc\n", "\nAfter=multi-user.target sc-boot-seen.service scd.service\n"},
 	} {
 		unit := unitLines(t, name)
 		for _, w := range want {
@@ -118,7 +118,7 @@ func TestBootUnits(t *testing.T) {
 		}
 		dir := t.TempDir()
 		b, _ := os.ReadFile("../../scripts/" + name)
-		os.WriteFile(dir+"/"+name, []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc boot", "/bin/true")), 0o644)
+		os.WriteFile(dir+"/"+name, []byte(strings.ReplaceAll(string(b), "/usr/sbin/sc boot", "/bin/true")), 0o644)
 		// Exit 0 is not enough: an unknown key is only a warning (a wrong
 		// Condition key slipped through that way, the chunk C review).
 		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+name).CombinedOutput(); err != nil || len(out) != 0 {
@@ -167,15 +167,15 @@ func TestBootUnitsExact(t *testing.T) {
 			"Unit.DefaultDependencies=no",
 			"Unit.After=systemd-remount-fs.service",
 			"Unit.After=boot.mount",
-			"Unit.RequiresMountsFor=/var/lib/smartconfig /usr/local/sbin",
+			"Unit.RequiresMountsFor=/var/lib/smartconfig /usr/sbin",
 			"Unit.Before=grub-common.service grub-initrd-fallback.service shutdown.target",
 			"Unit.Conflicts=shutdown.target",
 			"Unit.IgnoreOnIsolate=yes",
 			"Unit.ConditionPathIsReadWrite=/var/lib",
-			"Unit.ConditionFileIsExecutable=/usr/local/sbin/sc",
+			"Unit.ConditionFileIsExecutable=/usr/sbin/sc",
 			"Unit.ConditionKernelCommandLine=!fstab=no",
 			"Service.Type=oneshot",
-			"Service.ExecStart=/usr/local/sbin/sc boot seen",
+			"Service.ExecStart=/usr/sbin/sc boot seen",
 			"Service.SyslogIdentifier=sc-boot",
 			"Service.Environment=GOTRACEBACK=none",
 			"Service.TimeoutStartSec=90s",
@@ -187,10 +187,10 @@ func TestBootUnitsExact(t *testing.T) {
 		"sc-boot-ok.service": {
 			"Unit.After=multi-user.target sc-boot-seen.service scd.service",
 			"Unit.ConditionPathIsReadWrite=/var/lib",
-			"Unit.ConditionFileIsExecutable=/usr/local/sbin/sc",
+			"Unit.ConditionFileIsExecutable=/usr/sbin/sc",
 			"Unit.ConditionKernelCommandLine=!fstab=no",
 			"Service.Type=oneshot",
-			"Service.ExecStart=/usr/local/sbin/sc boot verdict",
+			"Service.ExecStart=/usr/sbin/sc boot verdict",
 			"Service.SyslogIdentifier=sc-boot",
 			"Service.Environment=GOTRACEBACK=none",
 			"Service.TimeoutStartSec=120s",
@@ -219,7 +219,7 @@ func TestBootUnitsWholeBoot(t *testing.T) {
 	dir := t.TempDir()
 	for name, wantedBy := range map[string]string{"sc-boot-seen.service": "sysinit.target", "sc-boot-ok.service": "multi-user.target"} {
 		b, _ := os.ReadFile("../../scripts/" + name)
-		os.WriteFile(filepath.Join(dir, name), []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc boot", "/bin/true")), 0o644)
+		os.WriteFile(filepath.Join(dir, name), []byte(strings.ReplaceAll(string(b), "/usr/sbin/sc boot", "/bin/true")), 0o644)
 		wants := filepath.Join(dir, wantedBy+".wants")
 		os.MkdirAll(wants, 0o755)
 		os.Symlink("../"+name, filepath.Join(wants, name))
@@ -357,7 +357,7 @@ func TestLabGuestFacts(t *testing.T) {
 		"etc/default/grub.d/60-sclab.cfg":       "GRUB_CMDLINE_LINUX=\"${GRUB_CMDLINE_LINUX:+$GRUB_CMDLINE_LINUX }no_timer_check\"\nGRUB_TIMEOUT=0\n",
 		"var/lib/smartconfig/changes.db":        "db",
 		"var/lib/smartconfig/boots":             "b1 seen 1\n",
-		"usr/local/sbin/sc":                     "sc",
+		"usr/sbin/sc":                           "sc",
 		"run/sc-check-1/x":                      "",
 		"etc/systemd/system/scd.service":        "[Unit]\n",
 		"boot/grub/grub.cfg":                    "### BEGIN /etc/grub.d/41_sclab ###\necho x\n### END /etc/grub.d/43_sclab ###\n",
@@ -461,7 +461,7 @@ case "$*" in *-P*) echo "SOURCE=\"/dev/vda1\" LABEL=\"cloudimg-rootfs\" FSTYPE=\
 				}
 			}
 			if rc["sc-status"] != "2" || !strings.Contains(text["paths"], "\n/var/lib/smartconfig dir ") ||
-				!strings.Contains(text["paths"], "/usr/local/sbin/sc file 644 ") || !strings.Contains(text["paths"], "\n/etc/grub.d/42_smartconfig -\n") {
+				!strings.Contains(text["paths"], "/usr/sbin/sc file 644 ") || !strings.Contains(text["paths"], "\n/etc/grub.d/42_smartconfig -\n") {
 				t.Errorf("normal:\n%s", out)
 			}
 		case "rescue":
@@ -673,7 +673,7 @@ func TestGrubScriptTopLevel(t *testing.T) {
 // machine may not have installed).
 func TestRescueDropIn(t *testing.T) {
 	unit := unitLines(t, "smartconfig-rescue.conf")
-	if unit != "\n[Service]\nExecStartPre=-/usr/local/sbin/sc status --console\n" {
+	if unit != "\n[Service]\nExecStartPre=-/usr/sbin/sc status --console\n" {
 		t.Errorf("drop-in:%q", unit)
 	}
 	analyze, err := exec.LookPath("systemd-analyze")
@@ -690,7 +690,7 @@ func TestRescueDropIn(t *testing.T) {
 		dir := t.TempDir()
 		os.WriteFile(dir+"/"+svc, orig, 0o644)
 		os.MkdirAll(dir+"/"+svc+".d", 0o755)
-		os.WriteFile(dir+"/"+svc+".d/50-smartconfig.conf", []byte(strings.ReplaceAll(string(b), "/usr/local/sbin/sc status --console", "/bin/true")), 0o644)
+		os.WriteFile(dir+"/"+svc+".d/50-smartconfig.conf", []byte(strings.ReplaceAll(string(b), "/usr/sbin/sc status --console", "/bin/true")), 0o644)
 		if out, err := exec.Command(analyze, "verify", "--man=no", dir+"/"+svc).CombinedOutput(); err != nil || len(out) != 0 {
 			t.Errorf("%s: %v\n%s", svc, err, out)
 		}
@@ -811,7 +811,7 @@ mkdir -p "$(dirname "$2")" && cp "$1" "$2" && chmod "$m" "$2"`,
 	dir, out, code := run()
 	var want []string
 	for _, f := range []struct{ name, dest, mode string }{
-		{"sc", "/usr/local/sbin/sc", "755"}, {"42_smartconfig", "/etc/grub.d/42_smartconfig", "755"},
+		{"sc", "/usr/sbin/sc", "755"}, {"42_smartconfig", "/etc/grub.d/42_smartconfig", "755"},
 		{"41_sclab", "/etc/grub.d/41_sclab", "755"}, {"43_sclab", "/etc/grub.d/43_sclab", "755"},
 		{"scd.service", "/etc/systemd/system/scd.service", "644"},
 		{"sc-boot-seen.service", "/etc/systemd/system/sc-boot-seen.service", "644"},

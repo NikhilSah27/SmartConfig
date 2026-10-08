@@ -96,7 +96,7 @@ def recipe_problems(rc, out, err):
     return p, lines
 RESCUE_ECHO = "SmartConfig rescue: root read-only, /etc/fstab ignored"
 RESCUE_ARGS = "fstab=no systemd.unit=rescue.target SYSTEMD_SULOGIN_FORCE=1"
-DROPIN_LINE = "ExecStartPre=-/usr/local/sbin/sc status --console"
+DROPIN_LINE = "ExecStartPre=-/usr/sbin/sc status --console"
 FLAG_BLOCK = 'if [ "${smartconfig_pending}" = "1" ] ; then'
 RECORDFAIL_BLOCK = re.compile(r'^if \[ "\$\{recordfail\}" = 1 \] ; then\n\s*set timeout=(\d+)', re.M)
 RESTORE_REFUSED = "it is on a read-only file system: remount it read-write first"
@@ -111,7 +111,7 @@ MENU_ENTRIES = {
 # What goes to the guest (0.4): the name in the staging directory, the
 # source in the repo, the mode install.sh gives it, where it goes.
 INSTALLED = (
-    ("sc", "bin/sc", "755", ("/usr/local/sbin/sc",)),
+    ("sc", "bin/sc", "755", ("/usr/sbin/sc",)),
     ("42_smartconfig", "scripts/42_smartconfig", "755", ("/etc/grub.d/42_smartconfig",)),
     ("41_sclab", "lab/guest/41_sclab", "755", ("/etc/grub.d/41_sclab",)),
     ("43_sclab", "lab/guest/43_sclab", "755", ("/etc/grub.d/43_sclab",)),
@@ -2141,7 +2141,7 @@ class E2E:
     def check_03(self, f):
         p = []
         paths = paths_map(f.lines("paths"))
-        for path in ("/usr/local/sbin/sc", "/var/lib/smartconfig"):
+        for path in ("/usr/sbin/sc", "/var/lib/smartconfig"):
             if paths.get(path) != "-":
                 p.append("%s is there: %s" % (path, paths.get(path)))
         boot = (mounts_map(f.lines("mounts")).get("/boot") or {})

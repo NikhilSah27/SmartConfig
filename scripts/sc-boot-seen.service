@@ -16,19 +16,19 @@ After=systemd-remount-fs.service
 # A separate /boot holds grubenv, where the menu flag goes: after it, if
 # there is one (ordering only: a /boot that fails still gets the seen line).
 After=boot.mount
-RequiresMountsFor=/var/lib/smartconfig /usr/local/sbin
+RequiresMountsFor=/var/lib/smartconfig /usr/sbin
 # grub-editenv rewrites grubenv in place, unlocked: never at the same time
 # as Ubuntu's own writers of it (the chunk C review lost writes that way).
 Before=grub-common.service grub-initrd-fallback.service shutdown.target
 Conflicts=shutdown.target
 IgnoreOnIsolate=yes
 ConditionPathIsReadWrite=/var/lib
-ConditionFileIsExecutable=/usr/local/sbin/sc
+ConditionFileIsExecutable=/usr/sbin/sc
 ConditionKernelCommandLine=!fstab=no
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/sc boot seen
+ExecStart=/usr/sbin/sc boot seen
 SyslogIdentifier=sc-boot
 Environment=GOTRACEBACK=none
 # A slow boot (the lab's stalls) took longer than 10 s.

@@ -107,7 +107,7 @@ p_grub_defaults() {
 # p_paths: "PATH file MODE USER:GROUP SHA256", "PATH dir MODE USER:GROUP",
 # "PATH link TARGET", "PATH other" or "PATH -" (not there).
 p_paths() {
-	for p in /usr/local/sbin/sc /etc/grub.d/41_sclab /etc/grub.d/42_smartconfig /etc/grub.d/43_sclab \
+	for p in /usr/sbin/sc /etc/grub.d/41_sclab /etc/grub.d/42_smartconfig /etc/grub.d/43_sclab \
 		/etc/systemd/system/scd.service /etc/systemd/system/sc-boot-seen.service \
 		/etc/systemd/system/sc-boot-ok.service /etc/systemd/system/rescue.service.d/50-smartconfig.conf \
 		/etc/systemd/system/emergency.service.d/50-smartconfig.conf /etc/default/grub.d/60-sclab.cfg \

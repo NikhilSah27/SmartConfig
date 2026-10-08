@@ -146,7 +146,7 @@ DropInPaths=/etc/systemd/system/emergency.service.d/50-smartconfig.conf
 sc: store /var/lib/smartconfig: it is on a read-only file system: remount it read-write first
 
 == paths rc=0
-/usr/local/sbin/sc file 755 root:root abc
+/usr/sbin/sc file 755 root:root abc
 /var/lib/smartconfig/boots -
 == end rc=0
 """
@@ -175,19 +175,19 @@ class TestFacts(unittest.TestCase):
         self.assertIsNone(m["/boot"])
         p = e2e.paths_map(f.lines("paths"))
         self.assertEqual(p["/var/lib/smartconfig/boots"], "-")
-        self.assertEqual(p["/usr/local/sbin/sc"], "file 755 root:root abc")
+        self.assertEqual(p["/usr/sbin/sc"], "file 755 root:root abc")
         d = e2e.show_units(f.lines("dropins"))
         self.assertIn("/etc/systemd/system/rescue.service.d/50-smartconfig.conf", d["rescue.service"]["DropInPaths"])
         self.assertIn("emergency.service", d)
 
     def test_install_facts(self):
-        out = ("uid=0\nmanifest=ok\nmanifest_out=sc: OK\nfile=/usr/local/sbin/sc 755 root:root aa\n"
+        out = ("uid=0\nmanifest=ok\nmanifest_out=sc: OK\nfile=/usr/sbin/sc 755 root:root aa\n"
                "update_grub_rc=0\nupdate_grub_err=Sourcing file `/etc/default/grub'\n"
                "update_grub_err=Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic\n"
                "verify_rc=0\ndone=1\n")
         kv = e2e.parse_kv(out)
         self.assertEqual(kv["update_grub_err"][1], "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic")
-        self.assertEqual(kv["file"], ["/usr/local/sbin/sc 755 root:root aa"])
+        self.assertEqual(kv["file"], ["/usr/sbin/sc 755 root:root aa"])
         self.assertNotIn("verify_out", kv)
 
 
@@ -2540,7 +2540,7 @@ class TestBoot0Faults(FaultCase):
                 ("the flag is there, empty", dict(grubenv=(0, ["smartconfig_pending="]))),
                 ("a boots file before any boot",
                  dict(paths=(0, ["/var/lib/smartconfig/boots file 600 root:root abc"]))),
-                ("the boots file not looked at", dict(paths=(0, ["/usr/local/sbin/sc file 755 root:root abc"]))),
+                ("the boots file not looked at", dict(paths=(0, ["/usr/sbin/sc file 755 root:root abc"]))),
                 ("scd made no baseline", {"journal-scd": (0, ["watching /etc, /boot/grub (227 directories)"])}),
                 ("sc log has no row",
                  {"sc-log-fstab": (0, ["ID      WHEN              ORIGIN  FILE        SIZE  WHAT"])})):

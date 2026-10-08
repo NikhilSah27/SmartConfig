@@ -126,7 +126,7 @@ install -m 0755 "$SC" "$UNIT_SC"
 # and times: systemd unloads a finished oneshot nothing refers to.
 unit() {
 	local f=$UNITDIR/$2.service
-	sed -e "s|/usr/local/sbin/sc|$UNIT_SC|g" \
+	sed -e "s|/usr/sbin/sc|$UNIT_SC|g" \
 		-e "s|^RequiresMountsFor=.*|RequiresMountsFor=$WORK|" \
 		-e "s|sc-boot-seen\.service|$SEEN.service|g" \
 		-e "s|^\[Service\]|[Service]\nEnvironment=SC_HOME=$SC_HOME\nBindPaths=$WORK/grubenv:$GRUBENV\nRemainAfterExit=yes|" \

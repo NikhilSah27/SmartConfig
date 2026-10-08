@@ -10,12 +10,12 @@ Documentation=https://github.com/NikhilSah27/SmartConfig
 # After scd too, when it runs: its startup rescan is recorded first.
 After=multi-user.target sc-boot-seen.service scd.service
 ConditionPathIsReadWrite=/var/lib
-ConditionFileIsExecutable=/usr/local/sbin/sc
+ConditionFileIsExecutable=/usr/sbin/sc
 ConditionKernelCommandLine=!fstab=no
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/sc boot verdict
+ExecStart=/usr/sbin/sc boot verdict
 SyslogIdentifier=sc-boot
 Environment=GOTRACEBACK=none
 TimeoutStartSec=120s
