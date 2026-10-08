@@ -2644,4 +2644,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   calling a deleted `/etc` override with a unit or drop-in of the same
   name under `/usr/lib` an error), the lab holding `sc status` after the
   takeover, then the rest of the sign-off.
+- **The sign-off's two problems, fixed: `8bd34c3`, `d81e2d5`** (docs
+  `a47df47`; plan C7, C8). postinst says when scd was not restarted (its
+  MainPID the same, or none while enabled) and prerm when scd still runs
+  after the stop, each with the command; policy-rc.d is still honoured.
+  `sc status` does not call a deleted unit or drop-in of
+  `/etc/systemd/system` an error when one of the same name in a later
+  unit directory stands in (`deleted; /usr/lib's in use`); a mask is
+  none. Tests for each, each undone fails one; on this VM's store the
+  fixed `sc status` exits 0 (as root, read only). Full checks passed. The
+  lab's guest has no policy-rc.d, and its hand install is not there at a
+  healthy boot, so neither shows in the lab: this VM is where they are
+  checked. Next: the lab's `--deb` run on this tree, then this VM: an
+  upgrade to it (postinst's note under the policy-rc.d), with the remove
+  and install again still waiting on the policy-rc.d.
 
