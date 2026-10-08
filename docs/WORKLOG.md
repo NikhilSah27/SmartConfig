@@ -2503,3 +2503,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   lab's P.2 builds again and compares); `make build` passes it with
   `-X main.version`. `TestVersion`, `TestVersionScript` (a git repo of
   its own: no tag, at `m4`, after it). Full checks passed.
+- **M5 steps 2 and 3, `/usr/sbin/sc` and `make deb`, done `9c25edd` and
+  `7f70233`.** The units, the rescue drop-in, the README, the lab and
+  `accept-m4` name `/usr/sbin/sc` (Q2's recommended answer). `make deb`
+  builds `dist/smartconfig_<version>_amd64.deb` with `dpkg-deb
+  --root-owner-group` (Q1: no new tool): `sc` in `/usr/sbin`, the units
+  and drop-ins in `/usr/lib/systemd/system`, `42_smartconfig` a conffile,
+  docs, control and md5sums; reproducible (two builds of a commit match).
+  `TestBuildDeb`. Full checks, `make lab-test` and `make deb` passed. The
+  hand install on this VM is unchanged until the package replaces it.
+
