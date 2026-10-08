@@ -116,20 +116,24 @@ step "2. sc-boot-seen and sc-boot-ok as runtime units: a seen line and the flag,
 cp "$GRUBENV" "$WORK/grubenv"
 grub-editenv "$WORK/grubenv" list | grep -q '^smartconfig_pending=' &&
 	fail "the copy of $GRUBENV already has smartconfig_pending: $(grub-editenv "$WORK/grubenv" list)"
+# The units run a copy of bin/sc in $WORK: the repo is under /home, which
+# their ProtectHome=yes hides (exit 203/EXEC: the chunk H hardening).
+UNIT_SC=$WORK/sc
+install -m 0755 "$SC" "$UNIT_SC"
 # unit SRC NAME CMD: scripts/SRC as the runtime unit NAME, running sc
-# CMD from bin/sc on the throwaway store and the grubenv copy.
+# CMD from that copy on the throwaway store and the grubenv copy.
 # RemainAfterExit= keeps it loaded after sc exits, with its invocation id
 # and times: systemd unloads a finished oneshot nothing refers to.
 unit() {
 	local f=$UNITDIR/$2.service
-	sed -e "s|/usr/local/sbin/sc|$SC|g" \
-		-e "s|^RequiresMountsFor=.*|RequiresMountsFor=$WORK $(dirname "$SC")|" \
+	sed -e "s|/usr/local/sbin/sc|$UNIT_SC|g" \
+		-e "s|^RequiresMountsFor=.*|RequiresMountsFor=$WORK|" \
 		-e "s|sc-boot-seen\.service|$SEEN.service|g" \
 		-e "s|^\[Service\]|[Service]\nEnvironment=SC_HOME=$SC_HOME\nBindPaths=$WORK/grubenv:$GRUBENV\nRemainAfterExit=yes|" \
 		"scripts/$1" >"$f"
 	# Without these lines sc would write the real grubenv and store.
 	grep -qxF "Environment=SC_HOME=$SC_HOME" "$f" && grep -qxF "BindPaths=$WORK/grubenv:$GRUBENV" "$f" &&
-		grep -qxF "ExecStart=$SC $3" "$f" || fail "$f is not made as it should be:\n$(cat "$f")"
+		grep -qxF "ExecStart=$UNIT_SC $3" "$f" || fail "$f is not made as it should be:\n$(cat "$f")"
 	systemd-analyze verify "$f" || fail "systemd-analyze verify $2"
 }
 unit sc-boot-seen.service $SEEN "boot seen"
