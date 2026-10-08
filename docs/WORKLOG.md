@@ -2538,4 +2538,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   failure), 0.4's package variant, the tags; the GRUB script without
   `sc`. Full checks and `make lab-test` (350) passed. Next: `make
   lab-e2e LAB_E2E_ARGS=--deb`, both modes.
+- **The lab's `--deb` run on `1c5850f`: UEFI PASS, BIOS INCONCLUSIVE; a
+  lab fix, `7bbaa82`** (2026-10-08). `make lab-e2e LAB_E2E_ARGS=--deb`,
+  log `~/smartconfig-work/signoff/lab-e2e-20261008T050330Z-1c5850f-deb.log`,
+  run files in `~/smartconfig-work/signoff/lab-e2e-1c5850f/`. UEFI passed
+  everything, `deb=yes` (24m06s): 0.4 to 0.7 on the package's own files,
+  the M4 scenario on it, D.1 (the `+lab1` build over it, scd restarted),
+  D.2 (`dpkg -r`) and D.3 (`dpkg -P`). BIOS lost its verdict at 1.1, a
+  [lab] error: the reboot gave its two guest RESETs 13 ms apart, but the
+  host stood still 2.5 s while QMP's reader marked the serial log for the
+  second, past the 2 s wait, and it came as a reset of its own. Fixed: a
+  QMP round trip after the wait. Tests for it; full checks and `make
+  lab-test` (353) passed. Found while reading for M5 step 8: the plan's
+  step 7 also asks for the takeover of a hand install in the lab, which
+  only `TestDebPreinstHandInstall` covers. Next: that, as D.4.
 
