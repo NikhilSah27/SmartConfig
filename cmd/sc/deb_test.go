@@ -360,6 +360,22 @@ func TestDebHandInstall(t *testing.T) {
 		}
 	})
 
+	t.Run("42_smartconfig a link", func(t *testing.T) {
+		// Moved aside and back as the link; its target keeps its x bits.
+		root, bin := setup(t, map[string]string{"opt/42": ours[grubd]})
+		os.MkdirAll(filepath.Join(root, "etc/grub.d"), 0o755)
+		os.Symlink(filepath.Join(root, "opt/42"), filepath.Join(root, grubd))
+		script(t, root, bin, "preinst", "install")
+		aside(t, root, grubd)
+		script(t, root, bin, "postrm", "abort-install")
+		if fi, err := os.Lstat(filepath.Join(root, grubd)); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("not back as the link: %v %v", fi, err)
+		}
+		if fi, err := os.Stat(filepath.Join(root, "opt/42")); err != nil || fi.Mode().Perm() != 0o755 {
+			t.Errorf("the link's target: %v %v", fi, err)
+		}
+	})
+
 	t.Run("half, sc a link", func(t *testing.T) {
 		// M2's and M3's README: sc and scd.service only; sc linked to a
 		// build that must keep its x bits.
