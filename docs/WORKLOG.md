@@ -168,7 +168,9 @@ review:
   at once and the changes when ready; the early SIGHUP stays a
   documented limit. M4 4 (soft-reboot, chunk H) is documented as a
   limit (systemd 255 has no soft-reboot count).
-- **Chunk H, boot units, GRUB and the lab:** M4 3 (`GRUB_TOP_LEVEL`),
+- **Chunk H, boot units, GRUB and the lab (done 2026-10-08, reviewed:
+  [reviews/2026-10-07-m4-followups-chunk-h.md](reviews/2026-10-07-m4-followups-chunk-h.md),
+  fixes `a1c1228`):** M4 3 (`GRUB_TOP_LEVEL`),
   4 (soft-reboot), 5 (the units' hardening, the test knob), 6 (the test
   gaps); the notes: lab check 1.8, the GRUB password recipe in the lab,
   the lab's own items, the `cmd/sc` flake.
@@ -2416,3 +2418,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   start with the default; the lab test's child resets it. Under `nohup`
   those tests pass now, and the hunt then ran 10 of 10 clean. Full
   checks passed. Chunk H's items are all in; next, its review.
+
+- **The chunk H review, closed: [reviews/2026-10-07-m4-followups-chunk-h.md](reviews/2026-10-07-m4-followups-chunk-h.md),
+  fixes `a1c1228`.** Two reviewers in clones of `100da93`, no high finding
+  and no sign-off false pass. A (GRUB script, units, tests): the units'
+  comments (the early-namespace precedent was wrong; `PrivateNetwork=`
+  keeps file-system sockets), a blocklist test that let ordering and
+  sandbox keys through, `.old` kernels. B (the lab): four medium ones in
+  the `--grub-password` stage, each a failure in the wrong class (a
+  prompt in 6a/6c a [lab] timeout, 6a's verdict not awaited before the
+  flag, a retried 6c expecting a menu, 6.4's waits outside `ran_out`),
+  and low ones (a dead VGA watch, 1.8's docstring, `facts.sh` dropping
+  output, 11 surviving mutations, the README). All fixed with tests;
+  28 of 28 fixes undone one at a time fail a test. Full checks and
+  `make lab-test` passed. Chunk H is done; next, the sign-off runs:
+  `make lab-e2e LAB_E2E_ARGS=--grub-password`, then `accept-m2`,
+  `accept-m3`, `accept-m4` and the install as root.
