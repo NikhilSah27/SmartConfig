@@ -2433,3 +2433,20 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `make lab-test` passed. Chunk H is done; next, the sign-off runs:
   `make lab-e2e LAB_E2E_ARGS=--grub-password`, then `accept-m2`,
   `accept-m3`, `accept-m4` and the install as root.
+- **The sign-off lab run on `526f14b`: INCONCLUSIVE twice, not yet
+  passed** (2026-10-08). `make lab-e2e LAB_E2E_ARGS=--grub-password`,
+  logs `~/smartconfig-work/signoff/lab-e2e-20261008T000839Z-526f14b.log`
+  and `lab-e2e-20261008T005326Z-526f14b.log`. No [M4] failure. UEFI lost
+  its verdict both times to the host (ssh exit 255 during host stalls of
+  12-181 s; then a slow-udev retry and no kernel in 600 s; this VM had
+  about 0.6-1 GB free, no swap, load 16-25, snapd busy). BIOS failed
+  **both times at the same place**: 6.2's `cat
+  /proc/sys/kernel/random/boot_id` over ssh, exit 255 after about 31 s,
+  right after 6.1 (the recipe and `update-grub`). In `818dace` the same
+  step passed; this looks systematic, not load: next, read that run's
+  serial and ssh logs (`~/.cache/smartconfig-lab/runs/*bios-526f14b`),
+  fix, rerun. Waiting on it: the root steps
+  (`~/smartconfig-work/signoff/signoff-fu-526f14b.sh`: accept-m2/m3/m4
+  and the install; its WANT is this build) and the reboot. The M5 plan
+  draft is in `~/smartconfig-work/fu-scratch/m5/M5_PLAN.draft.md`.
+
