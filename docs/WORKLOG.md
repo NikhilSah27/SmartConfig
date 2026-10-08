@@ -2418,7 +2418,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   start with the default; the lab test's child resets it. Under `nohup`
   those tests pass now, and the hunt then ran 10 of 10 clean. Full
   checks passed. Chunk H's items are all in; next, its review.
-
 - **The chunk H review, closed: [reviews/2026-10-07-m4-followups-chunk-h.md](reviews/2026-10-07-m4-followups-chunk-h.md),
   fixes `a1c1228`.** Two reviewers in clones of `100da93`, no high finding
   and no sign-off false pass. A (GRUB script, units, tests): the units'
