@@ -135,12 +135,36 @@ no retries, boot 5. `accept-m4` as root PASS on that build, and that
 build is installed on this VM (`sc`, both units, `42_smartconfig`,
 `update-grub`; the S1 build is kept as `sc-2c58f8b`). The annotated tag
 `m4` is on `59203a3` and pushed. No VM is running.
-**At the next session after a reboot:** the next boot of this VM is the
-first with the new units and rescue entry. Read-only first: its verdict
-(ok, flag clear, grubenv empty), `sc-boot-seen` and `sc-boot-ok` done,
-`sudo sc status` exit 0, no failed units; log them.
+(The reboot check of that install is folded into the follow-ups' one,
+below: no reboot came between.)
 
-**Now: the M3 and M4 follow-ups, then the M5 plan** (your call,
+**Now: M5, the package** (your call, 2026-10-07: M5 starts after the
+follow-ups either way). The plan, for your read: [M5_PLAN.md](M5_PLAN.md);
+its questions run on the recommended answers until you say otherwise.
+Its steps, drafted in `~/smartconfig-work/fu-scratch/wt-m5`, land one at
+a time, each with its checks, CI and a worklog line.
+
+**The M3 and M4 follow-ups: done and signed off** (2026-10-08). Chunks
+F, G and H, each reviewed. `make lab-e2e LAB_E2E_ARGS=--grub-password`
+on `643cec3` (clean, `sc` `22a34f3df9b3`): UEFI PASS (29m19s, 1 retry)
+and, in a BIOS-only rerun of the same tree after host stalls cost two
+runs their verdicts, BIOS PASS (24m21s, 2 retries); run files in
+`~/smartconfig-work/signoff/lab-e2e-643cec3/`. As root (Claude, your OK
+of 2026-10-07): `accept-m2`, `accept-m3` and `accept-m4` PASS on
+`d686341` with that build (`accept-m4` fixed there: the hardened test
+units ran `sc` from `/home`, which `ProtectHome=` hides), then that build
+installed: scd `Type=notify` (startup rescan 413 ms), the three units
+enabled, `systemd-analyze verify` clean, `grub-script-check` ok, the
+rescue entry in `grub.cfg`, `sc status` exit 0, no failed units; the
+`59203a3` build kept as `/var/backups/smartconfig/sc-59203a3`. Log
+`~/smartconfig-work/signoff/signoff-fu-20261008T035149Z-d686341.log`.
+**At the next session after a reboot** (yours to start: a reboot ends
+this session): the first boot with the follow-ups' units. Read-only:
+its verdict ok, the flag clear, `sc-boot-seen` and `sc-boot-ok` done
+under their sandbox, scd active (`Type=notify`), `sudo sc status` exit
+0, no failed units; log them.
+
+**The M3 and M4 follow-ups, as planned** (your call,
 2026-10-07: "if you have finished everything from v1 to v4 then only
 start the M5 plan", then "All follow-ups"). Every open item of the M3
 and M4 follow-up lists and the actionable "Open from the reviews" notes
@@ -205,6 +229,10 @@ step is built (your call, 2026-09-30).
 
 **Still waiting for you:**
 
+- [ ] Reboot this VM when it suits you (it ends a running session); the
+  next session runs the read-only check above.
+- [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-6 (dpkg-deb or nfpm,
+  `/usr/sbin`, purge, the hand install, the package's name, the license).
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
@@ -2464,4 +2492,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   until you say otherwise: dpkg-deb, not nfpm (no new dependency);
   `/usr/sbin/sc`; the store kept on purge; the hand install's known
   copies moved aside; the package named `smartconfig`.
+- **The follow-ups signed off** (2026-10-08): the lab (`643cec3`, both
+  modes, `--grub-password`), `accept-m2/m3/m4` as root and the install
+  (`d686341`, the same `sc`); details in "Now". The root steps ran from
+  this session with your OK; auto mode allowed them this time.
 

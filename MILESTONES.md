@@ -13,12 +13,13 @@
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: the M3 and M4 follow-ups below, all of them but M4's LUKS item
-(your call, 2026-10-07; the order is in the worklog's "Now"); then the
-M5 plan, for your approval. M4 is done (tag `m4`, 2026-10-07;
-[docs/M4_PLAN.md](docs/M4_PLAN.md)): 13 steps, five chunk reviews and
-sign-off S1 to S4. M3 is done (tag `m3`, 2026-10-03). The M2 soak was
-closed after 5.6 h (your call).
+Current: M5, the package (your call, 2026-10-07: after the follow-ups,
+start M5 either way); plan [docs/M5_PLAN.md](docs/M5_PLAN.md), for your
+read. The M3 and M4 follow-ups below are done, all but M4's LUKS item
+(out, your call), and signed off on 2026-10-08 (the lab in both modes,
+accept-m2/m3/m4 as root, the install). M4 is done (tag `m4`,
+2026-10-07). M3 is done (tag `m3`, 2026-10-03). The M2 soak was closed
+after 5.6 h (your call).
 
 ## M1 notes
 
