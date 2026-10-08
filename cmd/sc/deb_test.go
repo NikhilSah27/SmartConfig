@@ -145,8 +145,11 @@ func TestBuildDeb(t *testing.T) {
 
 // debScript runs scripts/deb/SCRIPT with DPKG_ROOT=root and, first in
 // PATH, tools that only log to bin/log (deb-systemd-helper's was-enabled
-// fails with SC_NOT_ENABLED set, update-grub with SC_GRUB_FAILS); its exit
-// code and stderr, and the log so far with root written ROOT.
+// and systemctl is-enabled fail with SC_NOT_ENABLED set, update-grub with
+// SC_GRUB_FAILS; systemctl is-active scd succeeds with SC_ACTIVE set, and
+// its show MainPID gives SC_PIDS' first and second word in turn, by
+// default 611 then 742: a restart); its exit code and stderr, and the log
+// so far with root written ROOT.
 func debScript(t *testing.T, root, bin, script string, env []string, args ...string) (int, string, string) {
 	t.Helper()
 	log := filepath.Join(bin, "log")
@@ -157,6 +160,16 @@ func debScript(t *testing.T, root, bin, script string, env []string, args ...str
 			body += `[ "$1 $2" != "--quiet was-enabled" ] || [ -z "$SC_NOT_ENABLED" ]` + "\n"
 		case "update-grub":
 			body += `[ -z "$SC_GRUB_FAILS" ]` + "\n"
+		case "systemctl":
+			body += `case "$*" in
+"show -p MainPID --value scd.service")
+	i=$(cat "` + bin + `/calls" 2>/dev/null || echo 0); echo $((i + 1)) >"` + bin + `/calls"
+	set -- ${SC_PIDS:-611 742}
+	if [ $((i % 2)) = 0 ]; then echo "$1"; else echo "$2"; fi ;;
+"--quiet is-enabled scd.service") [ -z "$SC_NOT_ENABLED" ] ;;
+"--quiet is-active scd.service") [ -n "$SC_ACTIVE" ] ;;
+esac
+`
 		}
 		os.WriteFile(filepath.Join(bin, tool), []byte(body), 0o755)
 	}
@@ -183,7 +196,11 @@ func TestDebScripts(t *testing.T) {
 	for _, u := range []string{"sc-boot-seen.service", "sc-boot-ok.service", "scd.service"} {
 		enable += "deb-systemd-helper unmask " + u + "\ndeb-systemd-helper --quiet was-enabled " + u + "\ndeb-systemd-helper enable " + u + "\n"
 	}
-	restart := "systemctl --system daemon-reload\ndeb-systemd-invoke restart scd.service\n"
+	show := "systemctl show -p MainPID --value scd.service\n"
+	restart := "systemctl --system daemon-reload\n" + show + "deb-systemd-invoke restart scd.service\n" + show
+	notRestarted := "smartconfig: scd was not restarted (does /usr/sbin/policy-rc.d forbid it?): sudo systemctl restart scd\n"
+	isEnabled := "systemctl --quiet is-enabled scd.service\n"
+	isActive := "systemctl --quiet is-active scd.service\n"
 	mask := "deb-systemd-helper mask sc-boot-seen.service\ndeb-systemd-helper mask sc-boot-ok.service\ndeb-systemd-helper mask scd.service\n"
 	purge := "deb-systemd-helper purge sc-boot-seen.service\ndeb-systemd-helper unmask sc-boot-seen.service\n" +
 		"deb-systemd-helper purge sc-boot-ok.service\ndeb-systemd-helper unmask sc-boot-ok.service\n" +
@@ -203,8 +220,19 @@ func TestDebScripts(t *testing.T) {
 		{"update-grub fails", "postinst", nil, []string{"SC_GRUB_FAILS=1"}, []string{"configure", ""},
 			enable + restart + "update-grub \n", "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub\n"},
 		{"install, no systemd running", "postinst", []string{"run/systemd/system"}, nil, []string{"configure", ""}, enable + "update-grub \n", ""},
+		// /usr/sbin/policy-rc.d forbids the restart (this VM's image, M5's
+		// sign-off): scd runs on as it was, or not at all.
+		{"the restart forbidden", "postinst", nil, []string{"SC_PIDS=611 611"}, []string{"configure", ""},
+			enable + restart + "update-grub \n", notRestarted},
+		{"the start forbidden", "postinst", nil, []string{"SC_PIDS=0 0"}, []string{"configure", ""},
+			enable + restart + isEnabled + "update-grub \n", notRestarted},
+		{"not running, the owner disabled it", "postinst", nil, []string{"SC_PIDS=0 0", "SC_NOT_ENABLED=1"}, []string{"configure", "0.5.0"},
+			strings.ReplaceAll(enable, "helper enable", "helper update-state") + restart + isEnabled + "update-grub \n", ""},
 		{"install, no GRUB", "postinst", []string{"boot/grub"}, nil, []string{"configure", ""}, enable + restart, ""},
-		{"remove: stop", "prerm", nil, nil, []string{"remove"}, "deb-systemd-invoke stop scd.service\n", ""},
+		{"remove: stop", "prerm", nil, nil, []string{"remove"}, "deb-systemd-invoke stop scd.service\n" + isActive, ""},
+		{"remove: the stop forbidden", "prerm", nil, []string{"SC_ACTIVE=1"}, []string{"remove"},
+			"deb-systemd-invoke stop scd.service\n" + isActive,
+			"smartconfig: scd still runs (does /usr/sbin/policy-rc.d forbid stopping it?): sudo systemctl stop scd\n"},
 		{"remove: no systemd running", "prerm", []string{"run/systemd/system"}, nil, []string{"remove"}, "", ""},
 		{"upgrade: no stop", "prerm", nil, nil, []string{"upgrade", "0.5.1"}, "", ""},
 		{"remove", "postrm", nil, nil, []string{"remove"},

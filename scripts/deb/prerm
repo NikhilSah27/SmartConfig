@@ -5,6 +5,10 @@ case "$1" in
 remove)
 	if [ -d "${DPKG_ROOT:-}/run/systemd/system" ]; then
 		deb-systemd-invoke stop scd.service >/dev/null || true
+		# /usr/sbin/policy-rc.d can forbid the stop (postinst's note).
+		if systemctl --quiet is-active scd.service 2>/dev/null; then
+			echo "smartconfig: scd still runs (does /usr/sbin/policy-rc.d forbid stopping it?): sudo systemctl stop scd" >&2
+		fi
 	fi
 	;;
 esac

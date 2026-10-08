@@ -76,7 +76,16 @@ configure | abort-upgrade | abort-deconfigure | abort-remove)
 		# Restart, not start, on a first install too: a hand install's scd
 		# may still run its old sc, now moved aside, and start leaves a
 		# running unit as it is. It starts one that is not.
+		before=$(systemctl show -p MainPID --value scd.service 2>/dev/null || true)
 		deb-systemd-invoke restart scd.service >/dev/null || true
+		after=$(systemctl show -p MainPID --value scd.service 2>/dev/null || true)
+		# deb-systemd-invoke leaves it to /usr/sbin/policy-rc.d, which can
+		# forbid it (an image built with one) and still exit 0: then scd
+		# runs the sc it ran before, or none while it is enabled.
+		if { [ "${after:-0}" != 0 ] && [ "$after" = "$before" ]; } ||
+			{ [ "${after:-0}" = 0 ] && systemctl --quiet is-enabled scd.service 2>/dev/null; }; then
+			echo "smartconfig: scd was not restarted (does /usr/sbin/policy-rc.d forbid it?): sudo systemctl restart scd" >&2
+		fi
 	fi
 	if [ -e "$R/boot/grub/grub.cfg" ] && command -v update-grub >/dev/null; then
 		update-grub || echo "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub" >&2
