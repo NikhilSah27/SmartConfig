@@ -155,3 +155,7 @@ worklog line, push and CI green.
 4. The hand install: the package moves aside the copies it recognises
    (recommended), or leaves all of them and only warns?
 5. Package name `smartconfig` (recommended) or `sc`?
+6. The license. The repo has no LICENSE file, and a package's
+   `copyright` file names one. Until you choose, it says "No license has
+   been chosen yet: all rights reserved". Which license (for example MIT,
+   Apache-2.0 or GPL-3.0)?
