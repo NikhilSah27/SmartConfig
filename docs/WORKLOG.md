@@ -2449,4 +2449,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   (`~/smartconfig-work/signoff/signoff-fu-526f14b.sh`: accept-m2/m3/m4
   and the install; its WANT is this build) and the reboot. The M5 plan
   draft is in `~/smartconfig-work/fu-scratch/m5/M5_PLAN.draft.md`.
+- **The lab's ssh tolerates a silent guest, `1cadd8c`.** Why bios lost 6.2
+  twice: right after the recipe's `update-grub`, ssh to the busy guest on
+  the loaded host got no answer to 3 keepalives (`ServerAliveInterval=5`,
+  15 s) and gave up, exit 255, its message hidden by `LogLevel=ERROR`;
+  the path itself is the same as in `818dace` (which passed), so this
+  is the environment. `ServerAliveCountMax=12` (60 s; each call keeps its
+  own timeout), and `boot_id` (a read) runs once more after ssh's own
+  failure. Lab tests for both, each failing without its change. Full
+  checks and `make lab-test` passed. Next: the sign-off lab run again.
+- **M5 started: the plan, for your read, in
+  [M5_PLAN.md](M5_PLAN.md)** (your call, 2026-10-07: M5 starts after
+  the follow-ups either way). Its questions take the recommended answers
+  until you say otherwise: dpkg-deb, not nfpm (no new dependency);
+  `/usr/sbin/sc`; the store kept on purge; the hand install's known
+  copies moved aside; the package named `smartconfig`.
 
