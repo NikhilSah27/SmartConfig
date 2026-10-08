@@ -1379,7 +1379,12 @@ class E2E:
                          self.b("BUDGET_POLL"))
 
     def boot_id(self):
-        r = self.ssh("cat /proc/sys/kernel/random/boot_id", self.b("BUDGET_CMD"))
+        r = self.ssh("cat /proc/sys/kernel/random/boot_id", self.b("BUDGET_CMD"), lost=True)
+        if r.rc == 255:
+            # ssh's own failure: it only reads, so once more before it
+            # ends the mode (a busy guest after update-grub: 526f14b).
+            self.log("boot id: ssh failed (exit 255): %s; once more" % _cell(r.err, 120))
+            r = self.ssh("cat /proc/sys/kernel/random/boot_id", self.b("BUDGET_CMD"))
         bid = r.out.strip()
         if r.rc != 0 or not re.match(r"^[0-9a-f-]{36}$", bid):
             raise LabError("no boot id over ssh: %r %r" % (r.out, r.err))

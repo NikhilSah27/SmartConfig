@@ -60,7 +60,13 @@ SSH_OPTIONS = (
     "-o", "StrictHostKeyChecking=no",
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=5",
+    # 12 keepalives unanswered (60 s), not ssh's 3 (15 s): under TCG on a
+    # loaded host a busy guest's sshd went silent past 15 s right after
+    # update-grub, and ssh gave up with exit 255 and no word (LogLevel),
+    # twice in a row (the 526f14b sign-off runs, bios 6.2). Every call has
+    # its own timeout anyway.
     "-o", "ServerAliveInterval=5",
+    "-o", "ServerAliveCountMax=12",
     "-o", "LogLevel=ERROR",
 )
 

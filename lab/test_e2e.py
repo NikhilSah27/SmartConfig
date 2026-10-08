@@ -1527,6 +1527,22 @@ class TestVerdictClasses(unittest.TestCase):
         r.ssh("cat x", 300, retry=True)
         self.assertEqual(calls, ["cat x"])
 
+    def test_the_boot_id_is_asked_twice(self):
+        # ssh failing by itself once (a busy guest's silent sshd) does not
+        # end the mode; twice it does, as ssh's own (526f14b, bios 6.2).
+        bid = "88d315a4-3412-4f33-898d-ed5bc66babbb"
+        r = self.lost([ssh_result(255), labvm.Result(["ssh"], 0, bid + "\n", "", False, 1.0)])
+        self.assertEqual(r.boot_id(), bid)
+        self.assertTrue(any("once more" in m for m in r.logged), r.logged)
+        r = self.lost([ssh_result(255)] * 2)
+        with self.assertRaises(e2e.SshLost):
+            r.boot_id()
+
+    def test_ssh_waits_a_minute_for_a_silent_guest(self):
+        opts = " ".join(labvm.SSH_OPTIONS)
+        self.assertIn("ServerAliveInterval=5", opts)
+        self.assertIn("ServerAliveCountMax=12", opts)
+
     def test_the_reads_that_run_once_more(self):
         # Only reads: facts.sh normal and the boots file; nothing that
         # changes the guest (the chunk H review: the flag was not pinned).
