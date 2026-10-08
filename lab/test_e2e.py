@@ -2041,11 +2041,20 @@ class TestDeb(unittest.TestCase):
     from what the guest answers; 0.4 against the package's own files."""
 
     UP = "0.4.99+git20261008023503.643cec3+lab1"
+    DEB4 = "dpkg -i %s/smartconfig.deb" % e2e.GUEST_DIR  # D.4's; D.1 installs smartconfig-up.deb
+    TAKEN = "".join("smartconfig: the hand-installed %s is now %s.dpkg-old\n" % (f, f) for f in e2e.HAND_PATHS)
+    POST = ("".join("aside=%s\n" % f for f in e2e.HAND_PATHS) +
+            "there=/etc/grub.d/42_smartconfig\nscd=active\npid=1300\nexe=/usr/sbin/sc\nrescue=1\n" +
+            "".join("unit=%s /usr/lib/systemd/system/%s.service enabled\n" % (u, u) for u in ("scd", "sc-boot-seen", "sc-boot-ok")) +
+            "".join("dropin=%s /usr/lib/systemd/system/%s.service.d/50-smartconfig.conf\n" % (s, s) for s in ("rescue", "emergency")) +
+            "grubd=" + "c" * 64 + "\nwhich=/usr/sbin/sc\n")
 
     def guest(self, **over):
         """A fake sudo: the answers of a guest where all went well, but
         what over replaces (by the command's first words)."""
         answers = {
+            self.DEB4: self.TAKEN + "Setting up smartconfig\n",
+            "set -e": "", "echo scd=": "scd=active\npid=900\nexe=/usr/local/sbin/sc\nrescue=1\n", "for f in": self.POST,
             "systemctl show": "611\n12\nabc  -\n",
             "dpkg -i": "", "dpkg-query": self.UP + "\nactive\n742\n14\nabc  -\n",
             "grub-editenv": "", "dpkg -r": "",
@@ -2057,6 +2066,7 @@ class TestDeb(unittest.TestCase):
         r = fake_run(self)
         r.deb = True
         r.v["deb_up_version"] = self.UP
+        r.sha["/etc/grub.d/42_smartconfig"] = "c" * 64
 
         def sudo(command, timeout=None, lost=False, retry=False):
             for k, out in answers.items():
@@ -2070,7 +2080,8 @@ class TestDeb(unittest.TestCase):
     def test_all_well(self):
         r = self.guest()
         r.deb_lifecycle()
-        self.assertEqual([r.status(c) for c in ("D.1", "D.2", "D.3")], ["PASS"] * 3)
+        self.assertEqual([r.status(c) for c in ("D.1", "D.2", "D.3", "D.4")], ["PASS"] * 4)
+        self.assertEqual(r.rows["D.4"].seen, "7 of 7 aside; scd active /usr/sbin/sc; rescue=1; sc /usr/sbin/sc")
 
     def test_what_fails_each(self):
         for over, cid, says in (
@@ -2084,11 +2095,101 @@ class TestDeb(unittest.TestCase):
                 ({"test -e /usr/sbin/sc": "sc=gone\nscd=inactive\nrescue=0\n"}, "D.2", "store=None"),
                 ({"test -e /etc/grub.d": "grubd=there\nstore=kept\n"}, "D.3", "42_smartconfig there"),
                 ({"dpkg -P": ""}, "D.3", "did not say"),
+                ({self.DEB4: (self.TAKEN,)}, "D.4", "dpkg -i: exit 1"),
+                ({self.DEB4: self.TAKEN.replace("/etc/grub.d/42_smartconfig is", "x is")}, "D.4",
+                 "did not name /etc/grub.d/42_smartconfig"),
+                ({"for f in": self.POST.replace("aside=/etc/systemd/system/scd.service\n", "")}, "D.4",
+                 "no /etc/systemd/system/scd.service.dpkg-old"),
+                ({"for f in": self.POST + "there=/usr/local/sbin/sc\n"}, "D.4", "/usr/local/sbin/sc still there"),
+                ({"for f in": self.POST.replace("exe=/usr/sbin/sc", "exe=/usr/local/sbin/sc.dpkg-old")}, "D.4",
+                 "runs /usr/local/sbin/sc.dpkg-old"),
+                ({"for f in": self.POST.replace("pid=1300", "pid=900")}, "D.4", "MainPID 900 (the hand one's 900)"),
+                ({"for f in": self.POST.replace("scd=active", "scd=failed")}, "D.4", "scd failed"),
+                ({"for f in": self.POST.replace("unit=scd /usr/lib/systemd/system/scd.service",
+                                                "unit=scd /etc/systemd/system/scd.service")}, "D.4",
+                 "unit scd /etc/systemd/system/scd.service enabled"),
+                ({"for f in": self.POST.replace("sc-boot-ok.service enabled", "sc-boot-ok.service disabled")}, "D.4",
+                 "unit sc-boot-ok /usr/lib/systemd/system/sc-boot-ok.service disabled"),
+                ({"for f in": self.POST.replace("dropin=rescue ", "dropin=rescue /etc/systemd/system/rescue.service.d/50-smartconfig.conf ")},
+                 "D.4", "rescue.service drop-ins: /etc/"),
+                ({"for f in": self.POST.replace("dropin=emergency /usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf",
+                                                "dropin=emergency ")}, "D.4", "emergency.service drop-ins: none"),
+                ({"for f in": self.POST.replace("rescue=1", "rescue=2")}, "D.4", "2 rescue entries"),
+                ({"for f in": self.POST.replace("which=/usr/sbin/sc", "which=/usr/local/sbin/sc")}, "D.4",
+                 "sc in PATH is /usr/local/sbin/sc"),
+                ({"for f in": self.POST.replace("grubd=" + "c" * 64, "grubd=" + "f" * 64)}, "D.4", "not the package's"),
         ):
             r = self.guest(**over)
             s = stops(r.deb_lifecycle)
             self.assertEqual((s and s.row.id, r.status(cid)), (cid, "FAIL"), over)
             self.assertIn(says, r.rows[cid].notes, over)
+
+    def test_a_hand_install_that_does_not_come_up_is_the_labs(self):
+        for over in ({"set -e": ("install: cannot stat",)}, {"echo scd=": "scd=failed\npid=0\nexe=\nrescue=1\n"},
+                     {"echo scd=": "scd=active\npid=900\nexe=/usr/sbin/sc\nrescue=1\n"},
+                     {"echo scd=": "scd=active\npid=900\nexe=/usr/local/sbin/sc\nrescue=0\n"}):
+            r = self.guest(**over)
+            with self.assertRaisesRegex(e2e.LabError, "D.4: the hand install did not come up"):
+                r.deb_lifecycle()
+            self.assertEqual(r.status("D.3"), "PASS")
+
+    def test_the_hand_files_are_the_m4_tags(self):
+        r = fake_run(self)
+        r.stage = r.tmp
+        calls = []
+
+        def run_timed(argv, timeout, input=None, cwd=None):
+            calls.append((argv, cwd))
+            if argv[2] == "m4:scripts/42_smartconfig":
+                return labvm.Result(argv, 0, "#! /bin/sh\n# 42_smartconfig — m4\n", "", False, 0.1)
+            return labvm.Result(argv, 0, "[Unit]\n", "", False, 0.1)
+
+        with mock.patch.object(e2e.labvm, "run_timed", run_timed):
+            lines = r.stage_hand()
+        self.assertEqual([c[0] for c in calls], [["git", "show", "m4:" + src] for _, src in e2e.HAND])
+        self.assertEqual({c[1] for c in calls}, {e2e.REPO})
+        with open(os.path.join(r.tmp, "hand-42_smartconfig"), "rb") as f:
+            data = f.read()
+        self.assertEqual(data, "#! /bin/sh\n# 42_smartconfig — m4\n".encode())  # the bytes git gave
+        self.assertIn("%s  hand-42_smartconfig\n" % e2e.hashlib.sha256(data).hexdigest(), lines)
+        self.assertEqual(len(lines), 5)
+
+        def no_tag(argv, timeout, input=None, cwd=None):
+            return labvm.Result(argv, 128, "", "fatal: invalid object name 'm4'.\n", False, 0.1)
+
+        with mock.patch.object(e2e.labvm, "run_timed", no_tag), \
+                self.assertRaisesRegex(e2e.LabError, "git show m4:scripts/scd.service: exit 128 .*git fetch --tags"):
+            r.stage_hand()
+
+    def test_stage_debs(self):
+        """Both packages, the sha256 of the first's files, and D.4's hand
+        files: MANIFEST's lines for all."""
+        r = fake_run(self)
+        r.stage = os.path.join(r.tmp, "stage")
+        os.makedirs(r.stage)
+        calls = []
+
+        def run_timed(argv, timeout, input=None, cwd=None):
+            calls.append(argv[:3])
+            if argv[:2] == ["sh", "scripts/version.sh"]:
+                return labvm.Result(argv, 0, "0.4.99+git1.abc\n", "", False, 0.1)
+            if "scripts/build-deb.sh" in argv:
+                with open(argv[-1], "wb") as f:
+                    f.write(argv[1].encode())
+            elif argv[0] == "dpkg-deb":
+                for _, dest in e2e.DEB_FILES:
+                    os.makedirs(os.path.dirname(argv[-1] + dest), exist_ok=True)
+                    with open(argv[-1] + dest, "wb") as f:
+                        f.write(dest.encode())
+            return labvm.Result(argv, 0, "[Unit]\n" if argv[0] == "git" else "", "", False, 0.1)
+
+        with mock.patch.object(e2e.labvm, "run_timed", run_timed):
+            lines = r.stage_debs()
+        names = [l.split()[1] for l in lines]
+        self.assertEqual(names, ["smartconfig.deb", "smartconfig-up.deb"] + [n for n, _ in e2e.HAND])
+        self.assertEqual((r.v["deb_version"], r.v["deb_up_version"]), ("0.4.99+git1.abc", "0.4.99+git1.abc+lab1"))
+        self.assertEqual(r.sha["/usr/sbin/sc"], e2e.hashlib.sha256(b"/usr/sbin/sc").hexdigest())
+        self.assertEqual(calls[1:3], [["env", "VERSION=0.4.99+git1.abc", "sh"], ["env", "VERSION=0.4.99+git1.abc+lab1", "sh"]])
 
     def test_04_takes_the_package_files(self):
         r = fake_run(self)
@@ -3900,7 +4001,7 @@ class TestExecute(unittest.TestCase):
         r, rc = self.execute(lambda r: passing(r, "5.1"))
         self.consistent(r, rc, "INCONCLUSIVE")
         notrun = [c for c, cells in r.result.items() if cells[1] == "NOTRUN"]
-        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "D.1", "D.2", "D.3"])
+        self.assertEqual(notrun, ["5.1", "5.1.ok", "5.1.notime", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "D.1", "D.2", "D.3", "D.4"])
         self.assertEqual(r.result["5.1"][8], "not reached")
         self.assertEqual(r.discards, 0)
         self.assertIn("failing: 5.1\tNOTRUN", r.err)
