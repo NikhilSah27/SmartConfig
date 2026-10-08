@@ -341,7 +341,11 @@ step "7. 42_smartconfig under grub-mkconfig, with this machine's /boot and devic
 cp -a /etc/grub.d "$WORK/grub.d-stock"
 rm -f "$WORK/grub.d-stock/42_smartconfig"
 cp -a "$WORK/grub.d-stock" "$WORK/grub.d-sc"
-install -m 0755 scripts/42_smartconfig "$WORK/grub.d-sc/"
+# Its sc= line points at this run's sc: it adds nothing without one (a
+# package removed, not purged), and /usr/sbin/sc may not be there.
+sed "s|^sc=/usr/sbin/sc\$|sc=$UNIT_SC|" scripts/42_smartconfig >"$WORK/grub.d-sc/42_smartconfig"
+chmod 0755 "$WORK/grub.d-sc/42_smartconfig"
+grep -qxF "sc=$UNIT_SC" "$WORK/grub.d-sc/42_smartconfig" || fail "42_smartconfig has no sc=/usr/sbin/sc line to point at $UNIT_SC"
 cp -a /etc/default/grub.d "$WORK/default.grub.d"
 echo GRUB_DISABLE_OS_PROBER=true >"$WORK/default.grub.d/99-sc-accept.cfg"
 mkconfig() {
