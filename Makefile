@@ -1,7 +1,7 @@
 BIN := bin/sc
 export CGO_ENABLED := 0
 
-.PHONY: build test race vet fmt smoke m1-compat accept-m2 accept-m3 accept-m4 clean lab-e2e lab-image lab-test lab-clean
+.PHONY: build deb test race vet fmt smoke m1-compat accept-m2 accept-m3 accept-m4 clean lab-e2e lab-image lab-test lab-clean
 
 # The QEMU rescue lab (lab/README.md): dev only, stdlib Python, no sudo, no KVM, not in CI.
 LAB = env PYTHONDONTWRITEBYTECODE=1 python3
@@ -18,6 +18,11 @@ VERSION ?= $(shell sh scripts/version.sh 2>/dev/null || echo devel)
 
 build:
 	go build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o $(BIN) ./cmd/sc
+
+# The package (M5): dist/smartconfig_<VERSION>_amd64.deb, dpkg-deb only;
+# the same commit builds the same bytes.
+deb: build
+	sh scripts/build-deb.sh dist/smartconfig_$(VERSION)_amd64.deb
 
 test:
 	go test ./...
