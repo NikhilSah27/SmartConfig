@@ -348,7 +348,12 @@ PER_BOOT = {"menu": 1, "no-ssh": 1, "vga-gap": 2, "stall": 1}  # and RETRIES_PAN
 # bios run: QMP seq 3 and 4, nothing on serial or VGA between them), the
 # kernel's reset and then the firmware's own. A guest RESET this soon after
 # the one before it (QEMU's timestamps) is the same boot's start, not a
-# reset of its own; one any later is (the boot's waits say so).
+# reset of its own; one any later is (the boot's waits say so). The wait
+# for it is RESET_CHAIN s of the host's time, then a QMP round trip: QMP's
+# reader takes the serial mark before an event is in its list, and in the
+# --deb bios run of 1c5850f the host stood still 2.5 s in that mark, so
+# the second RESET (13 ms after the first by QEMU's clock) came after the
+# wait, as a reset of its own.
 RESET_CHAIN = 2.0
 # stall_dump samples QEMU twice, this many seconds apart.
 STALL_SAMPLE = 5.0
@@ -1466,10 +1471,13 @@ class E2E:
     def settle_reset(self, ev):
         """The RESET a boot begins at: ev, or the last guest RESET of those
         that followed it each within RESET_CHAIN s (chained_reset). Waits
-        RESET_CHAIN s for the next one; three at most."""
+        RESET_CHAIN s for the next one, then until QMP's reader has caught
+        up; three at most."""
         for _ in range(3):
             nxt = self.qmp.wait_event(("RESET", "SHUTDOWN"), since=ev["seq"] + 1, timeout=RESET_CHAIN,
                                       abort=lambda: not self.machine.alive())
+            if nxt is None and self.machine.alive():
+                nxt = self.caught_up(ev["seq"] + 1)
             if not chained_reset(ev, nxt):
                 return ev
             self.log("[lab] a second guest RESET %.0f ms after %s#%d (the firmware's own reset): the boot "
@@ -1477,6 +1485,18 @@ class E2E:
             self.chained_resets.append([ev["seq"], nxt["seq"], round(qmp_time(nxt) - qmp_time(ev), 3)])
             ev = nxt
         return ev
+
+    def caught_up(self, since):
+        """The first RESET or SHUTDOWN from since once QMP's reader has
+        caught up (a sync, RESET_CHAIN's note), or None; None too when QMP
+        fails (QEMU gone: the boot's waits say so)."""
+        try:
+            self.qmp.sync()
+        except labvm.QmpError as e:
+            self.log("[lab] QMP sync after a RESET: %s" % e)
+            return None
+        evs = self.qmp.events_since(since, ("RESET", "SHUTDOWN"))
+        return evs[0] if evs else None
 
     def wait_reset(self, since, budget, names=("RESET",), what="a reset"):
         ev = self.qmp.wait_event(names, since=since, timeout=self.left(budget),

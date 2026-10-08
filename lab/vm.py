@@ -1012,6 +1012,12 @@ class Qmp:
             raise QmpError("QMP %s: %s: %s" % (name, err.get("class"), err.get("desc")))
         return reply.get("return")
 
+    def sync(self, timeout=30.0):
+        """A round trip (query-status). Once its reply is read, every event
+        QEMU sent before it has been through the listeners and is in events:
+        the reader takes the lines in order."""
+        self.cmd("query-status", timeout=timeout)
+
     def hmp(self, line, timeout=10.0):
         """An HMP command through QMP; its text output."""
         return self.cmd("human-monitor-command", {"command-line": line}, timeout)

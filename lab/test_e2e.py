@@ -1708,11 +1708,14 @@ def qmp_event(seq, name, guest, secs):
 
 class FakeQmp:
     """QMP's event list as settle_reset reads it: wait_event returns at
-    once (the events are all there already)."""
+    once (the events are all there already); late ones are in the list
+    only after a sync (the reader still had them), or "gone": QMP fails."""
 
-    def __init__(self, events):
+    def __init__(self, events, late=()):
         self.events = events
+        self.late = late
         self.waits = []
+        self.syncs = 0
 
     def wait_event(self, names, since=0, timeout=None, abort=None):
         self.waits.append((since, timeout))
@@ -1720,6 +1723,16 @@ class FakeQmp:
             if ev["event"] in names:
                 return ev
         return None
+
+    def sync(self):
+        self.syncs += 1
+        if self.late == "gone":
+            raise e2e.labvm.QmpError("QMP is closed: cannot run query-status")
+        self.events.extend(self.late)
+        self.late = ()
+
+    def events_since(self, since, names=None):
+        return [e for e in self.events[since:] if names is None or e["event"] in names]
 
 
 class FakeMachine:
@@ -1755,10 +1768,10 @@ class TestResetChain(unittest.TestCase):
         self.assertTrue(e2e.chained_reset(qmp_event(3, "RESET", False, 100.0), qmp_event(4, "RESET", True, 100.5)))
         self.assertEqual(e2e.qmp_time({"t": 7.5}), 7.5)
 
-    def boot_at(self, mode, events, first):
+    def boot_at(self, mode, events, first, late=()):
         r = fake_run(self, mode)
-        r.qmp, r.machine = FakeQmp(events), FakeMachine()
-        r.marks = {e["seq"]: Mark(10 * e["seq"], e["seq"]) for e in events}
+        r.qmp, r.machine = FakeQmp(events, late), FakeMachine()
+        r.marks = {e["seq"]: Mark(10 * e["seq"], e["seq"]) for e in events + list(late if late != "gone" else [])}
         StartedWatch.started = []
         with mock.patch.object(e2e, "VgaWatch", StartedWatch):
             got = r.new_boot(events[first])
@@ -1783,7 +1796,24 @@ class TestResetChain(unittest.TestCase):
         r, got = self.boot_at("uefi", events, 0)
         self.assertIs(got, events[0])
         self.assertEqual((r.cur[1], r.chained_resets, StartedWatch.started), (events[0], [], []))
-        self.assertEqual(r.qmp.waits, [(1, e2e.RESET_CHAIN)])
+        self.assertEqual((r.qmp.waits, r.qmp.syncs), ([(1, e2e.RESET_CHAIN)], 1))
+
+    def test_a_chained_reset_the_reader_still_holds(self):
+        """The --deb bios run of 1c5850f: the second RESET, 13 ms after the
+        first by QEMU's clock, was 2.5 s in QMP's reader (its serial mark),
+        past the wait; then 1.1 took it for a reset of its own."""
+        events = [qmp_event(0, "RESUME", False, 1.0), qmp_event(1, "RESET", True, 100.0)]
+        late = [qmp_event(2, "RESET", True, 100.013)]
+        r, got = self.boot_at("bios", events, 1, late)
+        self.assertEqual((got["seq"], r.chained_resets, r.qmp.syncs), (2, [[1, 2, 0.013]], 2))
+        self.assertEqual(e2e.Attempt("1", 1, r.cur[0], r.cur[1], False).since, 3)
+
+    def test_qmp_gone_at_the_sync(self):
+        events = [qmp_event(0, "RESET", True, 100.0)]
+        r, got = self.boot_at("bios", events, 0, "gone")
+        self.assertIs(got, events[0])
+        self.assertEqual(r.chained_resets, [])
+        self.assertTrue(any("QMP sync after a RESET: QMP is closed" in x for x in r.logged))
 
     def test_late_or_host_reset_not_chained(self):
         for second in (qmp_event(1, "RESET", True, 103.0), qmp_event(1, "RESET", False, 100.01),

@@ -2153,6 +2153,16 @@ class TestQmp(unittest.TestCase):
         self.qmp.close()
         self.assertFalse(self.qmp._thread.is_alive())
 
+    def test_sync_brings_in_an_event_the_listeners_still_hold(self):
+        # The --deb bios run of 1c5850f: e2e's serial mark held a chained
+        # RESET 2.5 s, past settle_reset's wait. After a round trip it is in.
+        self.qmp.listeners.append(lambda ev: time.sleep(1.0))
+        self.qemu.event("RESET", guest=True, reason="guest-reset")
+        self.assertIsNone(self.qmp.wait_event("RESET", timeout=0.1))
+        self.qmp.sync()
+        self.assertEqual([e["seq"] for e in self.qmp.events_since(0, "RESET")], [0])
+        self.assertEqual(self.qemu.got[-1]["execute"], "query-status")
+
     def test_an_event_sent_before_qemu_exits_is_not_lost_to_abort(self):
         # 5.2 of the fc47ea3 runs, both modes: the guest powered off, QEMU
         # sent SHUTDOWN and exited 0. e2e's listener marked the serial log
