@@ -76,7 +76,10 @@ With the file under a home directory only its owner can read, apt says
 The first boot verdict comes at the next boot. If `update-grub` fails
 during the install, the package is in and says so; fix what it reports
 and run `sudo update-grub`. A newer package over it restarts scd and
-keeps the store.
+keeps the store. Where `/usr/sbin/policy-rc.d` forbids packages to
+start, restart or stop services (some images ship one), the package
+says that scd was not restarted, or still runs, and the command to do
+it by hand.
 
 An install by hand from before the package (this README up to M4: `sc`
 in `/usr/local/sbin`, the units and drop-ins in `/etc/systemd/system`,
@@ -86,6 +89,9 @@ which systemd, GRUB and PATH pass over; anything else at those paths is
 left, and named. If dpkg cannot unpack the package, the hand install's
 `42_smartconfig` is put back and nothing else of it was touched. A purge
 deletes `42_smartconfig.dpkg-old`, as dpkg does next to a conffile.
+Until the next healthy boot, `sudo sc status` lists the hand install's
+units and drop-ins as `deleted; /usr/lib's in use`: the package's own
+stand in for them, and that is no problem.
 
 `sudo apt remove smartconfig` stops scd, takes the rescue entry out of
 `grub.cfg` and unsets the menu flag; the history in `/var/lib/smartconfig`
