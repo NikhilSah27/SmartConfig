@@ -2512,4 +2512,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   docs, control and md5sums; reproducible (two builds of a commit match).
   `TestBuildDeb`. Full checks, `make lab-test` and `make deb` passed. The
   hand install on this VM is unchanged until the package replaces it.
+- **M5 steps 4 and 7, the maintainer scripts, done `e710ce2`.** `postinst`,
+  `prerm`, `postrm` as `dh_installsystemd` writes them (enable, mask,
+  purge), scd restarted on every configure (start would leave a hand
+  install's old scd running), `update-grub` on install and remove, the
+  flag unset on remove, the store kept on purge and said (Q3). `preinst`
+  on a first install moves the README's hand install aside as
+  `NAME.dpkg-old` (Q4), disabling its units first. Tests: each script's
+  calls on install, upgrade, a unit the owner disabled, a failing
+  `update-grub`, remove and purge; the takeover with a foreign unit left
+  alone. Full checks passed (twice: the restart came from rereading the
+  takeover, after the first run).
 
