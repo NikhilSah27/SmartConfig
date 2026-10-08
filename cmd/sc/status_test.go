@@ -357,6 +357,61 @@ func TestStatusNewAndDeleted(t *testing.T) {
 	}
 }
 
+// A unit or drop-in of /etc/systemd/system that is gone, with one of the
+// same name in a later unit directory, is not an error: systemd reads
+// that one (the package's, after it took over a hand install: M5's
+// sign-off, where sc status exited 2 and offered to undo the takeover).
+// With none, or only a mask, it still is.
+func TestStatusDeletedOverride(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "ro", false)
+	etc, lib := filepath.Join(dir, "etc/systemd/system"), filepath.Join(dir, "usr/lib/systemd/system")
+	g, err := check.ParseGraph("check fstab " + fstab + "\ncheck unit " + etc + "/*.service\ncheck unitdropin " + etc + "/*.service.d/*.conf\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	oldEtc, oldLater := unitEtcDir, unitLaterDirs
+	unitEtcDir, unitLaterDirs = etc, []string{filepath.Join(dir, "run/systemd/system"), lib}
+	t.Cleanup(func() { unitEtcDir, unitLaterDirs = oldEtc, oldLater })
+	files := []string{"scd.service", "rescue.service.d/50-smartconfig.conf", "other.service", "masked.service"}
+	for _, f := range files {
+		os.MkdirAll(filepath.Dir(filepath.Join(etc, f)), 0o755)
+		snap(t, filepath.Join(etc, f), "[Unit]\n")
+	}
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	for _, f := range []string{"scd.service", "rescue.service.d/50-smartconfig.conf"} { // the package's
+		os.MkdirAll(filepath.Dir(filepath.Join(lib, f)), 0o755)
+		os.WriteFile(filepath.Join(lib, f), []byte("[Unit]\n"), 0o644)
+	}
+	os.Symlink("/dev/null", filepath.Join(lib, "masked.service"))
+	gone := func(names ...string) {
+		s, err := store.Open(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		for _, f := range names {
+			os.Remove(filepath.Join(etc, f))
+			if _, err := s.Record([]store.Obs{{Path: filepath.Join(etc, f), Origin: store.OriginAuto}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	gone("scd.service", "rescue.service.d/50-smartconfig.conf")
+	r := sc(t, "status")
+	in := "deleted; " + filepath.Join(dir, "usr/lib") + "'s in use\n"
+	if r.code != 0 || strings.Count(r.stdout, in) != 2 || strings.Contains(r.stdout, "error") || strings.Contains(r.stdout, "sc restore") {
+		t.Errorf("with the package's in /usr/lib: %+v", r)
+	}
+	gone("other.service", "masked.service")
+	r = sc(t, "status")
+	if r.code != 2 || strings.Count(r.stdout, "error: deleted\n") != 2 || strings.Count(r.stdout, in) != 2 ||
+		!strings.Contains(r.stdout, "To put "+filepath.Join(etc, "masked.service")+" back") {
+		t.Errorf("none, and a mask: %+v", r)
+	}
+}
+
 // Without a healthy boot, the newest rows are compared with the version
 // before the oldest of them: the edit that added the blocker may be that
 // oldest row, its good version older than the list (the M4 final review,

@@ -583,19 +583,51 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 	return exit(worst)
 }
 
+// unitEtcDir and unitLaterDirs: where systemd reads units and drop-ins,
+// /etc/systemd/system first, then the rest in its order; tests point them
+// elsewhere.
+var (
+	unitEtcDir    = "/etc/systemd/system"
+	unitLaterDirs = []string{"/run/systemd/system", "/usr/local/lib/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system"}
+)
+
+// standIn: for a unit file or drop-in of /etc/systemd/system, the
+// directory of the first later one of the same name, a file, which systemd
+// reads once the /etc one is gone; "" when there is none (a link to
+// /dev/null, a mask, is none).
+func standIn(path string) string {
+	rel, ok := strings.CutPrefix(path, unitEtcDir+"/")
+	if !ok {
+		return ""
+	}
+	for _, d := range unitLaterDirs {
+		if fi, err := os.Stat(filepath.Join(d, rel)); err == nil && fi.Mode().IsRegular() {
+			return d
+		}
+	}
+	return ""
+}
+
 // statusProblem is the PROBLEM column of a changed path: for a file with
 // a checker, the worst finding its change added, as sc edit judges an
 // edit (before is the version it is compared with); else what the row is.
 // A file with a checker that is gone is an error: what read it is left
 // without it. Not a flag file (nologin, sshd_not_to_be_run) nor
 // ld.so.preload: deleting them is what their own findings ask for, and
-// the undo would put them back (the M4 final review, B3).
+// the undo would put them back (the M4 final review, B3). Nor a unit or
+// drop-in of /etc/systemd/system with one of the same name in a later unit
+// directory, which systemd reads in its place: the package's under
+// /usr/lib once it has taken over a hand install (M5's sign-off), the
+// distribution's once an override goes; the undo would hide it again.
 func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store.Row, before *store.Change) (string, check.Severity) {
 	checker := c.GraphInUse().Checker(r.Path)
 	checked := checker != ""
 	switch r.Kind {
 	case store.KindDeleted:
 		if checked && checker != "flag" && checker != "preload" && before != nil && before.Kind != store.KindDeleted {
+			if d := standIn(r.Path); d != "" && (checker == "unit" || checker == "unitdropin") {
+				return "deleted; " + strings.TrimSuffix(d, "/systemd/system") + "'s in use", 0
+			}
 			return "error: deleted", check.Error
 		}
 		return "deleted", 0
