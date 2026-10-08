@@ -17,15 +17,16 @@ overlay of the reference image (vm.py provision):
   boot 4  healthy   the menu once more, left alone; the ok verdict clears it
   boot 5  normal    no menu again (--no-boot5 leaves it out); poweroff
 
-Every check has an ID from the STEP11 design (section 4), a class ([M4]:
-SmartConfig did not do what it should; [lab]: the lab could not tell) and
+Every check has an ID from the STEP11 design (section 4), a class ([M4],
+or [M5] for the package's D.x: SmartConfig did not do what it should;
+[lab]: the lab could not tell) and
 a strength (H: the mode stops; F: it fails, the mode goes on; W: a
 warning). Known [lab] flakes (section 6) are retried, the whole boot
 again after a reset; nothing else is.
 
   e2e.py --mode uefi|bios [--boot2 natural|reset-at-timeout] [--no-boot5] [--keep]
 
-Exit status 0 PASS, 1 FAIL (an [M4] check failed), 3 INCONCLUSIVE (a [lab]
+Exit status 0 PASS, 1 FAIL (an [M4] or [M5] check failed), 3 INCONCLUSIVE (a [lab]
 check failed, the retries ran out, or the time did). The run directory
 (vm.py's cache, runs/<UTC>-<mode>-<git7>/) gets result.txt (a row per
 check), ledger.json, the logs and evidence/. One line goes to stdout:
@@ -287,8 +288,8 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
 
 
 class Row:
-    """One check's result. cause is why it failed: M4 or lab (a [lab]
-    problem in an [M4] check, say QEMU died, makes it lab)."""
+    """One check's result. cause is why it failed: its class (M4, M5) or
+    lab (a [lab] problem in an [M4] check, say QEMU died, makes it lab)."""
 
     FIELDS = ("id", "status", "cls", "strength", "channel", "evidence", "expected", "source", "seen", "notes")
 
@@ -326,13 +327,18 @@ def result_line(row):
                                          row.expected, row.source, row.seen, row.notes))
 
 
+def smartconfigs(row):
+    """A FAIL of SmartConfig's: of its class ([M4], [M5]), not the lab's."""
+    return row.status == "FAIL" and row.cause != "lab"
+
+
 def merge(old, new):
     """Which of two results of one check stands: a FAIL of SmartConfig's
     stays (a later attempt never hides it), a SKIP never replaces a
     result, otherwise the newer one."""
     if old is None:
         return new
-    if old.status == "FAIL" and old.cause == "M4":
+    if smartconfigs(old):
         return old
     if new.status == "SKIP" and old.status != "SKIP":
         return old
@@ -340,9 +346,9 @@ def merge(old, new):
 
 
 def verdict(rows, lab_error=None):
-    """PASS, FAIL (an [M4] failure) or INCONCLUSIVE ([lab] failure, an
-    error of the lab, or checks never run)."""
-    if any(r.status == "FAIL" and r.cause == "M4" for r in rows):
+    """PASS, FAIL (an [M4] or [M5] failure) or INCONCLUSIVE ([lab]
+    failure, an error of the lab, or checks never run)."""
+    if any(smartconfigs(r) for r in rows):
         return "FAIL"
     if lab_error or any(r.status in ("FAIL", "NOTRUN") for r in rows):
         return "INCONCLUSIVE"
@@ -1335,7 +1341,7 @@ class E2E:
         row = Row(spec.id, "FAIL", spec.strength, "lab", seen=why, notes="[lab] " + why)
         self.history.append(row.json())
         old = self.rows.get(spec.id)
-        if old is None or not (old.status == "FAIL" and old.cause == "M4"):
+        if old is None or not smartconfigs(old):
             self.rows[spec.id] = row
         self.log("  %-10s FAIL  [lab] %s" % (spec.id, _cell(why, 300)))
 

@@ -3987,6 +3987,22 @@ class TestExecute(unittest.TestCase):
         self.assertIn("failing: 1.8\tFAIL", r.err)
         self.assertIn("-- facts.sh dump --\n== facts rc=0", r.err)
 
+    def test_an_m5_failure_exits_1(self):
+        # The M5 review (B2): a broken package (D.2 finds the rescue entry
+        # still in grub.cfg) is SmartConfig's FAIL, not INCONCLUSIVE.
+        r, rc = self.execute(lambda r: passing(r, faults={"D.2": "rescue=1, not 0"}), deb=True)
+        self.consistent(r, rc, "FAIL")
+        self.assertEqual(r.result["D.2"][1:4], ["FAIL", "M5", "H"])
+
+    def test_an_m5_failure_stays_after_a_lab_error(self):
+        def flow(r):
+            passing(r, "D.4")
+            r.at("D.4")
+            r.record("D.4", problems=["2 rescue entries in grub.cfg"], stop=False)
+            raise e2e.LabError("ssh failed (exit 255)")
+        r, rc = self.execute(flow, deb=True)
+        self.assertEqual((rc, r.result["D.4"][1:3]), (1, ["FAIL", "M5"]))
+
     def test_a_stop_exits_1_and_leaves_the_rest_notrun(self):
         r, rc = self.execute(lambda r: passing(r, faults={"1.2": "Command line differs"}))  # H: the mode stops there
         self.consistent(r, rc, "FAIL")

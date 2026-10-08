@@ -32,8 +32,8 @@ with the VGA text screen) runs six boots on one overlay disk (nine with
 | D package | `--deb` only, before the poweroff: the package was what boot 0 installed (`dpkg -i`); a later build of it goes in over it (scd restarted, the store and boots kept), then `dpkg -r` (scd stopped, no rescue entry, no flag, the store kept), then `dpkg -P` (42_smartconfig gone, the store still kept); then the README's hand install up to M4 (the `m4` tag's files, `sc` in `/usr/local/sbin`, scd running) and `dpkg -i` over it (each file moved aside as `NAME.dpkg-old`, the units from `/usr/lib`, scd from `/usr/sbin/sc`, one rescue entry) | D.1-D.4 |
 | 6a-6c GRUB password | `--grub-password` only, before the poweroff: the README's GRUB superuser recipe; the default boot asks for nothing; the rescue entry asks for the user and the password, and boots with them; Ubuntu from the menu asks for nothing | 6.1-6.5 |
 
-Every check has a class and a strength. **[M4]** checks SmartConfig;
-**[lab]** checks the lab itself (tools, QEMU, the VGA channel, keys). **H**
+Every check has a class and a strength. **[M4]** checks SmartConfig
+(**[M5]**: the package's D.x); **[lab]** checks the lab itself (tools, QEMU, the VGA channel, keys). **H**
 stops the mode, **F** fails it and goes on, **W** only warns. A known lab
 flake is retried, the whole boot after a reset, at most `RETRIES_MODE`
 times a mode: TCG's own panic ("IO-APIC + timer doesn't work"; any other
@@ -58,7 +58,7 @@ On bios the VGA screen is the only evidence of what GRUB did: a failed
 poll, or screens with neither an observer line nor a menu, is a [lab]
 failure, never a pass.
 
-Verdicts: **PASS** (exit 0), **FAIL** (1: an [M4] check failed),
+Verdicts: **PASS** (exit 0), **FAIL** (1: an [M4] or [M5] check failed),
 **INCONCLUSIVE** (3: a [lab] check failed, the retries or the time ran
 out). `make lab-e2e` runs both modes, echoes each mode's summary line, and
 ends with `lab-e2e: PASS`, `FAIL` (a mode FAILed and said so in its
