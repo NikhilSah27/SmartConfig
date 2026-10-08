@@ -13,7 +13,7 @@ import (
 
 // buildDeb runs scripts/build-deb.sh with a made-up sc and the git inputs
 // fixed; the .deb's path.
-func buildDeb(t *testing.T, name string) string {
+func buildDeb(t *testing.T, name string, env ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("dpkg-deb"); err != nil {
 		t.Skip("no dpkg-deb")
@@ -26,6 +26,7 @@ func buildDeb(t *testing.T, name string) string {
 	cmd.Dir = "../.."
 	cmd.Env = append(os.Environ(), "SC_BIN="+sc, "VERSION=0.5.0", "DEB_MAINTAINER=Test Owner <owner@example.org>",
 		"SOURCE_DATE_EPOCH=1790000000", "REVISION=0123456789ab")
+	cmd.Env = append(cmd.Env, env...)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build-deb.sh: %v\n%s", err, b)
 	}
@@ -69,7 +70,7 @@ func TestBuildDeb(t *testing.T) {
 		"-rw-r--r-- root/root ./usr/lib/systemd/system/scd.service",
 		"-rwxr-xr-x root/root ./usr/sbin/sc",
 		"-rw-r--r-- root/root ./usr/share/doc/smartconfig/README.md",
-		"-rw-r--r-- root/root ./usr/share/doc/smartconfig/changelog.Debian.gz",
+		"-rw-r--r-- root/root ./usr/share/doc/smartconfig/changelog.gz",
 		"-rw-r--r-- root/root ./usr/share/doc/smartconfig/copyright",
 	}
 	if strings.Join(files, "\n") != strings.Join(want, "\n") {
@@ -91,6 +92,38 @@ func TestBuildDeb(t *testing.T) {
 	if b, err := sums.CombinedOutput(); err != nil {
 		t.Errorf("md5sums: %v\n%s", err, b)
 	}
+	// md5sums: every file but the conffile (dh_md5sums); Installed-Size:
+	// each file's KiB rounded up and 1 for each directory (dpkg-gencontrol).
+	var listed, inTree []string
+	b, _ := os.ReadFile(filepath.Join(x, "DEBIAN/md5sums"))
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		listed = append(listed, strings.Fields(l)[1])
+	}
+	size := int64(0)
+	filepath.WalkDir(x, func(p string, d os.DirEntry, err error) error {
+		rel, _ := filepath.Rel(x, p)
+		switch {
+		case rel == ".":
+		case rel == "DEBIAN":
+			return filepath.SkipDir
+		case d.Type().IsRegular():
+			fi, _ := d.Info()
+			size += (fi.Size() + 1023) / 1024
+			if rel != "etc/grub.d/42_smartconfig" {
+				inTree = append(inTree, rel)
+			}
+		default:
+			size++
+		}
+		return nil
+	})
+	slices.Sort(inTree)
+	if !slices.Equal(listed, inTree) {
+		t.Errorf("md5sums lists %v, not %v", listed, inTree)
+	}
+	if want := fmt.Sprintf("Installed-Size: %d\n", size); !strings.Contains(control, want) {
+		t.Errorf("control lacks %q:\n%s", want, control)
+	}
 	if b, _ := os.ReadFile(filepath.Join(x, "usr/lib/systemd/system/scd.service")); !strings.Contains(string(b), "\nExecStart=/usr/sbin/sc watch\n") {
 		t.Errorf("scd.service:\n%s", b)
 	}
@@ -100,6 +133,13 @@ func TestBuildDeb(t *testing.T) {
 	}
 	if again := buildDeb(t, "b.deb"); sha(again) != sha(deb) {
 		t.Errorf("two builds of the same inputs differ")
+	}
+	// Staged on another file system (tmpfs: directories of no blocks), the
+	// same bytes (the M5 review, A4).
+	if fi, err := os.Stat("/dev/shm"); err == nil && fi.IsDir() {
+		if shm := buildDeb(t, "c.deb", "TMPDIR=/dev/shm"); sha(shm) != sha(deb) {
+			t.Errorf("staged in /dev/shm, the build differs")
+		}
 	}
 }
 

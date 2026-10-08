@@ -57,7 +57,7 @@ m1-compat:
 	SC_M1_BIN=$(CURDIR)/bin/sc-m1 go test -count=1 -run TestM1Compat ./internal/store
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
 
 # The M4 owner scenario in a VM, every mode in LAB_MODES (about 25 min each
 # under TCG); needs make lab-image once. The recipe ends in exit 1 if a mode

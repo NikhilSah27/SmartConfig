@@ -43,11 +43,15 @@ EOF
 chmod 0644 "$doc/copyright"
 printf 'smartconfig (%s) noble; urgency=medium\n\n  * Built from %s.\n\n -- %s  %s\n' \
 	"$version" "$revision" "$maintainer" "$(date -u -R -d "@$SOURCE_DATE_EPOCH")" |
-	gzip -9n >"$doc/changelog.Debian.gz"
-chmod 0644 "$doc/changelog.Debian.gz"
+	gzip -9n >"$doc/changelog.gz"
+chmod 0644 "$doc/changelog.gz" # a native package's name for it (no Debian revision)
 
 mkdir -p "$r/DEBIAN"
-size=$(du -sk --exclude=DEBIAN "$r" | cut -f1)
+# Installed-Size as dpkg-gencontrol counts it: each file's (and link's)
+# size in KiB, rounded up, and 1 for anything else; not du's blocks, which
+# depend on the file system the stage is on (the M5 review, A4).
+size=$(cd "$r" && find . -path ./DEBIAN -prune -o ! -name . -printf '%y %s\n' |
+	awk '$1 == "f" || $1 == "l" { k += int(($2 + 1023) / 1024); next } { k += 1 } END { print k }')
 cat >"$r/DEBIAN/control" <<EOF
 Package: smartconfig
 Version: $version
@@ -65,7 +69,9 @@ Description: record and check every config file change, with a rescue boot
  which change since the last healthy boot broke it and how to undo it.
 EOF
 echo /etc/grub.d/42_smartconfig >"$r/DEBIAN/conffiles"
-(cd "$r" && find . -type f ! -path './DEBIAN/*' | sed 's|^\./||' | LC_ALL=C sort | xargs md5sum) >"$r/DEBIAN/md5sums"
+# md5sums: every file but the conffile, as dh_md5sums has it (dpkg keeps
+# a conffile's own sum).
+(cd "$r" && find . -type f ! -path './DEBIAN/*' ! -path ./etc/grub.d/42_smartconfig | sed 's|^\./||' | LC_ALL=C sort | xargs md5sum) >"$r/DEBIAN/md5sums"
 for f in preinst postinst prerm postrm; do
 	if [ -f "scripts/deb/$f" ]; then install -m 0755 "scripts/deb/$f" "$r/DEBIAN/$f"; fi
 done
