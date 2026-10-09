@@ -253,6 +253,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
 </defs></svg>
 
 <div class="wrap">
+<p role="note" style="margin:0;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:6px;font-size:14px;line-height:1.5;color:var(--ink)"><b>Made on 27 Sep 2026, at M1.</b> Scenes tagged concept show the design of milestones 2 to 7 at that time. M2 to M5 have been built since and differ in places (the project README shows the real commands); M6 and M7 are not built. Where things stand now: <a href="https://github.com/NikhilSah27/SmartConfig/blob/main/MILESTONES.md" style="color:inherit">MILESTONES.md</a>.</p>
   <span class="kicker">SmartConfig · three short films</span>
   <h1>How SmartConfig gets built, how it will work, and life without it</h1>
   <p class="lede">Pick a film. Each one is narrated (your browser reads the captions aloud), has sound effects, chapters and a fullscreen mode. Tags say what is real and what is a mock-up of software that isn't built yet.</p>
@@ -347,7 +348,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--orange); }
 
   <div class="notes">
     <div class="note"><b>What is real</b>Milestone 1 scenes use the real output of <code>sc</code> recorded on this VM. The boot failure is based on running systemd's own fstab generator against the broken file on this VM: the <code>/data</code> mount requires the missing disk, so boot waits 90 s and stops. The root account on this VM is locked, as on every default Ubuntu install.</div>
-    <div class="note"><b>What is a mock-up</b>Everything tagged <span class="tag concept">concept</span> shows milestones 2 to 7, which are not built yet: the watcher, checkers, rescue boot entry, package and <code>sc why</code>. Their commands and messages are the current design and may change.</div>
+    <div class="note"><b>What is a mock-up</b>Everything tagged <span class="tag concept">concept</span> shows milestones 2 to 7 as they were designed when the films were made (27 Sep 2026): the watcher, checkers, rescue boot entry, package and <code>sc why</code>. M2 to M5 are built since and differ in places; M6 and M7 are not built yet.</div>
     <div class="note"><b>About the clock</b>The downtime counter in "Without SmartConfig" is illustrative: how long it typically takes someone at the machine to find the cause from Ubuntu's emergency shell, which opens without a root password but says nothing about what changed. Over SSH, someone has to go to the machine.</div>
   </div>
 </div>
