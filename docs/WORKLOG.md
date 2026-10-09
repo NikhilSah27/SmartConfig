@@ -229,10 +229,8 @@ step is built (your call, 2026-09-30).
 
 **Still waiting for you:**
 
-- [ ] Reboot this VM when it suits you (it ends a running session); the
-  next session runs the read-only check above. Since 2026-10-08 09:44 UTC
-  the M5 package is installed here (the log, "M5 sign-off"): the reboot
-  is its first boot.
+- [x] Reboot this VM: done (2026-10-09), and the read-only check above
+  passed on the package's first two boots (the log, 2026-10-09).
 - [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-7 (dpkg-deb or nfpm,
   `/usr/sbin`, purge, the hand install, the package's name, the license,
   the command's name).
@@ -2658,4 +2656,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   checked. Next: the lab's `--deb` run on this tree, then this VM: an
   upgrade to it (postinst's note under the policy-rc.d), with the remove
   and install again still waiting on the policy-rc.d.
-
+- **The reboot check: PASS** (2026-10-09, read only, as root; dump
+  `~/smartconfig-work/signoff/post-m5-reboot-20261009T170300Z.txt`). The
+  first boots with the M5 package (`4b34d12`) and the follow-ups' units.
+  This VM went down twice without a shutdown: its journal stops at
+  2026-10-08 10:57 UTC (that killed the lab's BIOS run on `8f91158` at
+  21m29s, no verdict; UEFI had passed) and again 2026-10-09 06:50 UTC,
+  about a minute into the next boot. Both boots since then, `b9b41a6b`
+  and `8d0112f3`: verdict ok (`failed-units=0`), the flag clear,
+  `sc-boot-seen` and `sc-boot-ok` done (`ProtectHome=yes`,
+  `NoNewPrivileges=yes`), scd active from `/usr/sbin/sc`
+  (`Type=notify`, baseline 2.0 s), `sudo sc status` exit 0, no failed
+  units, as before M5. Startup 13.7 s; sc is not on the critical chain.
+  `sc boot seen` ran twice in `b9b41a6b`, harmless (as in S3). Next: the
+  BIOS rerun of the lab's `--deb` run on `8f91158`, then the upgrade on
+  this VM.
