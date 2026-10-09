@@ -143,6 +143,24 @@ var graphSamples = map[string][]string{
 	"sysctl":   {"/etc/sysctl.conf", "/etc/sysctl.d/99-local.conf"},
 }
 
+// sshd's apply text names both ways a change reaches sshd on Ubuntu
+// 24.04: a restart of ssh.service, and, for a new Port or ListenAddress
+// under socket activation, a daemon-reload (sshd-socket-generator reads
+// sshd_config) and a restart of ssh.socket (openssh-server's
+// README.Debian). A restart of ssh alone leaves the socket on its old
+// address.
+func TestDefaultGraphSSHApply(t *testing.T) {
+	g := DefaultGraph()
+	for _, p := range []string{"/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d/50-local.conf"} {
+		a := g.Apply(p)
+		for _, want := range []string{"systemctl restart ssh", "Port or ListenAddress", "systemctl daemon-reload", "systemctl restart ssh.socket"} {
+			if !strings.Contains(a, want) {
+				t.Errorf("Apply(%s) = %q, want it to name %q", p, a, want)
+			}
+		}
+	}
+}
+
 // The built-in graph parses, every checker in it has samples, each sample
 // is read by its checker, and each is a path the scope records: a checker
 // for a file scd never sees would never run from the watcher.
