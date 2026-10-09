@@ -57,6 +57,9 @@ type input struct {
 	// saved is set for a version from the store (sc check <id>): what is
 	// on disk at path now, its mode for one, is not that version's.
 	saved bool
+	// meta, when set, is the version's own mode and owner (a store row):
+	// rules about them judge these, not the file on disk now.
+	meta *Meta
 	// incomplete is set by validate when a validator did not run to the
 	// end (Report.Incomplete).
 	incomplete *bool
@@ -126,6 +129,22 @@ func (c *Checks) Check(ctx context.Context, path string, data []byte) (Report, e
 // on disk now (sudoers-mode) are left out.
 func (c *Checks) CheckSaved(ctx context.Context, path string, data []byte) (Report, error) {
 	return c.check(ctx, input{path: path, data: data, saved: true})
+}
+
+// Meta is a version's mode and owner, as a store row records them.
+type Meta struct {
+	Mode     os.FileMode
+	UID, GID int
+}
+
+// CheckVersion is Check for a version whose mode and owner are known (a
+// store row): rules about the file's mode and owner (sudoers-mode) judge
+// meta, not the file on disk now, which may be a newer version's. scd
+// checks the version before a change with it: a mode-only change of a
+// sudoers file was missed, the version before judged by the new mode
+// (found by the M6 session; M5 follow-up 5a).
+func (c *Checks) CheckVersion(ctx context.Context, path string, data []byte, meta Meta) (Report, error) {
+	return c.check(ctx, input{path: path, data: data, meta: &meta})
 }
 
 // GraphInUse is the graph the checks use: Graph, or DefaultGraph().

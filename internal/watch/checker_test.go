@@ -339,3 +339,31 @@ func TestCheckIncomplete(t *testing.T) {
 	put(t, conf, "vm.swappiness = 10\n", 0o644)
 	e.waitFor("ok again", func() bool { return len(e.lines(": check: ok again")) == 1 })
 }
+
+// A mode-only change of a sudoers drop-in, with no check of the version
+// before in memory (scd's baseline is not checked): the version before is
+// judged by the mode and owner its row recorded, not by the file's mode on
+// disk now, which is the new one (found by the M6 session; M5 follow-up
+// 5a). World-writable, sudo ignores the file: an error.
+func TestCheckModeOnlyChange(t *testing.T) {
+	e := newEnv(t)
+	d := filepath.Join(e.root, "sudoers.d")
+	os.Mkdir(d, 0o755)
+	f := filepath.Join(d, "admins")
+	put(t, f, "owner ALL=(ALL) ALL\n", 0o440)
+	g, err := check.ParseGraph("check sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfg.Checks = &check.Checks{Home: e.home, Graph: g, Run: check.Runner{Dirs: []string{t.TempDir()}}}
+	e.start()
+	e.barrier()
+	if err := os.Chmod(f, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the mode row", func() bool { return len(e.history(f)) == 2 })
+	e.waitFor("the error line", func() bool { return len(e.lines(": check: error sudoers-mode")) == 1 })
+	if l := e.lines(": check: error sudoers-mode")[0]; !strings.Contains(l, "the file is mode 0666") {
+		t.Errorf("line %q", l)
+	}
+}

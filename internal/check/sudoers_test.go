@@ -280,7 +280,7 @@ func TestSudoersVisudoBroken(t *testing.T) {
 	if zero.IsDir() || zero.Size() != 0 || zero.Name() != "sudoers" || !zero.ModTime().IsZero() {
 		t.Error("fakeInfo")
 	}
-	if _, _, note := (&Checks{lstat: func(string) (os.FileInfo, error) { return nil, errors.New("odd") }}).sudoersMode("/etc/sudoers"); note == "" {
+	if _, _, note := (&Checks{lstat: func(string) (os.FileInfo, error) { return nil, errors.New("odd") }}).sudoersMode("/etc/sudoers", nil); note == "" {
 		t.Error("an lstat error other than not-exist gives a note")
 	}
 }
@@ -370,6 +370,39 @@ func TestSudoersNoRules(t *testing.T) {
 		rep, err := c.Check(context.Background(), tc.path, []byte(tc.data))
 		if err != nil || brief(rep.Findings) != tc.want {
 			t.Errorf("%s %q: %q %v", tc.path, tc.data, brief(rep.Findings), err)
+		}
+	}
+}
+
+// CheckVersion judges sudoers-mode by the mode and owner given, not the
+// file on disk (M5 follow-up 5a); setuid and the like count as chmod(1)
+// numbers them.
+func TestCheckVersionMode(t *testing.T) {
+	c := &Checks{Home: t.TempDir(), Run: Runner{Dirs: []string{t.TempDir()}},
+		lstat: func(string) (os.FileInfo, error) { return nil, errors.New("the disk must not be read") }}
+	p := "/etc/sudoers.d/admins"
+	for _, tc := range []struct {
+		meta Meta
+		want string
+	}{
+		{Meta{Mode: 0o440}, ""},
+		{Meta{Mode: 0o666}, "error the file is mode 0666 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o440, UID: 1000}, "error the file is mode 0440 and owned by uid 1000, not 0440 root"},
+		{Meta{Mode: 0o644}, "warning the file is mode 0644 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o440 | os.ModeSetuid}, "warning the file is mode 4440 and owned by uid 0, not 0440 root"},
+	} {
+		rep, err := c.CheckVersion(context.Background(), p, []byte("owner ALL=(ALL) ALL\n"), tc.meta)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ""
+		for _, f := range rep.Findings {
+			if f.Rule == "sudoers-mode" {
+				got = f.Severity.String() + " " + f.Text
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.meta, got, tc.want)
 		}
 	}
 }

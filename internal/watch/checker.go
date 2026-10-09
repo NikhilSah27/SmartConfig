@@ -177,7 +177,9 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		if c, ok := w.lastFound(p, before.Blob); ok {
 			had = c
 		} else if data, err := w.st.Blob(before.Blob); err == nil {
-			rep, err := w.checks.Check(ctx, p, data)
+			// Judged by its own mode and owner: the file's on disk now
+			// are the new version's (M5 follow-up 5a).
+			rep, err := w.checks.CheckVersion(ctx, p, data, check.Meta{Mode: before.Mode, UID: before.UID, GID: before.GID})
 			switch {
 			case ctx.Err() != nil:
 				return

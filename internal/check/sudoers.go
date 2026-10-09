@@ -99,23 +99,29 @@ func visudoText(msg string, col int, warned bool) (string, Severity) {
 // when there is nothing to say: the file is fine, or does not exist yet
 // (sc edit creating a drop-in), or is not a regular file (a symlink's
 // mode is its target's). note says when the mode could not be read.
-func (c *Checks) sudoersMode(path string) (f Finding, found bool, note string) {
-	lstat := c.lstat
-	if lstat == nil {
-		lstat = os.Lstat
-	}
-	fi, err := lstat(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return Finding{}, false, ""
-	case err != nil:
-		return Finding{}, false, fmt.Sprintf("could not read the mode of %s (%v); sudoers-mode was not checked", path, err)
-	case !fi.Mode().IsRegular():
-		return Finding{}, false, ""
-	}
-	mode, uid, gid := uint32(fi.Mode().Perm()), -1, -1
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		mode, uid, gid = st.Mode&0o7777, int(st.Uid), int(st.Gid)
+func (c *Checks) sudoersMode(path string, meta *Meta) (f Finding, found bool, note string) {
+	var mode uint32
+	uid, gid := -1, -1
+	if meta != nil {
+		mode, uid, gid = unixMode(meta.Mode), meta.UID, meta.GID
+	} else {
+		lstat := c.lstat
+		if lstat == nil {
+			lstat = os.Lstat
+		}
+		fi, err := lstat(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return Finding{}, false, ""
+		case err != nil:
+			return Finding{}, false, fmt.Sprintf("could not read the mode of %s (%v); sudoers-mode was not checked", path, err)
+		case !fi.Mode().IsRegular():
+			return Finding{}, false, ""
+		}
+		mode = uint32(fi.Mode().Perm())
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			mode, uid, gid = st.Mode&0o7777, int(st.Uid), int(st.Gid)
+		}
 	}
 	if mode == 0o440 && uid <= 0 {
 		return Finding{}, false, ""
@@ -132,6 +138,22 @@ func (c *Checks) sudoersMode(path string) (f Finding, found bool, note string) {
 		}
 	}
 	return f, true, ""
+}
+
+// unixMode is m's permission bits with setuid, setgid and sticky as
+// chmod(1) numbers them.
+func unixMode(m os.FileMode) uint32 {
+	v := uint32(m.Perm())
+	if m&os.ModeSetuid != 0 {
+		v |= 0o4000
+	}
+	if m&os.ModeSetgid != 0 {
+		v |= 0o2000
+	}
+	if m&os.ModeSticky != 0 {
+		v |= 0o1000
+	}
+	return v
 }
 
 // sudoersGrants reports whether a sudoers file holds a rule or an
@@ -170,9 +192,10 @@ func checkSudoers(ctx context.Context, c *Checks, in input) ([]Finding, []string
 	}
 	var out []Finding
 	var notes []string
-	// The mode on disk says nothing about a saved version's bytes.
+	// The mode on disk says nothing about a saved version's bytes; a
+	// version with its own mode and owner is judged by them.
 	if !in.saved {
-		if f, found, note := c.sudoersMode(in.path); found {
+		if f, found, note := c.sudoersMode(in.path, in.meta); found {
 			out = append(out, f)
 		} else if note != "" {
 			notes = append(notes, note)
