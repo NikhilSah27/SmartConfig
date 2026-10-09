@@ -284,6 +284,24 @@ type exitCode int
 
 func (e exitCode) Error() string { return "exit status " + strconv.Itoa(int(e)) }
 
+// newHelpCmd is cobra's help command, but an unknown topic is an error,
+// one line and exit 1, as an unknown command is (M5 follow-up 5: cobra's
+// printed the usage and exited 0).
+func newHelpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		RunE: func(c *cobra.Command, args []string) error {
+			cmd, rest, err := c.Root().Find(args)
+			if err != nil || cmd == nil || len(rest) > 0 {
+				return fmt.Errorf("unknown command %q for \"sc help\"", strings.Join(args, " "))
+			}
+			cmd.InitDefaultHelpFlag()
+			return cmd.Help()
+		},
+	}
+}
+
 func newRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "sc",
@@ -292,6 +310,7 @@ func newRoot() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
+	root.SetHelpCommand(newHelpCmd())
 	root.AddCommand(
 		newInitCmd(),
 		newSnapshotCmd(),

@@ -180,3 +180,24 @@ func TestReadOnlyStoreCLI(t *testing.T) {
 		t.Errorf("snapshot: %+v", r)
 	}
 }
+
+// sc help: a command's help exits 0; an unknown topic is an error, one
+// line on stderr and exit 1, as an unknown command is (M5 follow-up 5;
+// cobra's help printed the usage and exited 0).
+func TestHelpUnknown(t *testing.T) {
+	t.Setenv("SC_HOME", filepath.Join(t.TempDir(), "home"))
+	if r := sc(t, "help", "bogus"); r.code != 1 || r.stdout != "" || r.stderr != "sc: unknown command \"bogus\" for \"sc help\"\n" {
+		t.Errorf("help bogus: %+v", r)
+	}
+	if r := sc(t, "help", "log", "bogus"); r.code != 1 || !strings.Contains(r.stderr, `unknown command "log bogus"`) {
+		t.Errorf("help log bogus: %+v", r)
+	}
+	if r := sc(t, "bogus"); r.code != 1 || r.stderr != "sc: unknown command \"bogus\" for \"sc\"\n" {
+		t.Errorf("bogus: %+v", r)
+	}
+	for _, args := range [][]string{{"help"}, {"help", "log"}, {"log", "--help"}, {"help", "help"}} {
+		if r := sc(t, args...); r.code != 0 || !strings.Contains(r.stdout, "Usage:") || r.stderr != "" {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+}
