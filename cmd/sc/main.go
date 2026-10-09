@@ -306,6 +306,7 @@ func newRoot() *cobra.Command {
 		newStatusCmd(),
 		newBootCmd(),
 		newVersionCmd(),
+		newPruneCmd(),
 	)
 	return root
 }

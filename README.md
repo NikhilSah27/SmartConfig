@@ -156,9 +156,16 @@ minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
 priority. File contents never appear in the journal.
 
-Nothing is pruned yet. When the disk has less than 256 MiB free, scd holds
-back every change that needs new content, tries again each minute and
-logs that once; `sudo sc status` says so while it lasts. A file that a program rewrites
+When the disk has less than 256 MiB free, scd holds back every change that
+needs new content, tries again each minute and logs that once; `sudo sc
+status` says so while it lasts. Nothing is deleted by itself.
+`sudo sc prune` deletes the rows scd recorded more than 90 days ago
+(`--older-than 30d`, or hours: `36h`), then the stored versions no row
+uses any more. It keeps each file's newest row, each file's version at
+every boot the boots file records (what `sc status` compares with), and
+every manual, `sc edit`, restore and pre-restore row. It says what would
+go and asks first; `--yes` does not ask. A pruned row's id may be given
+to a new row later. A file that a program rewrites
 without pause gets 20 rows, then one every 5 minutes with its newest
 content, marked `(rate-limited)`, and one warning line.
 
