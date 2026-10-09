@@ -5,7 +5,9 @@ we have moved away from the plan. For the day-to-day log see
 [WORKLOG.md](WORKLOG.md); for decisions and recovery, [PROJECT_LOG.md](PROJECT_LOG.md).
 Every fact here comes from those files, the reviews and git history.
 
-Last updated: 2026-10-01, M2 built (steps 1-16), chunks A-E reviewed.
+Last updated: 2026-10-09, M5 done. Sections 1 to 7 tell M1 and M2 in
+full, as written on 2026-10-01 (section 7 as it stood then); section 8
+tells M3 to M5 in brief, and section 9 says where we are now.
 
 ## 1. The idea
 
@@ -175,6 +177,8 @@ All changes since approval, with reasons, are kept in one place:
 | C12 | `Obs.Suffix`; the CLI turns log priorities into journald or time prefixes | Plan had no field for the suffixes |
 | C13 | A rescan for a moved root waits `Cap` | A root moved away and back was dropped for an hour |
 | C14 | SIGHUP rescans; unit reload and remote-fs ordering; acceptance fixes | Chunk E review |
+| C15 | Digest rows get a random id, not one derived from their fingerprint | Final review: a journal reader could test guesses at a short secret |
+| C16 | A row budget per system file: 20 rows, then one every 5 min | Final review: a file rewritten every second gave about 86,000 rows a day |
 
 ## 6. Lessons so far
 
@@ -194,9 +198,40 @@ All changes since approval, with reasons, are kept in one place:
 - **Check the real machine, read-only.** Running the scope against the real
   `/etc` listing is what makes the exclude list trustworthy.
 
-## 7. Where we are
+## 7. Where we were on 2026-10-01
 
 M1 done. M2: built (steps 1-16 of 17) and every chunk reviewed and closed.
 What is left is the owner's part: the acceptance run, the M1 smoke run,
 the real store (S2), the owner scenario, a reboot, failure paths and a
 24-hour soak, each with a VM snapshot first. Step 17 (tag `m2`) closes M2.
+
+## 8. M2's end to M5, in brief (2026-10-02 to 10-09)
+
+| | When | What happened, and the turns that mattered | Changes from the plan |
+|---|---|---|---|
+| M2 | tag `m2` 2026-10-02 | Signed off on the dev VM: the acceptance and smoke runs, the real store migrated, a reboot, `kill -9` in a dpkg burst. The 24-hour soak was closed after 5.6 h (your call, 2026-10-03). | [M2 Appendix C](M2_PLAN.md#appendix-c-changes-after-approval), C15-C16 above |
+| Order | 2026-10-03 | The roadmap's question 1 was answered: M3 before M4. M4's boot tests need QEMU without KVM, which is slow on this VM, and M3 could be built while the soak ran. | |
+| M3 | plan approved and tag `m3` 2026-10-03 | Checkers, `sc check`, `sc edit`, `sc scope`. Probing first changed the design: a stock Ubuntu already fails some validators, so an edit is judged by the findings it adds. `netplan generate` asks systemd to reload, so the generator binary is used instead. `findmnt` misses a misspelt option, so sc has rules of its own. Four agents built chunk C's checkers in parallel worktrees (your call). The final review found two high findings (files that lock the owner out or stop the boot with no word from sc); both were fixed before the tag. | [M3 section 15](M3_PLAN.md), C1-C9 |
+| M4 | plan approved 2026-10-04, tag `m4` 2026-10-07 | The rescue path: a GRUB entry, `sc status` above the rescue shell's prompt, boot verdicts, the menu back after a failed boot. The QEMU lab (`lab/`, `make lab-e2e`) proves it end to end under TCG. The lab showed that Ubuntu 24.04's sulogin opens a root shell at the console even with root locked (PROJECT_LOG D6). Host stalls cost many lab runs their verdict, so the lab gained verdict classes (PASS, FAIL, INCONCLUSIVE) and retries a boot only for known lab flakes (a stall, TCG's own panic). | [M4 section 12](M4_PLAN.md), C1-C8 |
+| Follow-ups | 2026-10-07 to 08 | The M3 and M4 follow-up lists, in three reviewed chunks (F, G, H). Signed off with the lab in both modes (with the GRUB password recipe) and `accept-m2/m3/m4` as root. | MILESTONES |
+| M5 | plan drafted 2026-10-08, tag `m5` 2026-10-09 | The package, built with dpkg-deb rather than nfpm (no new tool). Your call was that M5 starts whether or not you had read the plan, so its questions ran on the recommended answers. On the dev VM, the image's `policy-rc.d` stopped every package script from restarting scd. It was found in the sign-off and moved aside on your answer. | [M5 section 9](M5_PLAN.md), C1-C8 |
+
+Lessons from these milestones, added to section 6's:
+
+- **Probe the real tool before trusting it.** Every validator form was
+  run on this VM before sc used it, and one "check" (`netplan generate`)
+  turned out to change the system.
+- **A test rig must tell its own failures from the product's.** The
+  lab's verdicts separate a failed SmartConfig check (FAIL) from a lab or
+  host problem (INCONCLUSIVE), and only known lab flakes are retried.
+
+## 9. Where we are (2026-10-09)
+
+M1 to M5 are done and tagged; this VM runs the package, 0.5.0. Next is
+M6, the incident factory and eval set. Its plan is drafted
+(`~/smartconfig-work/M6_PLAN.draft.md`) and being revised after a review
+of the whole plan on 2026-10-09; nothing of M6 is built. M7, a local
+model (`sc why`), is not planned yet. That review also found work that no
+milestone owns, among it retention, secrets kept in the store, and a
+restore that writes without a check. It is listed at the end of
+[MILESTONES.md](../MILESTONES.md) for your decision.

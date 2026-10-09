@@ -1,9 +1,23 @@
 # Next steps
 
+> **Historical: the roadmap written at M1 for M2 (2026-09-27), kept as it
+> was then, with a few lines corrected where they could mislead (marked
+> "2026-10-09").** It was not updated after M2.
+>
+> - **Where things stand now:** [MILESTONES.md](../MILESTONES.md) (M1 to M5
+>   done; M6 next; the open work no milestone owns) and the "Now" section
+>   of [WORKLOG.md](WORKLOG.md).
+> - **Done or overtaken since:** the open questions below were answered on
+>   2026-09-28, the tag `m1` and the backups were done, and the
+>   `m1-frozen` snapshot was taken.
+> - **Still yours:** the ruleset (question 7), host details (question
+>   13) and a current VM snapshot. These are kept in the worklog's
+>   "Still waiting for you".
+
 The roadmap from here to the end of M2, and what comes after. Written
 2026-09-27, while the M2 plan is being drafted.
 [WORKLOG.md](WORKLOG.md) stays the one source of truth for what is happening
-right now. This page is updated at milestone boundaries.
+right now.
 
 ## Where we are
 
@@ -185,7 +199,8 @@ The step numbers of the approved plan win. The chunks only group them.
       startup rescan. The unit restarts it, the missed change is recorded
       exactly once, and `PRAGMA integrity_check` reports ok. A static check
       shows no unit is ordered `After=` or `Requires=` scd.
-- [ ] (Deferred 2026-10-02, checked next session.) A 24-hour soak that
+- [ ] (Deferred 2026-10-02; closed after 5.6 h on 2026-10-03, your call.
+      The apt upgrade ran at S5. Corrected 2026-10-09.) A 24-hour soak that
       includes one `apt-daily-upgrade` run, plus a
       deliberate `apt upgrade` of the 13 pending updates while scd watches
       (apparmor alone owns 248 files under `/etc`). Pass means no crash, no
@@ -252,7 +267,8 @@ measurement.
       branch, tick "Restrict deletions" and "Block force pushes", no bypass
       list). The VM's token never gets admin rights: the ruleset exists to
       guard `main` against mistakes made from this VM.
-- [ ] Do not install the 13 pending updates until the M2 soak. That means
+- [x] (Done: the upgrade ran at M2's S5, 2026-10-02. Corrected 2026-10-09.)
+      Do not install the 13 pending updates until the M2 soak. That means
       neither Software Updater nor `apt upgrade`. They come from
       noble-updates, which unattended-upgrades does not install here.
 - [ ] Before M2 acceptance: take a snapshot `m2-pre-accept`, and say yes or
@@ -333,7 +349,9 @@ ruleset) and question 13 (host details) still need you.
 ## Risks to watch
 
 - **/tmp is wiped at every boot.** Anything not committed is lost.
-- **`bin/sc` is half-built during M2.** Use `sc-m1` for rescue.
+- **`bin/sc` is half-built during M2.** Use `sc-m1` for rescue. (Since
+  M5 the rescue binary is the package's `/usr/sbin/sc`; `sc-m1` restores
+  file rows only. Corrected 2026-10-09; see PROJECT_LOG's recovery guide.)
 - **The migration changes the real store** that holds the fstab recovery
   row. Test on a copy first, and ask before the first real run.
 - **VM load makes timing tests flaky.** Tests loosened just to pass can
@@ -341,7 +359,8 @@ ruleset) and question 13 (host details) still need you.
 - **"Never blocks boot" is untested without a real reboot.**
 - **Applying the 13 updates early** throws away the best apt-burst test.
 - **Old Go version.** Go 1.22.2 is past end of life (2 reachable stdlib
-  issues on Linux), and M2 makes `sc` a root daemon.
+  issues on Linux), and M2 makes `sc` a root daemon. (Fixed: go.mod
+  requires Go 1.26.8 since 2026-09-28. Corrected 2026-10-09.)
 - **Secrets.** The VM password is in local Claude transcripts. It must
   never reach the repo or Pages.
 - **Tracking drift.** WORKLOG is the source of truth. PROJECT_LOG and this
