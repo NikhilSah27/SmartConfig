@@ -16,10 +16,14 @@ after every step. For the full history, decisions and recovery guide see
   round of 2026-10-09)": nine steps in chunks I to L (the store,
   restore and checks, secrets, apt), one step at a time, each chunk
   closed by a review. The sign-off runs at the end each wait for your
-  OK. **Next: step 1**, `sc status` and the store's free-space floor.
-- **After it: M6, the incident factory and eval set.** Its plan (draft
-  2) is in `~/smartconfig-work/M6_PLAN.draft.md`, not yet in `docs/`;
-  it waits for your read and your OK. Nothing of M6 is built.
+  OK. **Chunk I (steps 1-2) is done and reviewed**
+  ([reviews/2026-10-09-m5-followups-chunk-i.md](reviews/2026-10-09-m5-followups-chunk-i.md),
+  fixes `9d43980`). **Next: chunk J, step 3**, the restore check. The
+  handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+- **M6 is being built alongside**, by the other Claude session, in its
+  own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
+  the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
+  commits land here only after this round, one at a time.
 - **M7 (`sc why`, a local model) is not planned yet.** It needs your
   decisions first: the runtime, the model and its licence, packaging, and
   an exception to the one-binary and dependency rules.
@@ -2939,3 +2943,34 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     - 1 h: 27 rows and 11 versions, deleted;
     - `sc status` was still right after it.
   - **Next:** the chunk I review (one reviewer), then chunk J.
+- **Chunk I reviewed and fixed** (2026-10-09).
+  - **The review:** one reviewer in its own clone of `cef26b5`, 11
+    findings, two high:
+    - I1: prune went by when a version was recorded, so the undo of a
+      change made an hour ago could go;
+    - I2: it deleted the rows `sc status` and the rescue report compare
+      with when no boot line kept them.
+  - **Proof:** 7 of the reviewer's tests failed on `cef26b5`. On the fixes
+    6 pass. The 7th replays a writer of an earlier release; `sc prune`
+    now refuses while scd runs one.
+  - **The fixes,** `9d43980`:
+    - a version goes only once a newer row replaced it before the cutoff;
+    - each path's first row is kept;
+    - no prune until a healthy boot with a row is recorded;
+    - an explicit `sc snapshot` is a manual row;
+    - no prune while scd runs a replaced `sc`;
+    - the plan is read with no lock, rows deleted in batches of 1000,
+      blobs in locked batches of 500 (600k rows: a writer waited
+      156 ms, was SQLITE_BUSY);
+    - a signal at the prompt ends sc, and Prune stops between batches;
+    - unremovable blobs are skipped and counted;
+    - 80-column lines;
+    - temp leftovers reclaimed.
+  - **The reviewer's I3 fix, narrowed:** applied to every manual
+    observation, it gave `sc edit` a duplicate "before" row, against M3's
+    rule (`TestReplaceWhileWatching`).
+  - **Mutations:** 18 run, 17 killed; the survivor is equivalent.
+  - **Checks:** fmt, vet, `go test ./...`, `make race` and
+    `make m1-compat` clean.
+  - **Write-up:** `docs/reviews/2026-10-09-m5-followups-chunk-i.md`.
+  - **Next:** chunk J, step 3, the restore check.

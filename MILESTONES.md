@@ -431,26 +431,33 @@ the recommended answer:
 **How it runs.** One step at a time, each with its tests, the checks, a
 commit, a worklog line, a push and CI. One reviewer closes each chunk.
 
-**Chunk I, the store:**
-1. `sc status` says when the store's filesystem is under scd's 256 MiB
-   floor: scd then holds back every change that needs new content,
-   retries each minute, and logs only once.
-2. `sc prune` (store and CLI):
-   - **What it deletes:** automatic rows older than 90 days
-     (`--older-than`).
+**Chunk I, the store: done and reviewed** (2026-10-09,
+[reviews/2026-10-09-m5-followups-chunk-i.md](docs/reviews/2026-10-09-m5-followups-chunk-i.md),
+fixes `9d43980`).
+1. Done (`8e59efc`): `sc status` says when the store's filesystem is
+   under scd's 256 MiB floor. Changes that need new content then wait,
+   retried each minute, and scd logs that once.
+2. Done (`f2a6f0b`, `f2e90b7`, the review's fixes `9d43980`): `sc prune`
+   (store and CLI).
+   - **What it deletes:** versions scd recorded that a newer row replaced
+     more than 90 days ago (`--older-than`).
    - **What it keeps:**
-     - each path's newest row;
-     - every manual, edit and restore row, and the rows a restore saves
-       first;
-     - for each path, the newest row at or before each boot the boots
-       file still lists, which is what `sc status` compares against.
-   - **Blobs:** it then deletes the blobs no row uses any more.
-   - **How it runs:** it says what it would delete and asks; `--yes`
-     skips the question.
-   - **No `VACUUM`:** it would renumber the rowids that the boots file
-     and the order of rows rely on.
-   - **Writers:** a blob is deleted only under the write lock, and a
-     writer checks its blob again under the lock.
+     - each path's newest and first rows;
+     - every manual, edit, restore and pre-restore row (an explicit
+       `sc snapshot` is a manual row even when scd has the same state);
+     - for each path, its version at each boot the boots file lists,
+       which is what `sc status` compares against.
+   - **Blobs:** it then deletes the stored content no row uses any more,
+     and a killed writer's temp files.
+   - **When it deletes nothing:** until a healthy boot with a row is
+     recorded, and while scd runs an `sc` an upgrade replaced.
+   - **How it runs:**
+     - it asks first, and `--yes` skips the question;
+     - the plan is read with no lock, and it deletes in short batches;
+     - a signal stops it between batches.
+   - **No `VACUUM`:** it would renumber the rowids.
+   - **Writers:** blobs go only under the write lock, and every writer
+     puts its blob again under the lock.
 
 **Chunk J, restore and checks:**
 3. `sc restore` checks the version it is about to write against the
