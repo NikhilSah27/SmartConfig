@@ -2907,3 +2907,35 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** fmt, vet and `go test ./...` clean.
   - **README:** says so.
   - **Next:** step 2, `sc prune`.
+- **M5 follow-up 2, `sc prune`** (2026-10-09, chunk I).
+  - **What it deletes:** the automatic rows recorded before the cutoff
+    (`--older-than`, 90 days by default), then the stored versions no row
+    uses that are over an hour old.
+  - **What it keeps:**
+    - each file's newest row;
+    - each file's version at every boot in the boots file (what
+      `sc status` compares with);
+    - every manual, edit, restore and pre-restore row.
+  - **How it runs:** it says what would go and asks; end of input or any
+    other answer deletes nothing, and `--yes` does not ask. If the boots
+    file cannot be read, nothing is pruned.
+  - **Safety:**
+    - the rows commit first, and the blobs go after, under the write lock;
+    - `Record` and `commitWrite` (restore, sc edit) put their blob again
+      under the lock;
+    - the hour's grace covers older writers;
+    - no `VACUUM`, because it would renumber the rowids.
+  - **Commits:** `store` and `sc prune`, each with its tests.
+  - **Tests:**
+    - prune in the gap of a `Record` and of a `Restore`;
+    - sc-m1 on a pruned store (`make m1-compat`);
+    - 9 store mutations and 6 CLI mutations, each failed a test (one
+      survivor first: a test was strengthened).
+  - **A bug caught on the way:** `99999999999999h` overflowed into range,
+    and is refused now.
+  - **Checks:** fmt, vet, `go test ./...` and `make race` clean.
+  - **On a copy of this VM's store:**
+    - 90 days: nothing to prune;
+    - 1 h: 27 rows and 11 versions, deleted;
+    - `sc status` was still right after it.
+  - **Next:** the chunk I review (one reviewer), then chunk J.
