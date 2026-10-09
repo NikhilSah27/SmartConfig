@@ -10,10 +10,16 @@ after every step. For the full history, decisions and recovery guide see
 - **M1 to M5 are done and tagged.** M5's tag `m5` is on `8f91158`.
 - **This VM runs the package,** `smartconfig` 0.5.0. Its scd runs from
   `/usr/lib/systemd/system`, with `sc` in `/usr/sbin`.
-- **Next: M6, the incident factory and eval set.** Its plan is drafted in
-  `~/smartconfig-work/M6_PLAN.draft.md`, not yet in `docs/`. It is being
-  revised after the review below, and it waits for your decisions and
-  your OK. Nothing of M6 is built.
+- **Now: the M5 follow-up round** (your call, 2026-10-09, "do the M5
+  follow-up round"; your four picks, all on the recommended answer). The
+  plan is in [MILESTONES.md](../MILESTONES.md), "M5 follow-ups (the
+  round of 2026-10-09)": nine steps in chunks I to L (the store,
+  restore and checks, secrets, apt), one step at a time, each chunk
+  closed by a review. The sign-off runs at the end each wait for your
+  OK. **Next: step 1**, `sc status` and the store's free-space floor.
+- **After it: M6, the incident factory and eval set.** Its plan (draft
+  2) is in `~/smartconfig-work/M6_PLAN.draft.md`, not yet in `docs/`;
+  it waits for your read and your OK. Nothing of M6 is built.
 - **M7 (`sc why`, a local model) is not planned yet.** It needs your
   decisions first: the runtime, the model and its licence, packaging, and
   an exception to the one-binary and dependency rules.
@@ -27,15 +33,16 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
 `~/smartconfig-work/project-review-2026-10-09.md`. It found three things:
 - **Docs that were wrong after M5.** They are fixed (log, 2026-10-09).
 - **Work that no milestone owns.** It is listed in MILESTONES, "Open,
-  with no milestone yet", and waits for your decision.
-- **Errors in the M6 draft.** It is being revised.
+  with no milestone yet". The items with the most at stake are now the
+  M5 follow-up round. The rest wait for your decision.
+- **Errors in the M6 draft.** They are fixed in draft 2.
 
 **Still waiting for you:**
 
-- [ ] Where the work no milestone owns goes (MILESTONES, "Open, with no
-  milestone yet"). The choices: an M5 follow-up round before M6 (my
-  recommendation, as after M3 and M4), part of M6 or M7, or known
-  limits. Retention and the secrets kept in the store come first.
+- [ ] What happens to the rest of "Open, with no milestone yet" in
+  MILESTONES: LVM/LUKS, applied markers, ACLs, extra roots, the user
+  scope file, restores into user-owned directories, and the smaller
+  items.
 - [ ] Two severities the review questions:
   - `grub-default-syntax` is a blocker, but a broken `/etc/default/grub`
     makes `update-grub` fail and keep the old menu. The danger comes
@@ -2870,3 +2877,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** fmt, vet and `go test ./...` clean; the build is static.
   - **Not yet on this VM:** it runs 0.5.0, which has the old text. The
     next package carries the new one.
+- **The M5 follow-up round, planned** (2026-10-09). You asked "do the M5
+  follow-up round", and picked:
+  - **retention:** a manual `sc prune`;
+  - **restore:** it checks and asks;
+  - **secrets:** hidden when shown;
+  - **apt:** its changes are tagged.
+
+  The plan is in MILESTONES, "M5 follow-ups (the round of 2026-10-09)":
+  nine steps in chunks I to L.
+
+  Fixed on the way: the installer's network file is
+  `/etc/cloud/cloud.cfg.d/90-installer-network.cfg` (recorded with its
+  content, tier 4). MILESTONES' open list named it under
+  `/etc/netplan/`.

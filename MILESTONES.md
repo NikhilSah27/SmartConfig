@@ -416,32 +416,119 @@ a reboot, an upgrade, a remove and an install again).
   Pre/Post-Invoke hook file and a scope file users can edit (M2 plan
   section 15). They are listed below.
 
+## M5 follow-ups (the round of 2026-10-09)
+
+**Where they come from.** The items with the most at stake in "Open, with
+no milestone yet" (below).
+
+**Your picks** (2026-10-09, "do the M5 follow-up round"), all four on
+the recommended answer:
+- **Retention:** a manual `sc prune`.
+- **Restore:** it checks the version it writes, and asks.
+- **Secrets:** hidden when shown.
+- **apt:** its changes are tagged.
+
+**How it runs.** One step at a time, each with its tests, the checks, a
+commit, a worklog line, a push and CI. One reviewer closes each chunk.
+
+**Chunk I, the store:**
+1. `sc status` says when the store's filesystem is under scd's 256 MiB
+   floor: scd then holds back every change that needs new content,
+   retries each minute, and logs only once.
+2. `sc prune` (store and CLI):
+   - **What it deletes:** automatic rows older than 90 days
+     (`--older-than`).
+   - **What it keeps:**
+     - each path's newest row;
+     - every manual, edit and restore row, and the rows a restore saves
+       first;
+     - for each path, the newest row at or before each boot the boots
+       file still lists, which is what `sc status` compares against.
+   - **Blobs:** it then deletes the blobs no row uses any more.
+   - **How it runs:** it says what it would delete and asks; `--yes`
+     skips the question.
+   - **No `VACUUM`:** it would renumber the rowids that the boots file
+     and the order of rows rely on.
+   - **Writers:** a blob is deleted only under the write lock, and a
+     writer checks its blob again under the lock.
+
+**Chunk J, restore and checks:**
+3. `sc restore` checks the version it is about to write against the
+   file as it is now.
+   - If the version adds a blocker or an error, it lists them and asks.
+     End of input means no, and `--force` skips the question.
+   - Nothing changes when it adds nothing, which covers restoring the
+     last healthy version from the rescue report.
+4. `/etc/default/grub.d/*.cfg` is checked as `/etc/default/grub` is.
+5. `sc help <unknown>` exits 1, with one line.
+
+**Chunk K, secrets:**
+6. A secret list in the scope: content stored, shown hidden. It covers
+   `/etc/shadow`, `/etc/gshadow`, NetworkManager's system-connections,
+   `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`, and netplan files.
+   - `sc cat` and `sc diff` replace the shadow and gshadow password
+     field, `psk=`, `password=`, `secret=` and private-key values, and
+     netplan's `password:`, with a marker.
+   - `sc check -v` does the same to a validator's raw lines from those
+     files.
+7. `--show-secrets` shows them, as root.
+
+**Chunk L, apt:**
+8. The package ships `/etc/apt/apt.conf.d/50smartconfig` (a conffile).
+   - Its `DPkg::Pre-Invoke` and `Post-Invoke` lines run `sc apt begin`
+     and `sc apt end`, guarded, so a missing `sc` breaks nothing.
+   - These mark a dpkg run in `/run/smartconfig`.
+   - scd tags each change by when it saw it: origin `apt`, and the run as
+     its intent.
+   - `sc log` shows them; there is no "undo a run".
+   - It is a new origin string with no schema change, so `sc-m1` and
+     `sc-m2` read these rows as file rows, and `make m1-compat` gains a
+     case.
+9. The lab's `--deb` mode checks that the upgrade's rows carry origin
+   `apt`.
+
+**Then, each with your OK:**
+- all checks;
+- `accept-m2`, `accept-m3` and `accept-m4` as root;
+- `make lab-e2e LAB_E2E_ARGS=--deb` in both modes;
+- the new package installed on this VM, a reboot, and its read-only
+  check.
+
 ## Open, with no milestone yet
 
-The M3 plan (section 13) said its "later" items would be given a home at
-M3's sign-off; that was not done. The 2026-10-09 review of the whole plan
-(after M5) found these open with no milestone, follow-up list or owner.
-Each waits for your decision: an M5 follow-up round before M6, part of
-M6 or M7, a milestone of its own, or a known limit. Ranked by what is at
-stake:
+**Where these come from.** The M3 plan (section 13) said its "later"
+items would be given a home at M3's sign-off; that was not done. The
+2026-10-09 review of the whole plan (after M5) found these open with no
+milestone, follow-up list or owner.
 
-1. **Retention.** Rows are never deleted and the store is never vacuumed
-   (M2 plan section 15: "needs its own decision"). Below 256 MiB free,
-   scd stops storing content and logs one line, while `sc status` still
-   says scd is running.
-2. **Secrets.** `/etc/shadow`, NetworkManager's system-connections
-   (Wi-Fi keys) and `/etc/netplan/90-installer-network.cfg` are stored
-   with their content, kept forever and after a purge; `sc cat` and
-   `sc diff` print them. Redaction (M2 plan: "M3") and content-based
-   detection were never built. This must be settled before M7 sends
-   diffs to a model.
-3. **`sc restore` writes without a check**, and there is no account-set
-   restore: putting back an older `/etc/group` alone can drop today's
-   admin from sudo, which `sc edit` would refuse (M2 plan: "M3").
-4. **The apt hook and change sets** (M2 plan: the hook in M5): a package
-   that changes many files gives one row each (installing
-   `logcheck-database` gave 190, M2's S5), with nothing that groups them
-   or undoes "that install".
+**What happens to them.** Items 1 to 4, 11 and `sc help` are now in the
+M5 follow-ups above (your picks, 2026-10-09). The rest wait for your
+decision: part of M6 or M7, a milestone of its own, or a known limit.
+
+They are ranked by what is at stake:
+
+1. **Retention** (→ M5 follow-ups, chunk I).
+   - Rows are never deleted and the store is never vacuumed (M2 plan
+     section 15: "needs its own decision").
+   - Below 256 MiB free, scd holds back the changes that need new content
+     and logs one line, while `sc status` still says scd is running.
+2. **Secrets** (→ chunk K).
+   - These are stored with their content, kept forever and after a
+     purge: `/etc/shadow`, NetworkManager's system-connections (Wi-Fi
+     keys), and `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`.
+   - `sc cat` and `sc diff` print them.
+   - Redaction (M2 plan: "M3") and content-based detection were never
+     built. This must be settled before M7 sends diffs to a model.
+3. **`sc restore` writes without a check** (→ chunk J), and there is no
+   account-set restore. Putting back an older `/etc/group` alone can drop
+   today's admin from sudo, which `sc edit` would refuse (M2 plan:
+   "M3"). The account-set restore stays open.
+4. **The apt hook and change sets** (→ chunk L, tags only).
+   - The M2 plan put the hook in M5.
+   - A package that changes many files gives one row each: installing
+     `logcheck-database` gave 190 (M2's S5).
+   - Nothing groups those rows, or undoes "that install". Undoing a run
+     stays open.
 5. **The rescue entry on LVM, LUKS and multipath roots** is not
    supported (M4 non-goal), and Ubuntu Server's guided install uses LVM
    by default.
@@ -456,9 +543,9 @@ stake:
 9. **A scope file users can edit** (M2 plan: "M5").
 10. **Restores into directories a user owns** are refused (M2 plan:
     "M4", the dirfd restore).
-11. **`/etc/default/grub.d/*.cfg` is not checked**, though the cloud
-    image keeps its GRUB settings there (found by the M6 pilot).
+11. **`/etc/default/grub.d/*.cfg` is not checked** (→ chunk J), though the
+    cloud image keeps its GRUB settings there (found by the M6 pilot).
 12. Smaller: active/inert labels and vendor-override detection;
     `/etc/alternatives` chains and `rc?.d` links; cross-file checks
     (two sudoers drop-ins); a home-directory watch; `sc help <unknown>`
-    exits 0.
+    exits 0 (→ chunk J).
