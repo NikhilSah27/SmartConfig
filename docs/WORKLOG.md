@@ -6,8 +6,79 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Progress at a glance:** [visuals/progress.html](visuals/progress.html),
-live at https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
+**Where things stand (2026-10-09):**
+- **M1 to M5 are done and tagged.** M5's tag `m5` is on `8f91158`.
+- **This VM runs the package,** `smartconfig` 0.5.0. Its scd runs from
+  `/usr/lib/systemd/system`, with `sc` in `/usr/sbin`.
+- **Next: M6, the incident factory and eval set.** Its plan is drafted in
+  `~/smartconfig-work/M6_PLAN.draft.md`, not yet in `docs/`. It is being
+  revised after the review below, and it waits for your decisions and
+  your OK. Nothing of M6 is built.
+- **M7 (`sc why`, a local model) is not planned yet.** It needs your
+  decisions first: the runtime, the model and its licence, packaging, and
+  an exception to the one-binary and dependency rules.
+
+Where each milestone stands: [MILESTONES.md](../MILESTONES.md). A
+progress dashboard as it was on 28 Sep (M1):
+[visuals/progress.html](visuals/progress.html).
+
+**The review of the whole plan (2026-10-09, after M5)** checked every
+plan, roadmap and overview doc and the M6 draft. The write-up is
+`~/smartconfig-work/project-review-2026-10-09.md`. It found three things:
+- **Docs that were wrong after M5.** They are fixed (log, 2026-10-09).
+- **Work that no milestone owns.** It is listed in MILESTONES, "Open,
+  with no milestone yet", and waits for your decision.
+- **Errors in the M6 draft.** It is being revised.
+
+**Still waiting for you:**
+
+- [ ] Where the work no milestone owns goes (MILESTONES, "Open, with no
+  milestone yet"). The choices: an M5 follow-up round before M6 (my
+  recommendation, as after M3 and M4), part of M6 or M7, or known
+  limits. Retention and the secrets kept in the store come first.
+- [ ] Two severities the review questions:
+  - `grub-default-syntax` is a blocker, but a broken `/etc/default/grub`
+    makes `update-grub` fail and keep the old menu. The danger comes
+    later, when a kernel is removed.
+  - The M6 pilot's "first rule" case (`init=`) falls back to
+    `/sbin/init`; only a bad `root=` breaks the rescue entry.
+- [ ] [M5_PLAN.md](M5_PLAN.md) questions 1-5 and 7: dpkg-deb or nfpm,
+  `/usr/sbin`, purge, the hand install, the package's name, the
+  command's name. `m5` went out on the recommended answers; say if one
+  should turn round. The plan itself is not approved.
+- [ ] The license (M5 question 6): "Decide later" (your answer,
+  2026-10-09). It matters before M7, whose model has a licence of its
+  own, and before any wider release.
+- [ ] A ruleset on main (roadmap question 7: none exists) and host
+  details (question 13).
+- [ ] On the host: 4 vCPUs and the VMSVGA graphics controller (black
+  screens after login, log 2026-10-03).
+- [ ] On the host: why this VM stands still for minutes at a time. In
+  the lab runs of 2026-10-06 it did for 167 and 318 s (UEFI) and 384 s
+  (BIOS, which cost that run its verdict), then 250, 364, 400, 400 and
+  265 s back to back (the BIOS rerun: about 24 minutes in which the VM
+  barely ran, `signoff/lab-e2e-22383a0/bios-stall-5-1.txt`). On
+  2026-10-05 it also went down without a shutdown three times, and once
+  more on 2026-10-06 at about 11:30 UTC, idle (`last -x`: crash). Sleep
+  or power saving on the host is the first thing to look at. M6's long
+  lab runs depend on this.
+- [ ] A VirtualBox snapshot of this state. M2 to M5 are installed on
+  this VM, and restoring an older snapshot undoes them; the code is safe
+  on GitHub.
+- [ ] Whether to soak 0.5.0 for 24 hours: read-only checks once this VM
+  has run 24 h on it (uptime, scd restarts, memory, log volume,
+  unexplained rows). No build since M2 has had a 24-hour soak.
+
+Done (kept for reference): the reboot of this VM on the package
+(2026-10-09; the read-only check passed on its first two boots), and
+this VM's `/usr/sbin/policy-rc.d` (your answer, 2026-10-09, "Move it
+aside": it is `/var/backups/smartconfig/policy-rc.d.image`, sha256
+`7a5c733d…`; to put it back, `sudo mv` it to `/usr/sbin/policy-rc.d`).
+
+## Earlier "Now" notes (M2 to M5)
+
+What "Now" said while each milestone was built, kept as written; the
+log below has the details.
 
 **M2 plan approved** (2026-09-28, "start M2, all my picks"): every
 recommendation in [M2_PLAN.md](M2_PLAN.md) section 16 and in
@@ -235,36 +306,6 @@ To remove the watcher: README "Watch every change"; keep the
 store (`sc-m1` still reads it; copying `changes.db.m1-backup` back would
 drop every M2 row). One thing at a time: no review runs while the next
 step is built (your call, 2026-09-30).
-
-**Still waiting for you:**
-
-- [x] Reboot this VM: done (2026-10-09), and the read-only check above
-  passed on the package's first two boots (the log, 2026-10-09).
-- [ ] [M5_PLAN.md](M5_PLAN.md) questions 1-5 and 7 (dpkg-deb or nfpm,
-  `/usr/sbin`, purge, the hand install, the package's name, the
-  command's name): `m5` went out on the recommended answers; say if one
-  should turn round. Question 6, the license: later (your answer).
-- [x] This VM's `/usr/sbin/policy-rc.d` (from its image, 2025-10-30, in
-  no package, exit 101 to every service action): your answer
-  (2026-10-09), "Move it aside": it is
-  `/var/backups/smartconfig/policy-rc.d.image` (sha256 `7a5c733d…`;
-  to put it back, `sudo mv` it to `/usr/sbin/policy-rc.d`). The license
-  (M5 question 6): "Decide later" (your answer, 2026-10-09): `m5` is
-  tagged on the package the lab tested.
-
-- [ ] Ruleset on main (roadmap question 7) and host details (question 13).
-- [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
-  controller (black screens after login, log 2026-10-03).
-- [ ] On the host: why this VM stands still for minutes at a time. In
-  the lab runs of 2026-10-06 it did for 167 and 318 s (UEFI), 384 s
-  (BIOS, which cost that run its verdict), and 250, 364, 400, 400 and
-  265 s back to back (the BIOS rerun: about 24 minutes in which the VM
-  barely ran, `signoff/lab-e2e-22383a0/bios-stall-5-1.txt`). On
-  2026-10-05 it also went down without a shutdown three times, and once
-  more on 2026-10-06 at about 11:30 UTC, idle (`last -x`: crash). Sleep
-  or power saving on the host is the first thing to look at.
-- [ ] A VirtualBox snapshot of this state (after the VM settings, if you
-  change them), so a restore by mistake no longer undoes M2.
 
 Done at the tag: `m1` on `df1a378` (pushed); backups in
 `/var/backups/smartconfig` (binary `sc-m1`, store, `/etc` and `/boot/grub`,
@@ -2773,3 +2814,46 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   (the first install here), `8f91158`'s (the one the lab passed) and
   0.5.0 (the tag); the eight older builds are gone (each is rebuilt
   from its commit, in a clone).
+- **The review of the whole plan, and the docs fixed** (2026-10-09).
+  - **Your asks:** "check the whole project plan and the errors", then
+    "fix all whatever are wrong".
+  - **How it was checked:** three read-only agents (the docs, the open
+    work, the M6 draft and M7). Each claim was checked before it was
+    used, and two were dropped. The write-up is
+    `~/smartconfig-work/project-review-2026-10-09.md`.
+  - **README:**
+    - M5 is done.
+    - It said "other secrets are kept as fingerprints only", but
+      `/etc/shadow` and the network files with Wi-Fi keys are stored with
+      their content.
+  - **MILESTONES:**
+    - the soak lines;
+    - the reason for the Go pin;
+    - the `sc log` escaping limit, fixed in `c56fe24`;
+    - `/usr/local`;
+    - new sections: "M5 notes", and "Open, with no milestone yet", the
+      work the M3 plan's "later" never gave a home.
+  - **docs/README:** what comes next, the four plans, and the visuals'
+    dates.
+  - **PROJECT_LOG:**
+    - the permission mode is `auto`;
+    - the store is 0600;
+    - 1,587 rows (`sc log`, the header not counted).
+  - **The M5 plan's status:** done, and not approved.
+  - **NEXT_STEPS:** marked as M1's roadmap for M2, with four lines
+    corrected.
+  - **JOURNEY:** M3 to M5 in brief, and where we are.
+  - **This "Now":** the earlier "Now" blocks moved under "Earlier 'Now'
+    notes", and the waiting list brought up to date.
+  - **The four visuals:**
+    - a dated status note at the top of each;
+    - the system map's "nfpm";
+    - the films' "not built yet".
+  - **The lab's README and CLAUDE.md:** the lab's unit tests do run in
+    CI, through `TestLabPython`.
+  - **Comments:** the Makefile's version format, and `restore.go`'s note
+    on the dirfd restore.
+  - **Not changed:** the published claude.ai copies of the visuals.
+  - **Next:**
+    - sshd's apply text for socket-activated ssh (a small product fix);
+    - the M6 draft's revision, outside the repo.
