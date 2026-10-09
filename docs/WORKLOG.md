@@ -151,8 +151,7 @@ upgraded; log, 2026-10-09), and the remove and the install again
 passed (2026-10-09, after your policy-rc.d answer: moved aside).
 **M5 is done: tag `m5`** on `8f91158` (2026-10-09; your answer "Decide
 later" on the license tagged it on the package the lab tested). This VM
-runs 0.5.0, built at the tag. Left: the cleanup (the worktrees
-`fu-scratch/wt-m5` and `wt-revg`, old builds in `dist/`).
+runs 0.5.0, built at the tag. The cleanup is done (log). Next: M6.
 
 **The M3 and M4 follow-ups: done and signed off** (2026-10-08). Chunks
 F, G and H, each reviewed. `make lab-e2e LAB_E2E_ARGS=--grub-password`
@@ -2764,3 +2763,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   --verify` clean and the 17 installed checks ok, `sc status` exit 0
   among them, rows kept (1588). MILESTONES and PROJECT_LOG say M5 is
   done. Next: the cleanup, then M6 (its plan, for your read).
+- **The M5 cleanup** (2026-10-09). The worktrees
+  `~/smartconfig-work/fu-scratch/wt-m5` and `wt-revg` are removed:
+  `wt-m5`'s drafts (`3f4c8fb` and the wip commits before it; main has the
+  steps as they landed) stay reachable as the local ref
+  `refs/archive/wt-m5`, not pushed; `wt-revg` was at `0fcabd1` (in main),
+  and its four untracked probe tests from the chunk G review are copied
+  to `fu-scratch/revg-probes/`. `dist/` keeps three builds: `4b34d12`'s
+  (the first install here), `8f91158`'s (the one the lab passed) and
+  0.5.0 (the tag); the eight older builds are gone (each is rebuilt
+  from its commit, in a clone).
