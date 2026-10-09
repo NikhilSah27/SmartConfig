@@ -3038,3 +3038,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     - 3 mutations, each failed a test.
   - **Checks:** fmt, vet, `go test ./...` and `make race` clean.
   - **Next:** the chunk J review.
+- **The restore check, by the mode it writes** (2026-10-09, chunk J,
+  `8b98817`).
+  - **The gap:** `sc restore`'s check judged the version by the file's
+    mode on disk now, but a restore writes the row's mode and owner. A
+    world-writable sudoers drop-in put back over a 0440 one gave no
+    question.
+  - **The fix:** the version is checked with `check.CheckVersion` and
+    its row's mode and owner.
+  - **Tests:** `TestRestoreChecksMode` failed before the fix.
+  - **Checks:** fmt, vet and `go test ./...` clean.
+  - **Next:** the chunk J review (steps 3, 4, 5, 5a and this).
