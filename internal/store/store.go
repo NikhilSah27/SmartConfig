@@ -355,8 +355,9 @@ func copyFile(src, dst string) error {
 }
 
 // NewestRowID returns the rowid of the newest row, 0 for an empty store.
-// Rows are never deleted, so rowid order is insert order: the rows after
-// one are exactly what was recorded after it.
+// Only sc prune deletes rows, never a path's newest, so the newest row
+// stays and SQLite never reuses a rowid: rowid order is insert order, and
+// the rows after one are what was recorded after it and is still kept.
 func (s *Store) NewestRowID() (int64, error) {
 	var n int64
 	err := s.db.QueryRow("SELECT coalesce(max(rowid), 0) FROM changes").Scan(&n)
@@ -420,7 +421,7 @@ func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged b
 		return Change{}, false, errChanged
 	}
 	res, err := s.Record([]Obs{{Path: path, State: &st, CheckStamp: true,
-		Force: origin != OriginManual, Origin: origin, Intent: intent}})
+		Force: origin != OriginManual, Explicit: origin == OriginManual, Origin: origin, Intent: intent}})
 	if err != nil {
 		return Change{}, false, err
 	}
@@ -433,8 +434,8 @@ func (s *Store) snapshotOnce(path, origin, intent string) (c Change, unchanged b
 // latestTx returns the newest change of path within the caller's
 // transaction, or nil if there is none. Newest means last inserted: ts is
 // wall-clock time, which can step back (NTP, a paused VM), so it only
-// labels a row. Rows are never deleted and the store is never vacuumed, so
-// rowid order is insert order.
+// labels a row. The store is never vacuumed, and sc prune never deletes a
+// path's newest row, so rowid order is insert order.
 func latestTx(ctx context.Context, conn *sql.Conn, path string) (*Change, error) {
 	rows, err := conn.QueryContext(ctx, `SELECT `+cols+` FROM changes WHERE path = ?
 		ORDER BY rowid DESC LIMIT 1`, path)
@@ -670,9 +671,10 @@ func scanChange(rows *sql.Rows, c *Change, first ...any) error {
 	return nil
 }
 
-// Row is a change with its place in the store. Rows are never deleted,
-// so rowid order is insert order: the rows after one are exactly what was
-// recorded after it (a boot verdict names the newest row of its boot).
+// Row is a change with its place in the store. Rowid order is insert
+// order (sc prune never deletes the newest row, and nothing vacuums): the
+// rows after one are what was recorded after it and is still kept (a boot
+// verdict names the newest row of its boot).
 type Row struct {
 	Change
 	RowID int64

@@ -414,7 +414,7 @@ func TestLowSpace(t *testing.T) {
 	e.waitFor("the digest row", func() bool { return len(e.history(secret)) == 2 })
 	time.Sleep(500 * time.Millisecond) // several FloorBackoff rounds; a barrier would wait too
 	e.want(conf, "file first seen")
-	if n := strings.Count(e.log.String(), "MB free under"); n != 1 {
+	if n := strings.Count(e.log.String(), "MiB free under"); n != 1 {
 		t.Fatalf("%d low-space lines:\n%s", n, e.log.String())
 	}
 	free.Store(1 << 40)

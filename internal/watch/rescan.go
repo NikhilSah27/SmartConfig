@@ -54,7 +54,7 @@ func (w *Watcher) underFloor() bool {
 	w.lowSpace = low
 	w.mu.Unlock()
 	if changed && low {
-		w.logLine(prioErr, fmt.Sprintf("only %d MB free under %s; new content waits", free>>20, w.cfg.Home))
+		w.logLine(prioErr, fmt.Sprintf("only %d MiB free under %s; new content waits", free>>20, w.cfg.Home))
 	} else if changed {
 		w.logLine(prioInfo, "free space is back; recording new content again")
 	}

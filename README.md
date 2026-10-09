@@ -159,13 +159,28 @@ priority. File contents never appear in the journal.
 When the disk has less than 256 MiB free, scd holds back every change that
 needs new content, tries again each minute and logs that once; `sudo sc
 status` says so while it lasts. Nothing is deleted by itself.
-`sudo sc prune` deletes the rows scd recorded more than 90 days ago
-(`--older-than 30d`, or hours: `36h`), then the stored versions no row
-uses any more. It keeps each file's newest row, each file's version at
-every boot the boots file records (what `sc status` compares with), and
-every manual, `sc edit`, restore and pre-restore row. It says what would
-go and asks first; `--yes` does not ask. A pruned row's id may be given
-to a new row later. A file that a program rewrites
+
+`sudo sc prune` deletes the versions scd recorded that a newer version
+replaced more than 90 days ago (`--older-than 30d`, or hours: `36h`),
+then the stored content no row uses any more.
+- **Kept, whatever their age:**
+  - each file's newest and first rows;
+  - each file's version at every boot the boots file records (what
+    `sc status` compares with);
+  - every manual, `sc edit`, restore and pre-restore row.
+- **The prompt:** it says what would go and asks first; `--yes` does not
+  ask.
+- **When it deletes nothing:**
+  - until a healthy boot is recorded;
+  - while scd still runs an `sc` that an upgrade replaced (restart scd
+    first).
+- **Big stores:** it works in short batches, so scd and `sc restore` wait
+  only moments.
+- **Ids:** a pruned row's id may be given to a new row later.
+
+`sc snapshot` of a file scd has already recorded adds a manual row of its
+own, which `sc prune` keeps; a second snapshot of the same content says
+"unchanged". A file that a program rewrites
 without pause gets 20 rows, then one every 5 minutes with its newest
 content, marked `(rate-limited)`, and one warning line.
 

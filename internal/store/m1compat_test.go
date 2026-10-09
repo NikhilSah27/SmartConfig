@@ -167,10 +167,20 @@ func TestM1Compat(t *testing.T) {
 	}
 
 	// After sc prune (M5 follow-up 2), sc-m1 still lists and prints what
-	// is left, and its new rows come after every old one.
+	// is left, and its new rows come after every old one. A file with a
+	// version scd replaced: its middle row goes.
+	pruned := filepath.Join(dir, "pruned")
+	for _, v := range []string{"first\n", "middle\n", "last\n"} {
+		tick()
+		write(t, pruned, v, 0o644)
+		record(t, s, observe(t, pruned))
+	}
 	ageBlobs(t, s)
-	if got, err := s.Prune(time.Unix(1_800_000_000, 0), nil, false); err != nil || got.Rows == 0 {
+	if got, err := s.Prune(time.Unix(1_800_000_000, 0), nil, false); err != nil || got.Rows != 1 {
 		t.Fatalf("prune: %+v %v", got, err)
+	}
+	if code, out, errs = m1("log", pruned); code != 0 || strings.Count(out, "\n") != 3 {
+		t.Fatalf("sc-m1 log of the pruned file: %d %q %q", code, out, errs)
 	}
 	if code, out, errs = m1("log", file); code != 0 || !strings.Contains(out, c.ID) {
 		t.Fatalf("sc-m1 log after prune: %d %q %q", code, out, errs)

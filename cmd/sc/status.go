@@ -56,8 +56,9 @@ func storeSpace(out io.Writer) {
 	if err != nil || free >= watch.DefaultFloorBytes {
 		return
 	}
-	fmt.Fprintf(out, "Store:         only %d MiB free under %s (scd's floor: %d MiB);\n", free>>20, home, watch.DefaultFloorBytes>>20)
-	fmt.Fprintln(out, "               scd holds back changes that need new content until there is room")
+	// 80 columns, and true whether scd runs or not (the chunk I review, I8).
+	fmt.Fprintf(out, "Store:         only %d MiB free, under scd's floor of %d MiB: changes that\n", free>>20, watch.DefaultFloorBytes>>20)
+	fmt.Fprintln(out, "               need new content wait until there is room (see sc prune)")
 }
 
 func newStatusCmd() *cobra.Command {

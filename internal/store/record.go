@@ -37,9 +37,13 @@ type Obs struct {
 	Created    bool          // proof of absence: write "did not exist" first
 	CheckStamp bool          // re-check the path under the write lock
 	Force      bool          // insert even if equal to the newest row
-	Origin     string
-	Intent     string // "" for OriginAuto: computed (changed, mode ...)
-	Suffix     string // appended to a computed intent (SuffixNotWatching, ...)
+	// Explicit: a snapshot the user asked for (sc snapshot). Equal to an
+	// automatic row, it is still a row of its own, a manual one, which
+	// sc prune keeps (the M5 follow-ups' chunk I review, I3).
+	Explicit bool
+	Origin   string
+	Intent   string // "" for OriginAuto: computed (changed, mode ...)
+	Suffix   string // appended to a computed intent (SuffixNotWatching, ...)
 }
 
 // Intent suffixes for watcher rows that no live event explained (plan 6.5).
@@ -206,12 +210,13 @@ func (s *Store) rowFor(o Obs) (*Change, []byte, error) {
 
 // nothingNew reports whether observation o, as row c, adds nothing after
 // the newest row last: it equals it (unless Force), or it says a path with
-// no rows is absent.
+// no rows is absent. An explicit snapshot equal to an automatic row is
+// new (Obs.Explicit).
 func nothingNew(o Obs, last, c *Change) bool {
 	if c.Kind == KindDeleted && last == nil {
 		return true
 	}
-	return !o.Force && sameState(last, c)
+	return !o.Force && sameState(last, c) && !(o.Explicit && last.Origin == OriginAuto)
 }
 
 // sameState reports whether row c records the same state as the newest row

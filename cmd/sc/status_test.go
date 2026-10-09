@@ -265,8 +265,8 @@ func TestStatusStoreUnderFloor(t *testing.T) {
 	var asked string
 	storeFree = func(dir string) (uint64, error) { asked = dir; return 100 << 20, nil }
 	r := sc(t, "status")
-	want := "scd:           not running\nStore:         only 100 MiB free under " + home +
-		" (scd's floor: 256 MiB);\n               scd holds back changes that need new content until there is room\n"
+	want := "scd:           not running\nStore:         only 100 MiB free, under scd's floor of 256 MiB: changes that\n" +
+		"               need new content wait until there is room (see sc prune)\n"
 	if r.code != 0 || !strings.Contains(r.stdout, want) || asked != home {
 		t.Errorf("under the floor (asked %q): %+v", asked, r)
 	}
