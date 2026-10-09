@@ -2671,3 +2671,31 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `sc boot seen` ran twice in `b9b41a6b`, harmless (as in S3). Next: the
   BIOS rerun of the lab's `--deb` run on `8f91158`, then the upgrade on
   this VM.
+- **M5 sign-off, the lab: PASS on `8f91158`, both modes** (2026-10-09).
+  `make lab-e2e LAB_E2E_ARGS=--deb`, one `sc` build (`4fa140edc6fb`),
+  `dirty=no`, `deb=yes`, boot 5, D.1-D.5 PASS. UEFI 30m00s, no retries
+  (2026-10-08, log `lab-e2e-20261008T100457Z-8f91158-deb.log`); its BIOS
+  run died with this VM at 21m29s, so BIOS ran again alone on the same
+  commit (checked out detached): PASS, 22m19s, 1 lab retry (a 2.0 s gap
+  between VGA polls before boot 3's menu), boot 2 outcome b (log
+  `lab-e2e-20261009T171037Z-8f91158-deb-bios.log`). Run files in
+  `~/smartconfig-work/signoff/lab-e2e-8f91158/`. `make deb` here gives
+  the lab's package byte for byte (`c8d176d1c042`).
+- **M5 sign-off, this VM: the upgrade to `8f91158`, all checks pass**
+  (2026-10-09, as root; script
+  `~/smartconfig-work/signoff/signoff-m5-upgrade-8f91158.sh`, log
+  `signoff-m5-upgrade-20261009T173440Z-8f91158.log`). `apt-get install`
+  of that package over `4b34d12`'s. With this VM's policy-rc.d, postinst
+  now says so: "smartconfig: scd was not restarted (does
+  /usr/sbin/policy-rc.d forbid it?): sudo systemctl restart scd", and scd
+  kept its old pid until that restart (now `/usr/sbin/sc`,
+  `Type=notify`). 22 checks ok, among them `dpkg --verify` clean, the
+  units and drop-ins from `/usr/lib`, `systemd-analyze verify`,
+  `grub-script-check`, one rescue entry, no flag, rows kept (1586),
+  `sc status` exit 0 (the takeover's deleted `/etc` units are no error
+  now), no new failed unit. From `4b34d12` to `8f91158` only `sc status`
+  and the maintainer scripts changed, no boot unit or boot path, so the
+  reboot check above stands for this build. Left of M5's sign-off: the
+  remove and the install again on this VM, which wait on your
+  policy-rc.d answer; then the tag `m5`.
+
