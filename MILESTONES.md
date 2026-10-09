@@ -15,11 +15,16 @@
 
 Current: M5, the package (your call, 2026-10-07: after the follow-ups,
 start M5 either way); plan [docs/M5_PLAN.md](docs/M5_PLAN.md), for your
-read. The M3 and M4 follow-ups below are done, all but M4's LUKS item
-(out, your call), and signed off on 2026-10-08 (the lab in both modes,
-accept-m2/m3/m4 as root, the install). M4 is done (tag `m4`,
-2026-10-07). M3 is done (tag `m3`, 2026-10-03). The M2 soak was closed
-after 5.6 h (your call).
+read (its questions run on the recommended answers: dpkg-deb, not nfpm).
+All 8 steps are built and reviewed; of the sign-off, the lab's `--deb`
+run passed in both modes on `8f91158`, and that package runs on the dev
+VM (installed over the hand install, rebooted, upgraded). Left: the
+remove and install again on the dev VM, which waits on your answer about
+its `policy-rc.d`, then the tag `m5`. The M3 and M4 follow-ups below
+are done, all but M4's LUKS item (out, your call), and signed off on
+2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
+install). M4 is done (tag `m4`, 2026-10-07). M3 is done (tag `m3`,
+2026-10-03). The M2 soak was closed after 5.6 h (your call).
 
 ## M1 notes
 

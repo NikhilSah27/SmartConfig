@@ -142,7 +142,15 @@ below: no reboot came between.)
 follow-ups either way). The plan, for your read: [M5_PLAN.md](M5_PLAN.md);
 its questions run on the recommended answers until you say otherwise.
 Its steps, drafted in `~/smartconfig-work/fu-scratch/wt-m5`, land one at
-a time, each with its checks, CI and a worklog line.
+a time, each with its checks, CI and a worklog line. **Where it stands
+(2026-10-09):** steps 1-8 built and reviewed
+([reviews/2026-10-08-m5.md](reviews/2026-10-08-m5.md)); of the sign-off
+(step 9), the lab's `--deb` run passed in both modes on `8f91158`, and
+this VM runs that package (installed over the hand install, rebooted,
+upgraded; log, 2026-10-09). Left: the remove and the install again on
+this VM, which wait on your policy-rc.d answer (below); then the tag
+`m5` and the cleanup (the worktrees `fu-scratch/wt-m5` and `wt-revg`,
+old builds in `dist/`).
 
 **The M3 and M4 follow-ups: done and signed off** (2026-10-08). Chunks
 F, G and H, each reviewed. `make lab-e2e LAB_E2E_ARGS=--grub-password`
@@ -2698,4 +2706,14 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   reboot check above stands for this build. Left of M5's sign-off: the
   remove and the install again on this VM, which wait on your
   policy-rc.d answer; then the tag `m5`.
-
+- **PROJECT_LOG and MILESTONES brought up to M5** (2026-10-09, docs
+  only). PROJECT_LOG's dev VM table had the M3 hand install: it now has
+  the package (`8f91158`, `dpkg --verify` clean), scd from
+  `/usr/lib/systemd/system` running `/usr/sbin/sc`, the rescue path from
+  the package, the policy-rc.d, and the builds kept in
+  `/var/backups/smartconfig` (`sc-d686341`, `sc-59203a3`, `sc-2c58f8b`
+  new in the list); its recovery steps start from `/usr/sbin/sc`.
+  Checked read only on this VM: `/etc/fstab` and `/etc/hosts` still the
+  originals, `sudo sc status` exit 0, no failed unit. MILESTONES says
+  where M5 stands. Still waiting: your policy-rc.d answer, for the
+  remove and install again.

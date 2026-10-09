@@ -4,8 +4,9 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-07, M4 sign-off S1 to S3 passed; its final review is in.
-Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
+Last updated: 2026-10-09, M5 (the package) installed on the dev VM; its
+sign-off is done but for the remove and install again.
+Tags: `m4` 2026-10-07, `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 
 ---
 
@@ -24,11 +25,15 @@ Tags: `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 | QEMU rescue lab cache | `~/.cache/smartconfig-lab` (images, runs; [lab/README.md](../lab/README.md)) |
 | Scratch outside the repo | `~/smartconfig-work` (plans as drafted, raw review output, lab evidence in `signoff/`) |
 
-Status (2026-10-07): **M4, the rescue path, is built**; sign-off S1 to
-S3 passed, and S4's final review is in ([M4_PLAN.md](M4_PLAN.md)). The
-build S1 tested (`sc` `cafca151…`) is installed on the dev VM since S2,
-and runs as `scd`; the final review's fixes are not installed yet. **M3
-is done** (tag `m3`). Before that: **M2** (tag `m2`) and
+Status (2026-10-09): **M5, the package, is built and reviewed**
+([M5_PLAN.md](M5_PLAN.md)). The lab's `--deb` run passed in both modes
+on `8f91158`, and that package (`smartconfig`
+`0.4.99+git95.20261008095800.8f91158`) runs on the dev VM: installed
+over the hand install on 2026-10-08, rebooted, upgraded on 2026-10-09.
+Left: the remove and install again on the dev VM (it waits on the
+owner's answer about its `policy-rc.d`), then the tag `m5`. **M4 is
+done** (tag `m4`), with the M3 and M4 follow-ups (2026-10-08). **M3 is
+done** (tag `m3`). Before that: **M2** (tag `m2`) and
 **M1** (tag `m1`, store + CLI, hardened by four review rounds and five
 rounds of fixes, see [reviews/](reviews/)). Live progress:
 [WORKLOG.md](WORKLOG.md).
@@ -137,9 +142,11 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
-| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,546 rows on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
-| SmartConfig watcher | `scd.service` enabled, binary `/usr/local/sbin/sc`: since 2026-10-03 21:25 UTC the M3 build (code of `bb31f3e`, sha256 `cf5ba078…`). Earlier builds in `/var/backups/smartconfig`: `sc-m3pre` (M3 before its final fixes), `sc-b6ab3cc` (M2 with its follow-ups), `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
-| SmartConfig rescue path (M4) | not installed: no boot units, drop-ins or `42_smartconfig` yet (sign-off S2) |
+| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,586 rows on 2026-10-09; 1,546 on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
+| SmartConfig package (M5) | `smartconfig` `0.4.99+git95.20261008095800.8f91158` from `dist/` (`make deb`, the lab's package byte for byte), since 2026-10-09 17:34 UTC; `dpkg --verify smartconfig` clean. Before it: the package of `4b34d12` (2026-10-08), and the hand install, which it moved aside as `NAME.dpkg-old` (`/usr/local/sbin/sc`, the units and drop-ins in `/etc/systemd/system`, `/etc/grub.d/42_smartconfig`) |
+| SmartConfig watcher | `scd.service` from `/usr/lib/systemd/system`, enabled, `Type=notify`, binary `/usr/sbin/sc` (`sc version`: `8f91158122ad`, sha256 `4fa140ed…`). Earlier builds in `/var/backups/smartconfig`: `sc-d686341` (the follow-ups, the hand install before M5), `sc-59203a3` (tag `m4`), `sc-2c58f8b` (M4's S1), `sc-m3`, `sc-m3pre`, `sc-b6ab3cc`, `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
+| SmartConfig rescue path (M4) | from the package: `sc-boot-seen` and `sc-boot-ok` enabled, the rescue and emergency drop-ins in `/usr/lib/systemd/system`, `/etc/grub.d/42_smartconfig` (a conffile), one rescue entry in `grub.cfg`. The boots checked on 2026-10-09 (`b9b41a6b`, `8d0112f3`): verdict ok, the flag clear, `sudo sc status` exit 0 |
+| `/usr/sbin/policy-rc.d` | from the VM's image (2025-10-30, in no package); it exits 101, so no package's maintainer script starts, restarts or stops a service here (`sudo systemctl restart scd` by hand after an upgrade). Keep or remove: the owner's call, open |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
 | Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
@@ -183,7 +190,7 @@ git push
 ### A config file got broken (the machine still boots)
 
 ```sh
-SC=/usr/local/sbin/sc               # if it is gone: in /var/backups/smartconfig, sc-m3, sc-m3pre, sc-b6ab3cc, sc-m2, else sc-m1 (file rows only)
+SC=/usr/sbin/sc                     # if it is gone: in /var/backups/smartconfig, sc-d686341, sc-59203a3, sc-2c58f8b, sc-m3, sc-m3pre, sc-b6ab3cc, sc-m2, else sc-m1 (file rows only)
 sudo $SC log /etc/fstab             # find the last good id
 sudo $SC diff <id>                  # confirm what changed
 sudo $SC restore <id>               # put it back; the broken state is saved too
@@ -237,9 +244,12 @@ reboot to the menu, or run `sudo sc status` in a terminal.
    crash left half-written (the M4 build; the backups cannot).
 4. Restore with a static `sc`, or fix the file with nano. Try each of these
    in turn:
-   - `/usr/local/sbin/sc restore <id>`, the installed build (M4, since
-     sign-off S2);
-   - `/var/backups/smartconfig/sc-m3`, the M3 build `scd` ran before M4;
+   - `/usr/sbin/sc restore <id>`, the package's build (M5, since
+     2026-10-08);
+   - `/var/backups/smartconfig/sc-d686341`, the follow-ups' build, hand
+     installed before M5; `sc-59203a3`, the `m4` build; `sc-2c58f8b`,
+     the build of M4's sign-off S1;
+   - `sc-m3`, the M3 build `scd` ran before M4;
    - `sc-m3pre`, the M3 build before the final review's fixes;
    - `sc-b6ab3cc`, the M2 build with its follow-ups;
    - `sc-m2`, the `m2` build: the same restores, links and creations
@@ -266,8 +276,12 @@ exactly what changed after a risky test). Added later: `sc-m2` (the `m2`
 build, 2026-10-03), `sc-b6ab3cc` (M2 with its follow-ups), `sc-m3pre`
 and `sc-m3` (M3 before and after its final review's fixes), and the
 manifests and checksums before M2's S2, before S5, after the S5 `apt
-upgrade`, and before M4's S2 (`manifest-pre-m4s2.txt`,
-`sha256-pre-m4s2.txt`).
+upgrade`, before M4's S2 (`manifest-pre-m4s2.txt`,
+`sha256-pre-m4s2.txt`), before the `m4` install (`-pre-m4inst`), before
+the follow-ups' install (`-pre-fuinst`) and before the package
+(`-pre-m5`, with `failed-pre-m5.txt`, the failed units then: none).
+With them the builds each install replaced: `sc-2c58f8b`, `sc-59203a3`
+and `sc-d686341`.
 
 ### VirtualBox snapshot
 
@@ -281,7 +295,7 @@ fastest way back from a completely broken system.
 Open Claude Code in the checkout and say:
 
 > Read CLAUDE.md, then docs/WORKLOG.md (its "Now" section says what is in
-> progress) and the current milestone's plan (docs/M4_PLAN.md), then
+> progress) and the current milestone's plan (docs/M5_PLAN.md), then
 > continue.
 
 Rules that carry over: plan first; one step at a time, each with its tests
