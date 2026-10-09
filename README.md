@@ -18,8 +18,10 @@ be undone.
 `scd` service) records every change under `/etc`, `/boot/grub` and each
 login's `~/.ssh` without anyone typing `sc`,
 including symlinks (systemd enable, disable, mask), deletions and new files.
-SSH host keys, `/etc/machine-id` and other secrets are kept as fingerprints
-only.
+SSH host keys, `/etc/machine-id`, `/etc/ssl/private`, WireGuard and a few
+other key stores are kept as fingerprints only. Every other recorded file is
+stored with its content, `/etc/shadow` and network files that hold Wi-Fi
+keys among them, in a store only root can read (`sc scope PATH` says which).
 
 **Milestone 3 is done** (tag `m3`, 2026-10-03; plan
 [docs/M3_PLAN.md](docs/M3_PLAN.md)): checkers. `sc check` finds the
@@ -34,9 +36,15 @@ is, `sc status` says above its prompt what changed since the last
 healthy boot and how to put it back, and the menu comes back by itself
 after a failed boot.
 
-**Milestone 5 is in progress** (plan [docs/M5_PLAN.md](docs/M5_PLAN.md)):
-the package. Milestones 6 and 7 (incident factory, local model) are
-planned.
+**Milestone 5 is done** (tag `m5`, 2026-10-09; plan
+[docs/M5_PLAN.md](docs/M5_PLAN.md)): the package. `make deb` builds one
+`.deb`, `smartconfig`, that installs, upgrades, removes and purges
+cleanly on Ubuntu 24.04 and takes over a hand install (see "Install").
+
+Next: milestone 6, an incident factory and eval set (its plan is being
+drafted), then milestone 7, a local model (`sc why`, opt-in), which is
+not planned yet. [MILESTONES.md](MILESTONES.md) lists both and the open
+work that no milestone owns yet.
 
 ## Build
 
@@ -420,8 +428,10 @@ docs/              worklog, plans, reviews, visual explainers
 
 ## Docs
 
-Current work and progress: [docs/WORKLOG.md](docs/WORKLOG.md). Progress at a
-glance, with charts: https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
+Current work: [docs/WORKLOG.md](docs/WORKLOG.md); where each milestone
+stands: [MILESTONES.md](MILESTONES.md). A progress dashboard with charts, as
+it was on 28 Sep 2026 (M1 done):
+https://nikhilsah27.github.io/SmartConfig/visuals/progress.html.
 
 Start with [docs/PROJECT_LOG.md](docs/PROJECT_LOG.md): what has been done,
 why, the state of the dev VM, and how to recover or resume after a crash.

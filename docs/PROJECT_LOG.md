@@ -118,8 +118,9 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 
 - `changes.db` was created mode **0644** by M1 (its directory is 0700, so it
   was not readable by others). Since M2 step 2, `sc init` creates it 0600
-  and tightens an existing one; the real store stays 0644 until M2's
-  `sc init` runs on it (sign-off S2).
+  and tightens an existing one. scd does the same at every start
+  (`store.Init`), so the real store has been 0600 since M2's sign-off S2
+  (checked 2026-10-09: `600 root`).
 - The ownership part of the restore test only runs as root
   (`sudo -E go test ./internal/store`).
 - Film narration uses the browser's speech engine. On Linux it may be silent
@@ -139,14 +140,14 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 | Root filesystem | `/dev/sda2`, UUID `e41c582c-c4d8-4225-9e5d-249c8248cb80` |
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
-| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,586 rows on 2026-10-09; 1,546 on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
+| SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,587 rows on 2026-10-09 after the 0.5.0 upgrade; 1,546 on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
 | SmartConfig package (M5) | `smartconfig` 0.5.0 (`dist/smartconfig_0.5.0_amd64.deb`, sha256 `0087c121…`, `make deb` at the tag `m5`: the lab's package but for the version string), since 2026-10-09 18:26 UTC; `dpkg --verify smartconfig` clean. Before it: `0.4.99+git95.20261008095800.8f91158` (the one the lab passed, `c8d176d1…`; removed and installed again 2026-10-09), the package of `4b34d12` (2026-10-08), and the hand install, which it moved aside as `NAME.dpkg-old` (`/usr/local/sbin/sc`, the units and drop-ins in `/etc/systemd/system`, `/etc/grub.d/42_smartconfig`) |
 | SmartConfig watcher | `scd.service` from `/usr/lib/systemd/system`, enabled, `Type=notify`, binary `/usr/sbin/sc` (`sc version`: `0.5.0 (8f91158122ad, go1.26.8)`, sha256 `ccdfad23…`). Earlier builds in `/var/backups/smartconfig`: `sc-d686341` (the follow-ups, the hand install before M5), `sc-59203a3` (tag `m4`), `sc-2c58f8b` (M4's S1), `sc-m3`, `sc-m3pre`, `sc-b6ab3cc`, `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
 | SmartConfig rescue path (M4) | from the package: `sc-boot-seen` and `sc-boot-ok` enabled, the rescue and emergency drop-ins in `/usr/lib/systemd/system`, `/etc/grub.d/42_smartconfig` (a conffile), one rescue entry in `grub.cfg`. The boots checked on 2026-10-09 (`b9b41a6b`, `8d0112f3`): verdict ok, the flag clear, `sudo sc status` exit 0 |
 | `/usr/sbin/policy-rc.d` | none since 2026-10-09 (the owner's answer, "Move it aside"): the image's copy (2025-10-30, in no package, exit 101 to every service action, so no maintainer script could start, restart or stop a service) is `/var/backups/smartconfig/policy-rc.d.image`, sha256 `7a5c733d…`. A snapshot restore from before that brings it back |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
-| Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
+| Claude Code | `~/.claude/settings.json` has `"defaultMode": "auto"` and `Bash(sudo:*)` allowed (throwaway test VM) |
 
 The VM is a disposable test machine: the plan is to break it on purpose.
 Before a destructive test, say what is about to break.

@@ -1,9 +1,12 @@
 # M5 plan: the package
 
-Status: draft, 2026-10-08, for your read. Your call (2026-10-07): M5
-starts after the M3/M4 follow-ups whether or not you have read this; where
-a choice is yours, the plan goes on with the one marked (recommended) and
-says so in the worklog, so it can be turned round later.
+Status: **built and signed off; M5 is done** (tag `m5` on `8f91158`,
+2026-10-09). The plan itself is not approved: it was drafted on
+2026-10-08 for your read, and your call (2026-10-07) was that M5 starts
+after the M3/M4 follow-ups whether or not you have read it. Where a
+choice is yours, the plan went on with the one marked (recommended) and
+said so in the worklog, so it can still be turned round. Section 9 lists
+where the build differs from the plan.
 
 ## 0. Summary
 
