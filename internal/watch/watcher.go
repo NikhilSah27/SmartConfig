@@ -54,6 +54,10 @@ type Config struct {
 	Ready func()
 }
 
+// DefaultFloorBytes is scd's free-space floor: under it, a change that
+// needs new content waits (sc status says so, M5 follow-up 1).
+const DefaultFloorBytes = 256 << 20
+
 // Defaults fills the zero fields of c with the production values.
 func (c Config) Defaults() Config {
 	set := func(d *time.Duration, v time.Duration) {
@@ -73,7 +77,7 @@ func (c Config) Defaults() Config {
 		c.PathBurst = 20
 	}
 	if c.FloorBytes == 0 {
-		c.FloorBytes = 256 << 20
+		c.FloorBytes = DefaultFloorBytes
 	}
 	if c.UserFileMax == 0 {
 		c.UserFileMax = 64 << 10

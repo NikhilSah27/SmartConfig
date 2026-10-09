@@ -156,8 +156,9 @@ minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
 priority. File contents never appear in the journal.
 
-Nothing is pruned yet. When the disk has less than 256 MiB free, scd stops
-storing new content and logs that once. A file that a program rewrites
+Nothing is pruned yet. When the disk has less than 256 MiB free, scd holds
+back every change that needs new content, tries again each minute and
+logs that once; `sudo sc status` says so while it lasts. A file that a program rewrites
 without pause gets 20 rows, then one every 5 minutes with its newest
 content, marked `(rate-limited)`, and one warning line.
 

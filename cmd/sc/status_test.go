@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -247,6 +248,42 @@ func TestStatusConsoleOwnRules(t *testing.T) {
 	r := sc(t, "status", "--console")
 	if r.code != 2 || !strings.Contains(r.stdout, "blocker fstab-source-missing") || time.Since(start) > 5*time.Second {
 		t.Fatalf("%v: %+v", time.Since(start), r)
+	}
+}
+
+// Under scd's free-space floor, sc status says so (M5 follow-up 1): scd
+// holds back every change that needs new content and logs that only once.
+// Above it, or when the space cannot be read, or on the rescue console
+// (no scd runs there), there is no such line; the exit status is the
+// same either way.
+func TestStatusStoreUnderFloor(t *testing.T) {
+	_, fstab, home := statusEnv(t, "ro", false)
+	snap(t, fstab, goodLine)
+	boot.Record(home, "aaaaaaaa-1", "ok", time.Now(), newestRow(t), "local-fs=active")
+	old := storeFree
+	t.Cleanup(func() { storeFree = old })
+	var asked string
+	storeFree = func(dir string) (uint64, error) { asked = dir; return 100 << 20, nil }
+	r := sc(t, "status")
+	want := "scd:           not running\nStore:         only 100 MiB free under " + home +
+		" (scd's floor: 256 MiB);\n               scd holds back changes that need new content until there is room\n"
+	if r.code != 0 || !strings.Contains(r.stdout, want) || asked != home {
+		t.Errorf("under the floor (asked %q): %+v", asked, r)
+	}
+	storeFree = func(string) (uint64, error) { return 256 << 20, nil }
+	if r := sc(t, "status"); r.code != 0 || strings.Contains(r.stdout, "Store:") {
+		t.Errorf("at the floor: %+v", r)
+	}
+	storeFree = func(string) (uint64, error) { return 0, errors.New("no statfs") }
+	if r := sc(t, "status"); r.code != 0 || strings.Contains(r.stdout, "Store:") {
+		t.Errorf("statfs failed: %+v", r)
+	}
+	storeFree = func(string) (uint64, error) { return 1 << 20, nil }
+	rootReadOnly = func() bool { return true }
+	cmdlinePath = filepath.Join(t.TempDir(), "cmdline")
+	os.WriteFile(cmdlinePath, []byte("root=UUID=x ro fstab=no systemd.unit=rescue.target\n"), 0o644)
+	if r := sc(t, "status", "--console"); strings.Contains(r.stdout, "Store:") {
+		t.Errorf("the rescue console: %+v", r)
 	}
 }
 

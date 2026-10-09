@@ -24,10 +24,12 @@ import (
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
+	"smartconfig/internal/watch"
 )
 
 // Where sc status reads the kernel command line and whether / is mounted
-// read-only, and where it looks for a running scd. Tests replace them.
+// read-only, where it looks for a running scd, and how it reads the space
+// left for the store. Tests replace them.
 var (
 	cmdlinePath  = "/proc/cmdline"
 	procDir      = "/proc"
@@ -35,7 +37,28 @@ var (
 		var st syscall.Statfs_t
 		return syscall.Statfs("/", &st) == nil && st.Flags&1 != 0 // ST_RDONLY
 	}
+	// storeFree is the space left for dir's files, as scd reads it.
+	storeFree = func(dir string) (uint64, error) {
+		var st syscall.Statfs_t
+		if err := syscall.Statfs(dir, &st); err != nil {
+			return 0, err
+		}
+		return st.Bavail * uint64(st.Bsize), nil
+	}
 )
+
+// storeSpace writes two lines when the store's filesystem is under scd's
+// free-space floor, where scd holds back every change that needs new
+// content and logs that only once (M5 follow-up 1); else nothing.
+func storeSpace(out io.Writer) {
+	home := store.Home()
+	free, err := storeFree(home)
+	if err != nil || free >= watch.DefaultFloorBytes {
+		return
+	}
+	fmt.Fprintf(out, "Store:         only %d MiB free under %s (scd's floor: %d MiB);\n", free>>20, home, watch.DefaultFloorBytes>>20)
+	fmt.Fprintln(out, "               scd holds back changes that need new content until there is room")
+}
 
 func newStatusCmd() *cobra.Command {
 	var console bool
@@ -395,6 +418,11 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 		fmt.Fprintf(out, "Failed since:  %s, last %s: %s\n", count(len(failed), "boot"), at.Local().Format("01-02 15:04"), why)
 	}
 	fmt.Fprintf(out, "scd:           %s\n", scdState())
+	if !console {
+		// The rescue console: no scd runs there, and the report keeps to
+		// what stopped the boot.
+		storeSpace(out)
+	}
 	if headKnown != nil {
 		headKnown()
 	}
