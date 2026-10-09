@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"smartconfig/internal/check"
 )
 
 func restoreAnswers(t *testing.T, answers string) {
@@ -100,5 +102,34 @@ func TestRestoreChecksAbsent(t *testing.T) {
 	}
 	if _, err := os.Stat(fstab); err == nil {
 		t.Error("restored")
+	}
+}
+
+// The version is judged by the mode and owner sc restore will write (its
+// row's), not the file's on disk now: putting back a world-writable
+// sudoers drop-in over a 0440 one asks (M5 follow-up 5a's check.Meta).
+func TestRestoreChecksMode(t *testing.T) {
+	t.Setenv("SC_HOME", filepath.Join(t.TempDir(), "home"))
+	mustSC(t, "init")
+	d := filepath.Join(t.TempDir(), "sudoers.d")
+	os.Mkdir(d, 0o755)
+	g, err := check.ParseGraph("check sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	t.Cleanup(func() { testHookChecks = nil })
+	p := filepath.Join(d, "admins")
+	os.WriteFile(p, []byte("owner ALL=(ALL) ALL\n"), 0o440)
+	os.Chmod(p, 0o666)
+	open := strings.Fields(mustSC(t, "snapshot", p))[1]
+	os.Chmod(p, 0o440)
+	restoreAnswers(t, "")
+	if r := sc(t, "restore", open); r.code != 2 || !strings.Contains(r.stdout, "sudoers-mode") || !strings.Contains(r.stdout, "mode 0666") {
+		t.Errorf("%+v", r)
+	}
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o440 {
+		t.Errorf("mode %v", fi.Mode())
 	}
 }

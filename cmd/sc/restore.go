@@ -134,7 +134,9 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 		}
 		had = rep.Findings
 	}
-	rep, err := c.Check(cmd.Context(), src.Path, data)
+	// The version as sc restore writes it: its content with its row's mode
+	// and owner, not the file's on disk now.
+	rep, err := c.CheckVersion(cmd.Context(), src.Path, data, check.Meta{Mode: src.Mode, UID: src.UID, GID: src.GID})
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not checked (%v)\n", show(src.Path), err)
 		return true, nil
