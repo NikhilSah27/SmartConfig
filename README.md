@@ -128,6 +128,17 @@ undo the creation of a file (a "did not exist" row). Fingerprint-only files
 (SSH host keys, `/etc/machine-id`, TLS private keys) are never shown or
 restored.
 
+Before `sc restore` writes a file that `sc check` has a checker for, it
+checks the version against the file as it is now, as `sc edit` checks an
+edit.
+- **When it asks:** if the version adds a blocker or an error (an older
+  `/etc/group` that no longer has your admin in `sudo`, say), it lists
+  them and asks.
+- **No answer:** end of input means no; nothing is written, and it exits 2.
+- **`--force`:** writes without checking.
+- **No question:** restoring the healthy version a rescue report gives
+  adds nothing, so it asks nothing.
+
 Ids are 6 hex characters; any unique prefix works. Data lives under
 `$SC_HOME` (default `/var/lib/smartconfig`): file contents in `objects/`,
 history in `changes.db` (SQLite, pure Go).
