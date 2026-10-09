@@ -3,7 +3,7 @@
 - [x] M1 store + CLI: snapshot, log, cat, diff, restore — done 2026-09-27,
       hardened by four review rounds 2026-09-27/28 (tag `m1`)
 - [x] M2 watcher daemon: scd with inotify, auto-snapshot edits made with any editor
-      — done 2026-10-02 (tag `m2`); the 24-hour soak is deferred to the next session
+      — done 2026-10-02 (tag `m2`); the 24-hour soak was closed after 5.6 h (your call, 2026-10-03)
 - [x] M3 file graph + checkers: tiers, real validators, regex rules with canned
       explanations, sc edit and sc check — done 2026-10-03 (tag `m3`)
 - [x] M4 rescue path: GRUB entry, rescue.target service printing sc status,
@@ -23,8 +23,11 @@ the hand install moved aside, the name `smartconfig`, the command `sc`);
 the license (question 6) is yours, later (your answer, 2026-10-09).
 Signed off: the lab's `--deb` run in both modes, and on the dev VM the
 install over the hand install, a reboot, an upgrade, the remove and the
-install again; the dev VM runs 0.5.0, built at the tag. Next: M6, whose
-plan is for your read once it is in `docs/`. The M3 and M4 follow-ups
+install again; the dev VM runs 0.5.0, built at the tag. Next: M6. Its
+plan is drafted (`~/smartconfig-work/M6_PLAN.draft.md`, not yet in
+`docs/`) and is being revised after the review of 2026-10-09; nothing of
+M6 is built. That review also found work no milestone owns: "Open, with
+no milestone yet", at the end of this file. The M3 and M4 follow-ups
 below are done, all but M4's LUKS item (out, your call), and signed off
 on 2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
 install). M4 is done (tag `m4`, 2026-10-07). M3 is done (tag `m3`,
@@ -59,8 +62,9 @@ Deliberate choices and things left out:
   pruning old blobs. All belong to later milestones.
 - The owner half of the restore test (uid/gid) only runs as root; as a normal
   user it is skipped. The smoke run checks root:root on /etc/hosts.
-- Pinned modernc.org/sqlite v1.29.10 because newer releases need Go 1.25 and
-  this machine has Go 1.22.2.
+- Pinned modernc.org/sqlite v1.29.10 because newer releases needed Go 1.25
+  and this machine had Go 1.22.2. Since 2026-09-28 the build uses Go 1.26.8
+  (go.mod); the pin is unchanged (PROJECT_LOG D3).
 
 ### Hardening after acceptance (2026-09-27/28)
 
@@ -116,8 +120,9 @@ see `docs/reviews/`) led to these behaviours. Each has a test.
 - The stamp check can miss a same-size rewrite within the timestamp
   granularity on filesystems with coarse timestamps (vfat, ext4 with
   128-byte inodes). Not an issue on this VM (ext4, nanosecond times).
-- `sc log` prints intents and paths as they are; a newline or tab in an
-  intent breaks the table. Escaping is left for later.
+- `sc log` printed intents and paths as they are; a newline or tab in an
+  intent broke the table. Fixed in M2 (`c56fe24`): names, link targets and
+  intents that hold control characters are printed quoted.
 - Some errors lack the command's context, and `sc help <unknown>` exits 0
   with usage text. Left for later.
 - logrotate reads hidden files in /etc/logrotate.d, including sc's
@@ -143,7 +148,8 @@ creations and changes made while it was stopped. Plan:
 Signed off on the dev VM: acceptance and smoke runs, the real store
 migrated, the owner scenario, a reboot, and `kill -9` during the startup
 rescan and in the middle of a 190-file dpkg burst. The 24-hour soak was
-deferred by the owner. The next session checks what scd has run by then.
+deferred by the owner, then closed after 5.6 h (2026-10-03, the owner's
+call); it passed on what it saw. No build since has had a 24-hour soak.
 
 ### Deliberate limits
 
@@ -215,7 +221,8 @@ where nss-systemd supplies root.
 - scd does not check the startup baseline's `first seen` rows, restores,
   `sc edit` rows or fingerprint-only files.
 - No checker yet for nft, logrotate, AppArmor or PAM: none has a proven
-  check-only form. The M2 plan's other "M3" items wait (plan section 13).
+  check-only form. The M2 plan's other "M3" items wait (plan section 13;
+  see "Open, with no milestone yet" at the end).
 
 ### M3 follow-ups (from the final review, none high)
 
@@ -329,8 +336,9 @@ snapshot.
   Ubuntu's signed EFI GRUB takes `password_pbkdf2`.
 - Done (`845b395`): `sc status` puts `mount /boot` (each unmounted mount point of
   fstab the file is under, the outermost first, since the chunk G review)
-  in its undo (chunk E, C7); `/usr/local` is
-  where sc runs from, so it is mounted when sc runs. With no store in a
+  in its undo (chunk E, C7); `/usr/local` was
+  where sc ran from (the hand install), so it is mounted when sc runs.
+  Since M5, sc is `/usr/sbin/sc`, on `/` (merged-usr). With no store in a
   rescue or emergency boot it says to mount `/var` (final review, B4).
 
 ### M4 follow-ups (from the final review; no high one is open)
@@ -373,3 +381,84 @@ snapshot.
 9. Done (`4adc132`): a torn verdict line whose row id lost digits pulled the line
    back (more rows counted as changed); a line a crash cut short is now
    ended with a mark, and the mark is never read as a line (B5).
+
+## M5 notes
+
+The package: `smartconfig`, one `.deb` built with dpkg-deb (`make deb`,
+reproducible), with `sc` in `/usr/sbin`, the units and drop-ins in
+`/usr/lib/systemd/system` and `42_smartconfig` as a conffile. Its
+maintainer scripts restart scd, run `update-grub`, take over a hand
+install (moved aside as `NAME.dpkg-old`), and keep the store on remove
+and purge. Plan: [docs/M5_PLAN.md](docs/M5_PLAN.md), with its changes
+(C1 to C8) in section 9. Review:
+[docs/reviews/2026-10-08-m5.md](docs/reviews/2026-10-08-m5.md). Signed
+off in the QEMU lab (`make lab-e2e LAB_E2E_ARGS=--deb`, both modes:
+install, the M4 scenario, upgrade, remove, purge, the takeover of the
+`m4` hand install) and on the dev VM (the install over the hand install,
+a reboot, an upgrade, a remove and an install again).
+
+### Deliberate limits
+
+- The plan's questions ran on its recommended answers (dpkg-deb,
+  `/usr/sbin`, the store kept on purge, the hand install moved aside, the
+  name `smartconfig`, the command `sc`). You have not confirmed them yet.
+- No license yet (question 6, yours, later): the package's `copyright`
+  file says all rights are reserved.
+- The command `sc` hides universe's `sc` spreadsheet for anyone with both
+  installed (question 7).
+- Not built: an apt repository or PPA, signing, arm64, other
+  distributions, a source package, a man page; lintian is not run.
+- Purge keeps `/var/lib/smartconfig`, so its copies of secret-bearing
+  files stay too (see "Open, with no milestone yet").
+- With `DPKG_ROOT` set, the scripts still reload systemd and run
+  `update-grub` on the running system (C6).
+- Two items an earlier plan gave to M5 are not in it: the apt
+  Pre/Post-Invoke hook file and a scope file users can edit (M2 plan
+  section 15). They are listed below.
+
+## Open, with no milestone yet
+
+The M3 plan (section 13) said its "later" items would be given a home at
+M3's sign-off; that was not done. The 2026-10-09 review of the whole plan
+(after M5) found these open with no milestone, follow-up list or owner.
+Each waits for your decision: an M5 follow-up round before M6, part of
+M6 or M7, a milestone of its own, or a known limit. Ranked by what is at
+stake:
+
+1. **Retention.** Rows are never deleted and the store is never vacuumed
+   (M2 plan section 15: "needs its own decision"). Below 256 MiB free,
+   scd stops storing content and logs one line, while `sc status` still
+   says scd is running.
+2. **Secrets.** `/etc/shadow`, NetworkManager's system-connections
+   (Wi-Fi keys) and `/etc/netplan/90-installer-network.cfg` are stored
+   with their content, kept forever and after a purge; `sc cat` and
+   `sc diff` print them. Redaction (M2 plan: "M3") and content-based
+   detection were never built. This must be settled before M7 sends
+   diffs to a model.
+3. **`sc restore` writes without a check**, and there is no account-set
+   restore: putting back an older `/etc/group` alone can drop today's
+   admin from sudo, which `sc edit` would refuse (M2 plan: "M3").
+4. **The apt hook and change sets** (M2 plan: the hook in M5): a package
+   that changes many files gives one row each (installing
+   `logcheck-database` gave 190, M2's S5), with nothing that groups them
+   or undoes "that install".
+5. **The rescue entry on LVM, LUKS and multipath roots** is not
+   supported (M4 non-goal), and Ubuntu Server's guided install uses LVM
+   by default.
+6. **Applied markers** ("pending until update-grub"): unattended
+   upgrades can apply an old edit overnight without a word (M2 plan:
+   "M3").
+7. **ACLs, xattrs, inode flags and directory modes** are not recorded
+   (M2 plan question 10; needs a store change).
+8. **Roots outside `/etc`**: `/usr/local/lib/systemd`, crontabs,
+   `/usr/local/etc`, the ESP's `grub.cfg` (M2 plan: "M3 at the
+   earliest").
+9. **A scope file users can edit** (M2 plan: "M5").
+10. **Restores into directories a user owns** are refused (M2 plan:
+    "M4", the dirfd restore).
+11. **`/etc/default/grub.d/*.cfg` is not checked**, though the cloud
+    image keeps its GRUB settings there (found by the M6 pilot).
+12. Smaller: active/inert labels and vendor-override detection;
+    `/etc/alternatives` chains and `rc?.d` links; cross-file checks
+    (two sudoers drop-ins); a home-directory watch; `sc help <unknown>`
+    exits 0.
