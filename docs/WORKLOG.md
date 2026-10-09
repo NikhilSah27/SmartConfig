@@ -2857,3 +2857,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Next:**
     - sshd's apply text for socket-activated ssh (a small product fix);
     - the M6 draft's revision, outside the repo.
+- **sshd's apply text names ssh.socket** (2026-10-09, your OK, "go
+  ahead with the sshd fix").
+  - **The problem:** on Ubuntu 24.04 ssh is socket-activated.
+    `sshd-socket-generator` writes sshd_config's `Port` and
+    `ListenAddress` into `ssh.socket` at `daemon-reload`. So a new port or
+    address needs `systemctl daemon-reload`, then
+    `systemctl restart ssh.socket` (openssh-server's README.Debian).
+    `default.graph` said only `systemctl restart ssh`.
+  - **The fix:** the text now names both. A new test,
+    `TestDefaultGraphSSHApply`, failed on the old text first.
+  - **Checks:** fmt, vet and `go test ./...` clean; the build is static.
+  - **Not yet on this VM:** it runs 0.5.0, which has the old text. The
+    next package carries the new one.
