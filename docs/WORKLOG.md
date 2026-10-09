@@ -148,9 +148,11 @@ a time, each with its checks, CI and a worklog line. **Where it stands
 (step 9), the lab's `--deb` run passed in both modes on `8f91158`, and
 this VM runs that package (installed over the hand install, rebooted,
 upgraded; log, 2026-10-09), and the remove and the install again
-passed (2026-10-09, after your policy-rc.d answer: moved aside). Left:
-the tag `m5` and the cleanup (the worktrees `fu-scratch/wt-m5` and
-`wt-revg`, old builds in `dist/`).
+passed (2026-10-09, after your policy-rc.d answer: moved aside).
+**M5 is done: tag `m5`** on `8f91158` (2026-10-09; your answer "Decide
+later" on the license tagged it on the package the lab tested). This VM
+runs 0.5.0, built at the tag. Left: the cleanup (the worktrees
+`fu-scratch/wt-m5` and `wt-revg`, old builds in `dist/`).
 
 **The M3 and M4 follow-ups: done and signed off** (2026-10-08). Chunks
 F, G and H, each reviewed. `make lab-e2e LAB_E2E_ARGS=--grub-password`
@@ -239,9 +241,10 @@ step is built (your call, 2026-09-30).
 
 - [x] Reboot this VM: done (2026-10-09), and the read-only check above
   passed on the package's first two boots (the log, 2026-10-09).
-- [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-7 (dpkg-deb or nfpm,
-  `/usr/sbin`, purge, the hand install, the package's name, the license,
-  the command's name).
+- [ ] [M5_PLAN.md](M5_PLAN.md) questions 1-5 and 7 (dpkg-deb or nfpm,
+  `/usr/sbin`, purge, the hand install, the package's name, the
+  command's name): `m5` went out on the recommended answers; say if one
+  should turn round. Question 6, the license: later (your answer).
 - [x] This VM's `/usr/sbin/policy-rc.d` (from its image, 2025-10-30, in
   no package, exit 101 to every service action): your answer
   (2026-10-09), "Move it aside": it is
@@ -2743,3 +2746,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   journal). With this, plan step 9 is done: the lab in both modes, the
   install over the hand install, the reboot, an upgrade, the remove and
   the install again. Next: the tag `m5` on `8f91158`.
+- **M5 is done: tag `m5`** (2026-10-09, annotated, on `8f91158`, the
+  commit the lab passed; pushed). Checked first in a clone at the tag:
+  `make deb VERSION=0.4.99+git95.20261008095800.8f91158` gives the tested
+  package byte for byte (`c8d176d1c042`, `sc` `4fa140edc6fb`), and `make
+  deb` there gives 0.5.0 (`0087c1219e54`, twice), whose files, modes and
+  owners are the same; only `control`'s Version, the changelog's first
+  line, `sc`'s version string (the same size) and so `md5sums` differ.
+  Found on the way: a build in a `git worktree` stamps no vcs info into
+  `sc` (`go version -m`: `(devel)`, no `vcs.revision`, even with
+  `-buildvcs=true`), so it is not the clone's bytes; the lab and `make
+  deb` here run in the checkout, where it is stamped. Then this VM, as
+  root (script `~/smartconfig-work/signoff/signoff-m5-release-0.5.0.sh`,
+  log `signoff-m5-release-20261009T182604Z-0.5.0.log`): `apt-get install`
+  of 0.5.0 over the tested build, postinst restarted scd itself (no
+  policy-rc.d now), `sc version` `0.5.0 (8f91158122ad, go1.26.8)`, `dpkg
+  --verify` clean and the 17 installed checks ok, `sc status` exit 0
+  among them, rows kept (1588). MILESTONES and PROJECT_LOG say M5 is
+  done. Next: the cleanup, then M6 (its plan, for your read).

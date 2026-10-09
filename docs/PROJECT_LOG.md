@@ -4,9 +4,8 @@ Everything done so far, why, the current state of the development VM, and how
 to get back to work if something breaks. Written for a human or a Claude Code
 session picking the project up cold.
 
-Last updated: 2026-10-09, M5 (the package) installed on the dev VM; its
-sign-off is done but for the remove and install again.
-Tags: `m4` 2026-10-07, `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
+Last updated: 2026-10-09, M5 (the package) done; the dev VM runs 0.5.0.
+Tags: `m5` 2026-10-09, `m4` 2026-10-07, `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 
 ---
 
@@ -25,14 +24,12 @@ Tags: `m4` 2026-10-07, `m3` 2026-10-03, `m2` 2026-10-02, `m1` 2026-09-28.
 | QEMU rescue lab cache | `~/.cache/smartconfig-lab` (images, runs; [lab/README.md](../lab/README.md)) |
 | Scratch outside the repo | `~/smartconfig-work` (plans as drafted, raw review output, lab evidence in `signoff/`) |
 
-Status (2026-10-09): **M5, the package, is built and reviewed**
-([M5_PLAN.md](M5_PLAN.md)). The lab's `--deb` run passed in both modes
-on `8f91158`, and that package (`smartconfig`
-`0.4.99+git95.20261008095800.8f91158`) runs on the dev VM: installed
-over the hand install on 2026-10-08, rebooted, upgraded on 2026-10-09.
-Left: the remove and install again on the dev VM (it waits on the
-owner's answer about its `policy-rc.d`), then the tag `m5`. **M4 is
-done** (tag `m4`), with the M3 and M4 follow-ups (2026-10-08). **M3 is
+Status (2026-10-09): **M5, the package, is done** (tag `m5` on
+`8f91158`; [M5_PLAN.md](M5_PLAN.md)). The lab's `--deb` run passed in
+both modes on `8f91158`; on the dev VM the package was installed over
+the hand install (2026-10-08), rebooted, upgraded, removed and installed
+again (2026-10-09), and it runs `smartconfig` 0.5.0, built at the tag.
+**M4 is done** (tag `m4`), with the M3 and M4 follow-ups (2026-10-08). **M3 is
 done** (tag `m3`). Before that: **M2** (tag `m2`) and
 **M1** (tag `m1`, store + CLI, hardened by four review rounds and five
 rounds of fixes, see [reviews/](reviews/)). Live progress:
@@ -143,10 +140,10 @@ This is the scenario M3 (checkers) and M4 (rescue path) must handle.
 | `/etc/fstab` | original, sha256 starts `9d71ab603c19f301`, 446 bytes, 0644 root:root |
 | `/etc/hosts` | original, sha256 starts `c2646361092fcc60`, 273 bytes |
 | SmartConfig store | `/var/lib/smartconfig`, migrated to M2 on 2026-10-02 and filled by `scd` (1,586 rows on 2026-10-09; 1,546 on 2026-10-03, after the VM was rolled back to the pre-S5 snapshot; 2,121 before); the 4 film-run rows for `/etc/fstab` keep their ids (`2c6901` is the original); the M1 copy is `changes.db.m1-backup` (do not copy it back: it would drop every M2 row) |
-| SmartConfig package (M5) | `smartconfig` `0.4.99+git95.20261008095800.8f91158` from `dist/` (`make deb`, the lab's package byte for byte), since 2026-10-09 17:34 UTC; `dpkg --verify smartconfig` clean. Before it: the package of `4b34d12` (2026-10-08), and the hand install, which it moved aside as `NAME.dpkg-old` (`/usr/local/sbin/sc`, the units and drop-ins in `/etc/systemd/system`, `/etc/grub.d/42_smartconfig`) |
-| SmartConfig watcher | `scd.service` from `/usr/lib/systemd/system`, enabled, `Type=notify`, binary `/usr/sbin/sc` (`sc version`: `8f91158122ad`, sha256 `4fa140ed…`). Earlier builds in `/var/backups/smartconfig`: `sc-d686341` (the follow-ups, the hand install before M5), `sc-59203a3` (tag `m4`), `sc-2c58f8b` (M4's S1), `sc-m3`, `sc-m3pre`, `sc-b6ab3cc`, `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
+| SmartConfig package (M5) | `smartconfig` 0.5.0 (`dist/smartconfig_0.5.0_amd64.deb`, sha256 `0087c121…`, `make deb` at the tag `m5`: the lab's package but for the version string), since 2026-10-09 18:26 UTC; `dpkg --verify smartconfig` clean. Before it: `0.4.99+git95.20261008095800.8f91158` (the one the lab passed, `c8d176d1…`; removed and installed again 2026-10-09), the package of `4b34d12` (2026-10-08), and the hand install, which it moved aside as `NAME.dpkg-old` (`/usr/local/sbin/sc`, the units and drop-ins in `/etc/systemd/system`, `/etc/grub.d/42_smartconfig`) |
+| SmartConfig watcher | `scd.service` from `/usr/lib/systemd/system`, enabled, `Type=notify`, binary `/usr/sbin/sc` (`sc version`: `0.5.0 (8f91158122ad, go1.26.8)`, sha256 `ccdfad23…`). Earlier builds in `/var/backups/smartconfig`: `sc-d686341` (the follow-ups, the hand install before M5), `sc-59203a3` (tag `m4`), `sc-2c58f8b` (M4's S1), `sc-m3`, `sc-m3pre`, `sc-b6ab3cc`, `sc-m2`, `sc-m1`. `sudo journalctl -u scd` |
 | SmartConfig rescue path (M4) | from the package: `sc-boot-seen` and `sc-boot-ok` enabled, the rescue and emergency drop-ins in `/usr/lib/systemd/system`, `/etc/grub.d/42_smartconfig` (a conffile), one rescue entry in `grub.cfg`. The boots checked on 2026-10-09 (`b9b41a6b`, `8d0112f3`): verdict ok, the flag clear, `sudo sc status` exit 0 |
-| `/usr/sbin/policy-rc.d` | from the VM's image (2025-10-30, in no package); it exits 101, so no package's maintainer script starts, restarts or stops a service here (`sudo systemctl restart scd` by hand after an upgrade). Keep or remove: the owner's call, open |
+| `/usr/sbin/policy-rc.d` | none since 2026-10-09 (the owner's answer, "Move it aside"): the image's copy (2025-10-30, in no package, exit 101 to every service action, so no maintainer script could start, restart or stop a service) is `/var/backups/smartconfig/policy-rc.d.image`, sha256 `7a5c733d…`. A snapshot restore from before that brings it back |
 | sudo | passwordless for `vboxuser` via `/etc/sudoers.d/90-vboxuser-nopasswd` |
 | GitHub CLI | `gh`, logged in as NikhilSah27 (token in `~/.config/gh/hosts.yml`) |
 | Claude Code | `~/.claude/settings.json` has `defaultMode: bypassPermissions` and `Bash(sudo:*)` allowed (throwaway test VM) |
@@ -295,7 +292,7 @@ fastest way back from a completely broken system.
 Open Claude Code in the checkout and say:
 
 > Read CLAUDE.md, then docs/WORKLOG.md (its "Now" section says what is in
-> progress) and the current milestone's plan (docs/M5_PLAN.md), then
+> progress) and the current milestone's plan (the newest docs/M*_PLAN.md), then
 > continue.
 
 Rules that carry over: plan first; one step at a time, each with its tests

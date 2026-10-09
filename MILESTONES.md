@@ -9,20 +9,24 @@
 - [x] M4 rescue path: GRUB entry, rescue.target service printing sc status,
       boot-ok verification, restore from read-only root — done 2026-10-07
       (tag `m4`)
-- [ ] M5 package: .deb with nfpm, install on a clean VM
+- [x] M5 package: .deb (dpkg-deb, not nfpm: plan question 1); install,
+      upgrade, remove and purge on a clean VM (the QEMU lab), and on the
+      dev VM over the hand install, with an upgrade, a remove and an
+      install again — done 2026-10-09 (tag `m5`, package 0.5.0)
 - [ ] M6 incident factory and eval set
 - [ ] M7 local model: sc why with llama.cpp, opt-in
 
-Current: M5, the package (your call, 2026-10-07: after the follow-ups,
-start M5 either way); plan [docs/M5_PLAN.md](docs/M5_PLAN.md), for your
-read (its questions run on the recommended answers: dpkg-deb, not nfpm).
-All 8 steps are built and reviewed; of the sign-off, the lab's `--deb`
-run passed in both modes on `8f91158`, and that package runs on the dev
-VM (installed over the hand install, rebooted, upgraded). Left: the
-remove and install again on the dev VM, which waits on your answer about
-its `policy-rc.d`, then the tag `m5`. The M3 and M4 follow-ups below
-are done, all but M4's LUKS item (out, your call), and signed off on
-2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
+Current: M5 is done (tag `m5` on `8f91158`, 2026-10-09). Plan
+[docs/M5_PLAN.md](docs/M5_PLAN.md): its questions ran on the
+recommended answers (dpkg-deb, `/usr/sbin`, the store kept on purge,
+the hand install moved aside, the name `smartconfig`, the command `sc`);
+the license (question 6) is yours, later (your answer, 2026-10-09).
+Signed off: the lab's `--deb` run in both modes, and on the dev VM the
+install over the hand install, a reboot, an upgrade, the remove and the
+install again; the dev VM runs 0.5.0, built at the tag. Next: M6, whose
+plan is for your read once it is in `docs/`. The M3 and M4 follow-ups
+below are done, all but M4's LUKS item (out, your call), and signed off
+on 2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
 install). M4 is done (tag `m4`, 2026-10-07). M3 is done (tag `m3`,
 2026-10-03). The M2 soak was closed after 5.6 h (your call).
 
