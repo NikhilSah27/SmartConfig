@@ -2891,3 +2891,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `/etc/cloud/cloud.cfg.d/90-installer-network.cfg` (recorded with its
   content, tier 4). MILESTONES' open list named it under
   `/etc/netplan/`.
+- **M5 follow-up 1, `sc status` and the free-space floor** (2026-10-09,
+  chunk I).
+  - **What it does:** under scd's 256 MiB floor, `sc status` adds two
+    lines: `Store: only N MiB free under <home> (scd's floor: 256 MiB);`
+    and that scd holds back changes that need new content until there is
+    room.
+  - **Where it doesn't:** not on the rescue console, and the exit status
+    is the same.
+  - **One number:** the floor is now `watch.DefaultFloorBytes`, used by
+    scd and by `sc status`.
+  - **Tests:** `TestStatusStoreUnderFloor`: under, at the floor, statfs
+    failing, the console. Four mutations (no call, `>=` to `>`, no
+    console guard, the wrong directory) each failed it.
+  - **Checks:** fmt, vet and `go test ./...` clean.
+  - **README:** says so.
+  - **Next:** step 2, `sc prune`.
