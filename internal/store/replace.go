@@ -69,7 +69,7 @@ func (s *Store) Replace(path string, data []byte, mode os.FileMode, uid, gid int
 	if testHookBeforeReplaceLock != nil {
 		testHookBeforeReplaceLock()
 	}
-	wrote, err := s.commitWrite(&row, base != nil, stamp, base == nil, pending.Commit)
+	wrote, err := s.commitWrite(&row, data, base != nil, stamp, base == nil, pending.Commit)
 	switch {
 	case err == nil:
 		return row, prev, nil

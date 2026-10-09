@@ -89,6 +89,7 @@ func (s *Store) Record(obs []Obs) ([]Result, error) {
 	}
 	res := make([]Result, len(obs))
 	rows := make([]*Change, len(obs))
+	datas := make([][]byte, len(obs))
 	var todo []int
 	for i, o := range obs {
 		c, data, err := s.rowFor(o)
@@ -110,7 +111,7 @@ func (s *Store) Record(obs []Obs) ([]Result, error) {
 				return nil, err
 			}
 		}
-		rows[i] = c
+		rows[i], datas[i] = c, data
 		todo = append(todo, i)
 	}
 	if len(todo) == 0 {
@@ -154,6 +155,13 @@ func (s *Store) Record(obs []Obs) ([]Result, error) {
 				}
 			}
 			c.TS = ts
+			if c.Kind == KindFile {
+				// sc prune may have deleted the blob since it was put,
+				// though only under this lock (M5 follow-up 2).
+				if err := s.putBlob(c.Blob, datas[i]); err != nil {
+					return err
+				}
+			}
 			if err := insertTx(ctx, conn, c); err != nil {
 				return err
 			}

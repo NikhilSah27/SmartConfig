@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"smartconfig/internal/fsutil"
 )
@@ -163,6 +164,27 @@ func TestM1Compat(t *testing.T) {
 	}
 	if res := record(t, s, observe(t, file)); res[0].Recorded {
 		t.Fatal("the M2 code does not see sc-m1's row as the newest state")
+	}
+
+	// After sc prune (M5 follow-up 2), sc-m1 still lists and prints what
+	// is left, and its new rows come after every old one.
+	ageBlobs(t, s)
+	if got, err := s.Prune(time.Unix(1_800_000_000, 0), nil, false); err != nil || got.Rows == 0 {
+		t.Fatalf("prune: %+v %v", got, err)
+	}
+	if code, out, errs = m1("log", file); code != 0 || !strings.Contains(out, c.ID) {
+		t.Fatalf("sc-m1 log after prune: %d %q %q", code, out, errs)
+	}
+	if code, out, _ = m1("cat", c.ID); code != 0 || out != "127.0.0.1 localhost\n::1 localhost\n" {
+		t.Fatalf("sc-m1 cat after prune: %d %q", code, out)
+	}
+	before, _ := s.NewestRowID()
+	write(t, file, "after prune\n", 0o644)
+	if code, out, errs = m1("snapshot", "-q", file); code != 0 {
+		t.Fatalf("sc-m1 snapshot after prune: %q", errs)
+	}
+	if after, _ := s.NewestRowID(); after <= before {
+		t.Fatalf("sc-m1's row has rowid %d, after %d", after, before)
 	}
 	var ok string
 	if err := s.db.QueryRow("PRAGMA integrity_check").Scan(&ok); err != nil || ok != "ok" {

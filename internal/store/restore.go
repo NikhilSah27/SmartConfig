@@ -100,7 +100,7 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 		if testHookBeforeRestoreLock != nil {
 			testHookBeforeRestoreLock()
 		}
-		restored, wrote, err = s.commitRestore(src, prev != nil, stamp, pending)
+		restored, wrote, err = s.commitRestore(src, data, prev != nil, stamp, pending)
 		if !retryable(err) || attempt == maxAttempts {
 			break
 		}
@@ -201,13 +201,13 @@ func (s *Store) savePreRestore(src Change) (*Change, fsutil.Stamp, error) {
 // lock to record it (the watcher) waits for this commit and finds the
 // restore row. It first checks that the path is still the version
 // savePreRestore saved (existed and stamp), and returns errChanged if not.
-func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pending *fsutil.Pending) (restored Change, wrote bool, err error) {
+func (s *Store) commitRestore(src Change, data []byte, existed bool, stamp fsutil.Stamp, pending *fsutil.Pending) (restored Change, wrote bool, err error) {
 	restored = Change{
 		Path: src.Path, Kind: src.Kind, Blob: src.Blob, Target: src.Target, Size: src.Size,
 		Mode: src.Mode, UID: src.UID, GID: src.GID,
 		Origin: OriginRestore, Intent: "restored from " + src.ID,
 	}
-	wrote, err = s.commitWrite(&restored, existed, stamp, false, func() error {
+	wrote, err = s.commitWrite(&restored, data, existed, stamp, false, func() error {
 		switch src.Kind {
 		case KindLink:
 			return fsutil.SymlinkAtomic(src.Path, src.Target, src.UID, src.GID)
@@ -226,7 +226,9 @@ func (s *Store) commitRestore(src Change, existed bool, stamp fsutil.Stamp, pend
 // (existed and stamp), and returns errChanged if not. With absentFirst (the
 // path is absent), a row saying so goes before c unless the newest row
 // already does: "did not exist" for a path with no rows, else "deleted".
-func (s *Store) commitWrite(c *Change, existed bool, stamp fsutil.Stamp, absentFirst bool, write func() error) (wrote bool, err error) {
+// data is a file row's content: its blob is put again under the lock if
+// sc prune deleted it meanwhile (M5 follow-up 2).
+func (s *Store) commitWrite(c *Change, data []byte, existed bool, stamp fsutil.Stamp, absentFirst bool, write func() error) (wrote bool, err error) {
 	err = s.writeTx(true, func(ctx context.Context, conn *sql.Conn) error {
 		st, err := fsutil.LstatStamp(c.Path)
 		switch {
@@ -234,6 +236,11 @@ func (s *Store) commitWrite(c *Change, existed bool, stamp fsutil.Stamp, absentF
 			return errChanged
 		case !existed && !fsutil.IsNotExist(err):
 			return errChanged
+		}
+		if c.Kind == KindFile {
+			if err := s.putBlob(c.Blob, data); err != nil {
+				return err
+			}
 		}
 		// Last point where stopping leaves the path untouched. Past it, a
 		// forced stop (ForceStop) must wait for this write to report.
