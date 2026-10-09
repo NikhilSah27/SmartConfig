@@ -246,6 +246,10 @@ where nss-systemd supplies root.
    whole history.
 8. Done (`c4c4b2b`): cosmetic: an unclosed quote in `/etc/default/grub` was reported
    past the last line; two swap lines shared one findmnt heading.
+5a. Done (`2584d47`), taken in from the M6 session's finding: scd judges the
+   version before a change by the mode and owner its row recorded
+   (`check.CheckVersion`), not the file's mode on disk now. A mode-only
+   change of a sudoers file was not reported.
 
 ## M4 notes
 

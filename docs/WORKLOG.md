@@ -3022,3 +3022,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** fmt, vet and `go test ./...` clean.
   - **Next:** the scd mode-only check, taken in from the M6 session's
     finding, then the chunk J review.
+- **M5 follow-up 5a, scd's mode-only check** (2026-10-09, chunk J, `2584d47`).
+  - **Where it came from:** the M6 session found it (`m6/M6-RESUME.md`).
+  - **The bug:** with no check of the version before in memory, scd
+    checked that version with the file's mode on disk now, which is the
+    new mode. So a mode-only change of a sudoers file (a drop-in made
+    world-writable, which sudo ignores) added nothing and was not
+    reported.
+  - **The fix:** `check.CheckVersion` takes a row's mode and owner, and
+    `sudoers-mode` judges those.
+  - **Tests:**
+    - `TestCheckModeOnlyChange` (scd: chmod 0666 after the start gives
+      the error line) failed before the fix;
+    - `TestCheckVersionMode`;
+    - 3 mutations, each failed a test.
+  - **Checks:** fmt, vet, `go test ./...` and `make race` clean.
+  - **Next:** the chunk J review.
