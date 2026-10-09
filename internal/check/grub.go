@@ -13,9 +13,9 @@ import (
 
 func init() {
 	rules = append(rules,
-		Rule{"grub-default-syntax", Blocker, `update-grub reads /etc/default/grub as a shell script, and this line is
-not valid shell. update-grub stops with an error, or writes a grub.cfg
-with the wrong settings, and that shows at the next boot.
+		Rule{"grub-default-syntax", Blocker, `update-grub reads /etc/default/grub, then grub.d/*.cfg there, as shell,
+and this line is not valid shell: update-grub stops with an error, or
+writes a grub.cfg with the wrong settings, which shows at the next boot.
 A value with spaces needs double quotes, and = has no spaces around it:
 update-grub would run the rest as a command. A line is NAME="value".`},
 		Rule{"grubcfg-syntax", Blocker, `GRUB cannot read its menu past this line: at the next boot it prints an
@@ -27,9 +27,9 @@ update-grub rather than editing it. custom.cfg is yours to fix.`},
 
 var shSyntax = regexp.MustCompile(`^(.*): (\d+): Syntax error: (.*)$`)
 
-// checkShSyntax checks /etc/default/grub, a shell fragment that
-// update-grub sources, with sh -n (dash on Ubuntu), which stops at the
-// first error.
+// checkShSyntax checks /etc/default/grub and /etc/default/grub.d/*.cfg,
+// shell fragments that update-grub sources, with sh -n (dash on Ubuntu),
+// which stops at the first error.
 func checkShSyntax(ctx context.Context, c *Checks, in input) ([]Finding, []string, error) {
 	own := shAssignments(in.data)
 	res, notes, ok, err := c.validate(ctx, in, "sh", "-n", in.file)

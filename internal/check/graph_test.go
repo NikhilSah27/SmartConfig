@@ -130,7 +130,7 @@ var graphSamples = map[string][]string{
 	"unit":    {"/etc/systemd/system/my.service", "/etc/systemd/system/my.timer"},
 	"unitdropin": {"/etc/systemd/system/ssh.service.d/override.conf", "/etc/systemd/system/getty@.service.d/50-local.conf",
 		"/etc/systemd/system/my.timer.d/50-local.conf"},
-	"shsyntax": {"/etc/default/grub"},
+	"shsyntax": {"/etc/default/grub", "/etc/default/grub.d/50-cloudimg-settings.cfg"},
 	"grubcfg":  {"/boot/grub/grub.cfg", "/boot/grub/custom.cfg"},
 	"nsswitch": {"/etc/nsswitch.conf"},
 	"preload":  {"/etc/ld.so.preload"},

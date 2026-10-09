@@ -16,7 +16,7 @@ check unit /etc/systemd/system/*.{service,socket,timer,mount,path,target}
 apply unit after systemctl daemon-reload
 check unitdropin /etc/systemd/system/*.{service,socket,timer,mount,path,target}.d/*.conf
 apply unitdropin after systemctl daemon-reload
-check shsyntax /etc/default/grub
+check shsyntax /etc/default/grub /etc/default/grub.d/*.cfg
 apply shsyntax after update-grub, at the next boot
 check grubcfg /boot/grub/{grub.cfg,custom.cfg}
 apply grubcfg at the next boot

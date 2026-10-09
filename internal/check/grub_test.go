@@ -128,6 +128,31 @@ func TestShSyntaxReal(t *testing.T) {
 	}
 }
 
+// /etc/default/grub.d/*.cfg are read by update-grub as /etc/default/grub
+// is, after it (the cloud image keeps its settings in one): the same check
+// and rules (M5 follow-up 4, found by the M6 pilot as G08). Other names in
+// grub.d are not sourced, and not checked.
+func TestShSyntaxGrubD(t *testing.T) {
+	c := &Checks{Home: filepath.Join(t.TempDir(), "schome")}
+	p := "/etc/default/grub.d/50-cloudimg-settings.cfg"
+	rep, err := c.Check(context.Background(), p, []byte("GRUB_CMDLINE_LINUX_DEFAULT=\"console=tty1 console=ttyS0\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := brief(rep.Findings); got != "1 grub-default-syntax blocker" || rep.Checker != "shsyntax" || rep.Findings[0].Path != p {
+		t.Errorf("unclosed quote: %s (checker %q) %+v", got, rep.Checker, rep.Findings)
+	}
+	rep, err = c.Check(context.Background(), p, []byte("GRUB_TIMEOUT = 5\n"))
+	if err != nil || brief(rep.Findings) != "1 grub-default-syntax blocker" {
+		t.Errorf("spaces around =: %+v %v", rep, err)
+	}
+	for _, other := range []string{"/etc/default/grub.d/50-x.cfg.bak", "/etc/default/grub.d/sub/x.cfg"} {
+		if g := c.GraphInUse().Checker(other); g != "" {
+			t.Errorf("%s: checker %q", other, g)
+		}
+	}
+}
+
 // grub-script-check's output, as captured on the dev VM (GRUB 2.12) from
 // fabricated files: all of it on stderr.
 func TestGrubCfg(t *testing.T) {

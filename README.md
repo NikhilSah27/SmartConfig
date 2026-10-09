@@ -236,8 +236,9 @@ plus rules of sc's own: `/etc/fstab` (`findmnt --verify`), sudoers
 inside `sshd_config` as sshd reads it, and a warning for a
 `ListenAddress` no interface here has), systemd units in
 `/etc/systemd/system` and their drop-ins in `NAME.d/*.conf`, each drop-in
-with its unit (`systemd-analyze verify`), `/etc/default/grub` and
-`grub.cfg` (`sh -n`, `grub-script-check`), netplan (netplan's generator on
+with its unit (`systemd-analyze verify`), `/etc/default/grub` with
+`/etc/default/grub.d/*.cfg`, and `grub.cfg` (`sh -n`,
+`grub-script-check`), netplan (netplan's generator on
 a scratch copy of all its files), udev rules (`udevadm verify`), passwd
 and group (`pwck -r`, `grpck -r`, with a made-up shadow file), sysctl
 (`sysctl --dry-run`), and `nsswitch.conf`, `ld.so.preload`, `/etc/hosts`,
