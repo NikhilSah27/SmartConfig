@@ -468,7 +468,8 @@ fixes `9d43980`).
      the check.
    - Nothing changes when it adds nothing, which covers restoring the
      last healthy version from the rescue report.
-4. `/etc/default/grub.d/*.cfg` is checked as `/etc/default/grub` is.
+4. Done (`dc6c3da`): `/etc/default/grub.d/*.cfg` is checked as
+   `/etc/default/grub` is.
 5. `sc help <unknown>` exits 1, with one line.
 
 **Chunk K, secrets:**

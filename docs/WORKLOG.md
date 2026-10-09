@@ -3000,3 +3000,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     nothing, or have no checker.
   - **Checks:** fmt, vet and `go test ./...` clean.
   - **Next:** step 4, `/etc/default/grub.d/*.cfg`.
+- **M5 follow-up 4, `grub.d` checked** (2026-10-09, chunk J, `dc6c3da`).
+  - **Why:** update-grub sources `/etc/default/grub.d/*.cfg` after
+    `/etc/default/grub`, and the cloud image keeps its GRUB settings
+    there. sc checked only `/etc/default/grub` (the M6 pilot's G08).
+  - **The fix:** the graph's shsyntax line now has both, so `sh -n` and
+    sc's own rules run on each.
+  - **Tests:** `TestShSyntaxGrubD` (an unclosed quote, spaces around `=`;
+    names update-grub does not source are not checked), and
+    `TestDefaultGraph` with a `grub.d` sample. Both failed before the
+    fix.
+  - **Checks:** fmt, vet and `go test ./...` clean.
+  - **Next:** step 5, `sc help <unknown>`.
