@@ -147,10 +147,10 @@ a time, each with its checks, CI and a worklog line. **Where it stands
 ([reviews/2026-10-08-m5.md](reviews/2026-10-08-m5.md)); of the sign-off
 (step 9), the lab's `--deb` run passed in both modes on `8f91158`, and
 this VM runs that package (installed over the hand install, rebooted,
-upgraded; log, 2026-10-09). Left: the remove and the install again on
-this VM, which wait on your policy-rc.d answer (below); then the tag
-`m5` and the cleanup (the worktrees `fu-scratch/wt-m5` and `wt-revg`,
-old builds in `dist/`).
+upgraded; log, 2026-10-09), and the remove and the install again
+passed (2026-10-09, after your policy-rc.d answer: moved aside). Left:
+the tag `m5` and the cleanup (the worktrees `fu-scratch/wt-m5` and
+`wt-revg`, old builds in `dist/`).
 
 **The M3 and M4 follow-ups: done and signed off** (2026-10-08). Chunks
 F, G and H, each reviewed. `make lab-e2e LAB_E2E_ARGS=--grub-password`
@@ -242,12 +242,13 @@ step is built (your call, 2026-09-30).
 - [ ] Read [M5_PLAN.md](M5_PLAN.md): questions 1-7 (dpkg-deb or nfpm,
   `/usr/sbin`, purge, the hand install, the package's name, the license,
   the command's name).
-- [ ] This VM's `/usr/sbin/policy-rc.d` (from its image, 2025-10-30, in
-  no package) answers 101 to every service action package scripts ask
-  for: no package's upgrade restarts its service here, and the package's
-  postinst could not restart scd, nor will its prerm stop it on a
-  remove. Keep it, or remove it (`sudo rm /usr/sbin/policy-rc.d`)? The
-  rest of M5's sign-off on this VM (remove, install again) waits on it.
+- [x] This VM's `/usr/sbin/policy-rc.d` (from its image, 2025-10-30, in
+  no package, exit 101 to every service action): your answer
+  (2026-10-09), "Move it aside": it is
+  `/var/backups/smartconfig/policy-rc.d.image` (sha256 `7a5c733d…`;
+  to put it back, `sudo mv` it to `/usr/sbin/policy-rc.d`). The license
+  (M5 question 6): "Decide later" (your answer, 2026-10-09): `m5` is
+  tagged on the package the lab tested.
 
 - [ ] Ruleset on main (roadmap question 7) and host details (question 13).
 - [ ] On the host, before the soak: 4 vCPUs and the VMSVGA graphics
@@ -2717,3 +2718,28 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   originals, `sudo sc status` exit 0, no failed unit. MILESTONES says
   where M5 stands. Still waiting: your policy-rc.d answer, for the
   remove and install again.
+- **M5 sign-off, this VM: the remove and the install again, all checks
+  pass** (2026-10-09, as root, after your answer: policy-rc.d moved
+  aside to `/var/backups/smartconfig/policy-rc.d.image`; script
+  `~/smartconfig-work/signoff/signoff-m5-reinstall-8f91158.sh`, log
+  `signoff-m5-reinstall-20261009T180716Z-8f91158.log`). The package of
+  `8f91158` (`c8d176d1c042`), the one the lab passed. `apt-get remove`:
+  prerm stopped scd itself (0.5 s, no note), dpkg `rc`, `/usr/sbin/sc`,
+  the units and the drop-ins gone, the three units masked, no rescue
+  entry, no flag, `grub-script-check` ok, the store, the conffile and the
+  hand install's seven `NAME.dpkg-old` kept, no failed unit: 25 checks
+  ok. `apt-get install` again: no takeover (not a first install),
+  postinst restarted scd itself (no note), `dpkg --verify` clean,
+  `42_smartconfig` the package's, then the 17 installed checks, `sc
+  status` exit 0 among them: 22 ok. scd's startup rescan found the one
+  file changed while it was stopped (`/boot/grub/grub.cfg`, postrm's
+  `update-grub`, row `0677f5`), and it recorded postinst's `update-grub`
+  as it ran (`207478`); rows 1586 to 1588. Against the manifest from
+  before M5 only the takeover, the `wants/` links now to `/usr/lib`, the
+  package's `42_smartconfig` and churn of cups and snap; no mask is
+  left. The remove took 2m26s: four `daemon-reload`s of 4-6.5 s and
+  about 1m45s of `update-grub` on a busy VM (load 4.9; motd-news,
+  packagekit, apt-daily started meanwhile; no gap over 22 s in the
+  journal). With this, plan step 9 is done: the lab in both modes, the
+  install over the hand install, the reboot, an upgrade, the remove and
+  the install again. Next: the tag `m5` on `8f91158`.
