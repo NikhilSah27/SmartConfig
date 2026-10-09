@@ -8,8 +8,9 @@ sc's report above the prompt, and that the report's own commands fix the
 machine. Plan: `docs/M4_PLAN.md` (step 11, sign-off S1); the check IDs
 below are the step 11 design's (docs/WORKLOG.md links it).
 
-Dev only: Python 3 standard library and POSIX sh, never shipped, not in
-CI. No sudo, no KVM, no host networking changes: QEMU runs under TCG as
+Dev only: Python 3 standard library and POSIX sh, never shipped. The VM
+runs are not in CI; the unit tests are, through `go test` (`TestLabPython`
+in `cmd/sc`). No sudo, no KVM, no host networking changes: QEMU runs under TCG as
 you, with user networking and ssh forwarded from 127.0.0.1 only. Nothing
 outside the lab cache and `bin/` is touched, but for one empty lock file,
 `$XDG_RUNTIME_DIR/smartconfig-lab.lock` (a tmpfs of yours, gone at

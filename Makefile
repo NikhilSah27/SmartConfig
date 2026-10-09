@@ -12,7 +12,8 @@ LAB_IMAGE_FROM ?=
 LAB_FORCE ?=
 
 # The package version (M5 plan 2): 0.N.0 at the tag mN, else
-# 0.N.99+git<commit time>.<sha7> after mN; from the commit, so the same
+# 0.N.99+git<count>.<commit time>.<sha7> after mN (scripts/version.sh;
+# count is the commits since mN, M5 plan C3); from the commit, so the same
 # tree builds the same bytes (the lab's P.2 builds it again to compare).
 VERSION ?= $(shell sh scripts/version.sh 2>/dev/null || echo devel)
 

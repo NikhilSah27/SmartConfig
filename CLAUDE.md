@@ -41,5 +41,6 @@ internal/boot     M4 boot verdicts: $SC_HOME/boots, the last healthy boot
 scripts/          scd.service, the M4 units and rescue drop-in, 42_smartconfig,
                   the package (build-deb.sh, deb/, version.sh),
                   smoke.sh, accept-m2.sh, accept-m3.sh, accept-m4.sh, build-sc-m1.sh
-lab/              QEMU rescue lab, make lab-e2e (dev only, stdlib Python, not shipped, not in CI)
+lab/              QEMU rescue lab, make lab-e2e (dev only, stdlib Python, not shipped;
+                  the VM runs are not in CI, its unit tests are, via TestLabPython)
 docs/             WORKLOG (read first), plans, reviews, visual explainers

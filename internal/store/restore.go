@@ -129,7 +129,9 @@ var testHookBeforePreRestore func()
 // safeDir checks every directory from / down to the parent of src.Path
 // with lstat: each must be a real directory, not a symlink, owned by root
 // or by the caller. A restore through a directory that another user
-// controls could be redirected (plan question 4; a dirfd restore is M4).
+// controls could be redirected (plan question 4). A dirfd restore, which
+// could go through such a directory safely, was planned for M4 and is not
+// built: these restores are refused.
 func safeDir(src Change) error {
 	return safeDirFor(src.Path, "restore", "; see it with: sc cat "+src.ID)
 }
