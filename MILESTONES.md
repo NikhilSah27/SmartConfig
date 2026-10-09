@@ -460,10 +460,12 @@ fixes `9d43980`).
      puts its blob again under the lock.
 
 **Chunk J, restore and checks:**
-3. `sc restore` checks the version it is about to write against the
-   file as it is now.
+3. Done (`a4571cb`): `sc restore` checks the version it is about to write
+   against the file as it is now (file rows with a checker; links,
+   deletions and digest rows are not checked).
    - If the version adds a blocker or an error, it lists them and asks.
-     End of input means no, and `--force` skips the question.
+     End of input means no: nothing is written, exit 2. `--force` skips
+     the check.
    - Nothing changes when it adds nothing, which covers restoring the
      last healthy version from the rescue report.
 4. `/etc/default/grub.d/*.cfg` is checked as `/etc/default/grub` is.

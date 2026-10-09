@@ -2974,3 +2974,29 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     `make m1-compat` clean.
   - **Write-up:** `docs/reviews/2026-10-09-m5-followups-chunk-i.md`.
   - **Next:** chunk J, step 3, the restore check.
+- **M5 follow-up 3, the restore check** (2026-10-09, chunk J, `a4571cb`).
+  - **What it does:** before `sc restore` writes a file with a checker,
+    it checks the version against the file as it is now, as `sc edit`
+    does.
+  - **When it asks:** if the version adds a blocker or an error, it lists
+    them and asks. End of input or any answer but y means nothing is
+    written, exit 2; `--force` skips the check.
+  - **When it doesn't:** a version that adds nothing (the rescue report's
+    healthy one) restores as before, with the same one line. A check that
+    cannot run only notes it on stderr. On a read-only root, only sc's
+    own rules run.
+  - **Signals:** `mutating` is set only for the write.
+  - **Not checked:** links, deletions and digest rows.
+  - **Tests:** `restorecheck_test.go`:
+    - ask, refuse, y, `--force`, the healthy version;
+    - a path with no checker;
+    - an absent file;
+    - an error-only version;
+    - a blocker the file has already.
+  - **Mutations:** 7 run, 6 killed; the survivor (the no-checker
+    shortcut) is equivalent.
+  - **Lab and acceptance:** `lab/e2e.py`'s read-only refusal check and
+    the acceptance scripts' restores are unaffected: their versions add
+    nothing, or have no checker.
+  - **Checks:** fmt, vet and `go test ./...` clean.
+  - **Next:** step 4, `/etc/default/grub.d/*.cfg`.
