@@ -3012,3 +3012,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     fix.
   - **Checks:** fmt, vet and `go test ./...` clean.
   - **Next:** step 5, `sc help <unknown>`.
+- **M5 follow-up 5, `sc help <unknown>`** (2026-10-09, chunk J, `943207e`).
+  - **What changed:** sc has its own help command. An unknown topic, or
+    words left over after one, is an error: one line and exit 1, as an
+    unknown command is. Cobra's version printed the usage and exited 0.
+  - **Tests:** `TestHelpUnknown`: help of a command, `--help`, and
+    `help help` still exit 0. Both mutations (no leftover check, cobra's
+    help back) failed it.
+  - **Checks:** fmt, vet and `go test ./...` clean.
+  - **Next:** the scd mode-only check, taken in from the M6 session's
+    finding, then the chunk J review.

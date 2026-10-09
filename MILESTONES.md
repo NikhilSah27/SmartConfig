@@ -123,8 +123,8 @@ see `docs/reviews/`) led to these behaviours. Each has a test.
 - `sc log` printed intents and paths as they are; a newline or tab in an
   intent broke the table. Fixed in M2 (`c56fe24`): names, link targets and
   intents that hold control characters are printed quoted.
-- Some errors lack the command's context, and `sc help <unknown>` exits 0
-  with usage text. Left for later.
+- Some errors lack the command's context. `sc help <unknown>` exited 0
+  with usage text; since `943207e` (M5 follow-up 5) it exits 1 with one line.
 - logrotate reads hidden files in /etc/logrotate.d, including sc's
   `.NAME.sc-tmp-*` during a restore's few milliseconds; no suffix avoids it.
 - kill -9 during a restore can leave a `.NAME.sc-tmp-*` file next to the
@@ -470,7 +470,7 @@ fixes `9d43980`).
      last healthy version from the rescue report.
 4. Done (`dc6c3da`): `/etc/default/grub.d/*.cfg` is checked as
    `/etc/default/grub` is.
-5. `sc help <unknown>` exits 1, with one line.
+5. Done (`943207e`): `sc help <unknown>` exits 1, with one line.
 
 **Chunk K, secrets:**
 6. A secret list in the scope: content stored, shown hidden. It covers
@@ -557,5 +557,5 @@ They are ranked by what is at stake:
     cloud image keeps its GRUB settings there (found by the M6 pilot).
 12. Smaller: active/inert labels and vendor-override detection;
     `/etc/alternatives` chains and `rc?.d` links; cross-file checks
-    (two sudoers drop-ins); a home-directory watch; `sc help <unknown>`
-    exits 0 (→ chunk J).
+    (two sudoers drop-ins); a home-directory watch. (`sc help <unknown>`
+    exiting 0: done in chunk J.)
