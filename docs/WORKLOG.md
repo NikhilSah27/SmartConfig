@@ -18,8 +18,9 @@ after every step. For the full history, decisions and recovery guide see
   closed by a review. The sign-off runs at the end each wait for your
   OK. **Chunk I (steps 1-2) is done and reviewed**
   ([reviews/2026-10-09-m5-followups-chunk-i.md](reviews/2026-10-09-m5-followups-chunk-i.md),
-  fixes `9d43980`). **Next: chunk J, step 3**, the restore check. The
-  handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  fixes `9d43980`). **Chunk J (steps 3, 4, 5, 5a and `8b98817`) is
+  done; next: its review.** The handoff, if this session stops:
+  `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -70,7 +71,9 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
   265 s back to back (the BIOS rerun: about 24 minutes in which the VM
   barely ran, `signoff/lab-e2e-22383a0/bios-stall-5-1.txt`). On
   2026-10-05 it also went down without a shutdown three times, and once
-  more on 2026-10-06 at about 11:30 UTC, idle (`last -x`: crash). Sleep
+  more on 2026-10-06 at about 11:30 UTC, idle (`last -x`: crash). It
+  crashed twice more after 2026-10-09 21:57 UTC, and the first crash
+  damaged this repo's `.git` (log, 2026-10-11). Sleep
   or power saving on the host is the first thing to look at. M6's long
   lab runs depend on this.
 - [ ] A VirtualBox snapshot of this state. M2 to M5 are installed on
@@ -3049,3 +3052,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Tests:** `TestRestoreChecksMode` failed before the fix.
   - **Checks:** fmt, vet and `go test ./...` clean.
   - **Next:** the chunk J review (steps 3, 4, 5, 5a and this).
+- **The crash after `f48e3c0`, and the repo's repair** (2026-10-11).
+  - **What happened:** this VM went down without a shutdown at about
+    22:05 UTC on 2026-10-09, minutes after `f48e3c0` was pushed, and
+    again before the boot of 2026-10-11 20:51 UTC (`last -x`: crash).
+  - **What it broke:** the 10 loose objects written last were empty,
+    HEAD's commit among them, so every git command failed. `FETCH_HEAD`
+    was empty, and the reflogs and this file's last entry ended in NULs.
+  - **Nothing was lost:** `main` was `origin/main`, and the working tree
+    matched a fresh clone except for this file's NUL tail.
+  - **The repair:** the empty objects were moved aside and `git fetch`
+    brought them back. This file was checked out again, and the NULs
+    were stripped from the reflogs. `git fsck` is clean. The `.git`
+    from before is in `~/smartconfig-work/fu-scratch/crash-20261009/`.
+  - **The M6 clone** (`~/smartconfig-work/m6/smartconfig`) was not
+    hit: `git fsck` is clean and its two commits are there.
+  - **Next:** the chunk J review.
