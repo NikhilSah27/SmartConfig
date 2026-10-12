@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -573,6 +574,146 @@ class TestCatalogue(unittest.TestCase):
                     self.assertNotEqual(act.mode, int(info["mode"], 8), "the mode it has already")
                 if kind == "owner":
                     self.assertNotEqual(act.owner, info["owner"], "the owner it has already")
+
+
+def snapshot(root):
+    """What is under ROOT: {relative path: (type, mode, bytes or link target)}."""
+    out = {}
+    for d, dirs, files in os.walk(root):
+        for name in dirs + files:
+            p = os.path.join(d, name)
+            st = os.lstat(p)
+            rel = os.path.relpath(p, root)
+            if os.path.islink(p):
+                out[rel] = ("link", None, os.readlink(p))
+            elif os.path.isdir(p):
+                out[rel] = ("dir", st.st_mode & 0o7777, None)
+            else:
+                with open(p, "rb") as f:
+                    out[rel] = ("file", st.st_mode & 0o7777, f.read())
+    return out
+
+
+def sh(script):
+    r = subprocess.run(["sh", "-c", script], capture_output=True, text=True)
+    if r.returncode:
+        raise AssertionError("sh exited %d: %s\n%s" % (r.returncode, r.stderr, script))
+
+
+class TestApplier(unittest.TestCase):
+    """change_script and undo_script, run with sh as this user on a copy of
+    the guest's files in a temporary root (chown to root is left out when
+    not root)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.incs = incidents.load_all(EVAL)
+        with open(os.path.join(EVAL, "guest.json"), encoding="utf-8") as f:
+            cls.guest = json.load(f)
+
+    def guest_root(self, root):
+        for d, info in self.guest["dirs"].items():
+            if info["type"] == "dir":
+                os.makedirs(root + d, exist_ok=True)
+        for p, info in self.guest["paths"].items():
+            if info["type"] != "file":
+                continue
+            os.makedirs(os.path.dirname(root + p), exist_ok=True)
+            copy = os.path.join(EVAL, "guest", p.lstrip("/"))
+            data = b"stock %s\n" % p.encode()
+            if os.path.isfile(copy):
+                with open(copy, "rb") as f:
+                    data = f.read()
+            with open(root + p, "wb") as f:
+                f.write(data)
+            os.chmod(root + p, int(info["mode"], 8))
+
+    def test_every_incident_is_made_and_undone(self):
+        facts = self.guest["facts"]
+        for inc in self.incs:
+            with self.subTest(inc["id"]), tempfile.TemporaryDirectory() as tmp:
+                root, saved = os.path.join(tmp, "root"), os.path.join(tmp, "saved", inc["id"])
+                self.guest_root(root)
+                before, p = snapshot(root), root + inc["path"]
+                base = None
+                if os.path.lexists(p):
+                    with open(p, "rb") as f:
+                        base = f.read()
+                act = incidents.plan_change(inc["change"], base, facts)
+                inode = os.lstat(p).st_ino if base is not None else None
+                sh(incidents.change_script(inc["path"], act, saved, root=root))
+                after = snapshot(root)
+                rel = os.path.relpath(p, root)
+                if act.kind == "content":
+                    self.assertEqual(after[rel], ("file", before[rel][1], act.content))
+                    self.assertNotEqual(os.lstat(p).st_ino, inode, "written by rename, as an editor does")
+                elif act.kind == "create":
+                    mode = act.mode if act.mode is not None else 0o644
+                    self.assertEqual(after[rel], ("file", mode, act.content))
+                elif act.kind == "mode":
+                    self.assertEqual(after[rel], ("file", act.mode, before[rel][2]))
+                elif act.kind == "symlink":
+                    self.assertEqual(after[rel], ("link", None, act.target))
+                else:
+                    self.assertNotIn(rel, after)
+                # Nothing else changed but the directories the change made.
+                made = {k for k in after if k not in before and k != rel}
+                self.assertTrue(all(after[k][0] == "dir" and rel.startswith(k + "/") for k in made), made)
+                self.assertEqual({k for k in before if k != rel and before[k] != after.get(k)}, set())
+                sh(incidents.undo_script(inc["path"], saved, root=root))
+                self.assertEqual(snapshot(root), before)
+                self.assertFalse(os.path.exists(saved))
+
+    def test_a_symlink_over_a_file_and_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, saved = os.path.join(tmp, "root"), os.path.join(tmp, "saved")
+            os.makedirs(root + "/etc")
+            with open(root + "/etc/a.service", "w") as f:
+                f.write("[Service]\n")
+            os.chmod(root + "/etc/a.service", 0o640)
+            before = snapshot(root)
+            act = incidents.plan_change([{"symlink": "/dev/null"}], b"[Service]\n", FACTS)
+            sh(incidents.change_script("/etc/a.service", act, saved, root=root))
+            self.assertEqual(os.readlink(root + "/etc/a.service"), "/dev/null")
+            sh(incidents.undo_script("/etc/a.service", saved, root=root))
+            self.assertEqual(snapshot(root), before)
+
+    def test_undo_without_a_saved_change_refuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(AssertionError, "nothing saved"):
+                sh(incidents.undo_script("/etc/x", os.path.join(tmp, "none"), root=tmp))
+
+    def test_owner_and_odd_names(self):
+        act = incidents.Action("owner", None, None, "owner:root", None)
+        self.assertIn('chown owner:root "$p"', incidents.change_script("/etc/sudoers", act, "/s"))
+        script = incidents.change_script("/etc/a b'c", incidents.Action("unlink", None, None, None, None), "/s x")
+        self.assertIn("""p='/etc/a b'"'"'c'""", script)
+        self.assertIn("s='/s x'", script)
+
+    def test_applies_commands(self):
+        for a in incidents.APPLIES:
+            self.assertIsInstance(incidents.applies_command(a), str)
+        self.assertEqual(incidents.applies_command("restart:serial-getty@ttyS0.service"),
+                         "systemctl daemon-reload && systemctl restart serial-getty@ttyS0.service")
+        self.assertEqual(incidents.applies_command("boot"), "")
+        self.assertEqual(incidents.applies_command("update-grub"), "update-grub")
+
+    def test_probes(self):
+        probe = {"run": "printf '%s|%s' {admin} \"a b\"", "as_written": "x", "match": "^owner\\|a b$"}
+        cmd = incidents.probe_command(probe, FACTS)
+        r = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True)
+        self.assertEqual(r.stdout, "owner|a b")
+        self.assertTrue(incidents.probe_passed(probe, r.returncode, r.stdout, FACTS))
+        self.assertTrue(incidents.probe_command(probe, FACTS, user="nobody").startswith("runuser -u nobody -- sh -c "))
+        home = {"run": "getent passwd {admin}", "as_written": "x", "match": ":/hom/{admin}:"}
+        self.assertTrue(incidents.probe_passed(home, 0, "owner:x:1000:1000::/hom/owner:/bin/bash\n", FACTS))
+        # A fact is matched as text: "." in it is not any character.
+        dotted = dict(FACTS, admin="o.ner")
+        self.assertFalse(incidents.probe_passed(home, 0, "x:/hom/owner:", dotted))
+        self.assertTrue(incidents.probe_passed({"run": "x", "as_written": "y", "no_match": "err"}, 0, "fine", FACTS))
+        self.assertFalse(incidents.probe_passed({"run": "x", "as_written": "y", "exit": 0}, 1, "", FACTS))
+        with self.assertRaisesRegex(IncidentError, "unknown placeholder"):
+            incidents.check(incident(expect=[{"run": "x", "as_written": "y", "match": "{rootuuid~1}"}]))
 
 
 if __name__ == "__main__":

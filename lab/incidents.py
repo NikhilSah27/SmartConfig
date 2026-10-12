@@ -18,6 +18,12 @@ security, how to see that it did.
                   or its new mode, owner or link target, or its removal
   content_hash    the hash its truth label is keyed on: what the change
                   does, written any equivalent way, and not the prose
+  change_script,  the shell the oracle runs in the guest, as root, to make
+  undo_script     a planned change (saving what was there first) and to
+                  put back exactly what was there
+  applies_command what makes the change take effect (plan 3)
+  probe_command,  an expect probe (as root) or an exposure probe (as an
+  probe_passed    unprivileged user), and whether its result passed
 
 What the applier does beyond plan_change: a create or a symlink makes
 any missing parent directory first (as "systemctl edit" does), and
@@ -30,11 +36,13 @@ The command line checks a set: "incidents.py check eval". Python 3
 standard library only.
 """
 import argparse
+import base64
 import collections
 import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 
 REQUIRED = ("id", "path", "change", "applies", "cause", "fix", "guess")
@@ -193,7 +201,7 @@ def _probes(where, v, words):
             if type(p["exit"]) is not int or not 0 <= p["exit"] <= 255:
                 _fail(w + ".exit", "must be an exit status, 0 to 255")
         else:
-            _regex("%s.%s" % (w, t), p[t])
+            _placeholders("%s.%s" % (w, t), _regex("%s.%s" % (w, t), p[t]))
 
 
 def check(inc, where="incident"):
@@ -455,6 +463,106 @@ def plan_change(edits, base, facts):
     if out == base:
         raise IncidentError("the change leaves the file as it was")
     return Action("content", out, None, None, None)
+
+
+# What the oracle runs to make each applies take effect (docs/M6_PLAN.md,
+# 3). "sudo", "login" and "now" take effect at the next use, which the
+# oracle's checks are; "boot" at the reboot, which the oracle makes.
+APPLY_COMMANDS = {
+    "sudo": "", "login": "", "now": "", "boot": "",
+    "netplan": "netplan apply",
+    "sysctl": "sysctl --system",
+    "udev": "udevadm control --reload && udevadm trigger && udevadm settle",
+    "fstab-now": "systemctl daemon-reload && mount -a",
+    "update-grub": "update-grub",
+    "socket:ssh": "systemctl daemon-reload && systemctl restart ssh.socket",
+}
+EXPOSURE_USER = "nobody"
+
+
+def applies_command(applies):
+    """The shell command for APPLIES, "" when the oracle's own next check
+    or reboot is what makes the change take effect."""
+    if applies.startswith("restart:"):
+        return "systemctl daemon-reload && systemctl restart %s" % shlex.quote(applies[len("restart:"):])
+    return APPLY_COMMANDS[applies]
+
+
+def probe_command(probe, facts, user=None):
+    """The shell command for a probe: as root, or as USER (an exposure
+    probe runs as EXPOSURE_USER)."""
+    cmd = "sh -c %s" % shlex.quote(substitute(probe["run"], facts))
+    return "runuser -u %s -- %s" % (shlex.quote(user), cmd) if user else cmd
+
+
+def probe_passed(probe, status, output, facts):
+    """Whether a probe that exited STATUS with OUTPUT (text) passed."""
+    if "exit" in probe:
+        return status == probe["exit"]
+    key = "match" if "match" in probe else "no_match"
+    found = re.search(substitute(probe[key], facts, quote=re.escape), output, re.M) is not None
+    return found if key == "match" else not found
+
+
+def _here(data):
+    """DATA as a quoted heredoc of base64, for base64 -d."""
+    lines = base64.encodebytes(data).decode("ascii").splitlines()
+    return "<<'SC_EVAL_B64'\n%s\nSC_EVAL_B64\n" % "\n".join(lines) if lines else "<<'SC_EVAL_B64'\nSC_EVAL_B64\n"
+
+
+def change_script(path, action, saved, root=""):
+    """A POSIX sh script, run as root in the guest, that makes ACTION
+    (plan_change's) at PATH under ROOT. It first saves what is there,
+    and the directories it has to make, in the directory SAVED (outside
+    /etc, so scd records none of it), for undo_script. New content goes
+    in by rename: a temporary file in the same directory, given the
+    file's mode and owner (a create: the action's mode, else 0644, and
+    root), then moved over the path, as an editor does."""
+    q = shlex.quote
+    out = ["set -e", "p=%s" % q(root + path), "s=%s" % q(saved),
+           'rm -rf "$s"', 'mkdir -p "$s"', ': > "$s/made"',
+           'if [ -e "$p" ] || [ -L "$p" ]; then cp -a "$p" "$s/was"; fi',
+           'd=$(dirname "$p")',
+           'while [ ! -d "$d" ]; do printf "%s\\n" "$d" >> "$s/made"; d=$(dirname "$d"); done',
+           'mkdir -p "$(dirname "$p")"']
+    k = action.kind
+    if k in ("content", "create"):
+        out.append('t=$(mktemp "$(dirname "$p")/.sc-eval.XXXXXX")')
+        out.append('base64 -d > "$t" ' + _here(action.content).rstrip("\n"))
+        if k == "content":
+            out += ['chmod --reference="$p" "$t"', 'chown --reference="$p" "$t"']
+        else:
+            out += ["chmod %04o \"$t\"" % (action.mode if action.mode is not None else 0o644),
+                    '[ "$(id -u)" != 0 ] || chown 0:0 "$t"']
+        out.append('mv -f "$t" "$p"')
+    elif k == "mode":
+        out.append('chmod %04o "$p"' % action.mode)
+    elif k == "owner":
+        out.append('chown %s "$p"' % q(action.owner))
+    elif k == "symlink":
+        out.append('ln -sfn %s "$p"' % q(action.target))
+    elif k == "unlink":
+        out.append('rm -f "$p"')
+    else:
+        raise IncidentError("no script for a change of kind %r" % k)
+    return "\n".join(out) + "\n"
+
+
+def undo_script(path, saved, root=""):
+    """A POSIX sh script, run as root, that puts back what change_script
+    saved: the path as it was (by rename, its mode and owner kept), or no
+    path, and no directory the change made; then removes SAVED."""
+    q = shlex.quote
+    return "\n".join([
+        "set -e", "p=%s" % q(root + path), "s=%s" % q(saved),
+        '[ -f "$s/made" ] || { echo "sc-eval: nothing saved in $s" >&2; exit 1; }',
+        'if [ -e "$s/was" ] || [ -L "$s/was" ]; then',
+        '  rm -f "$p.sc-eval-undo"; cp -a "$s/was" "$p.sc-eval-undo"; mv -fT "$p.sc-eval-undo" "$p"',
+        "else",
+        '  rm -f "$p"',
+        '  while read -r d; do rmdir "$d"; done < "$s/made"',
+        "fi",
+        'rm -rf "$s"']) + "\n"
 
 
 def main(argv=None):

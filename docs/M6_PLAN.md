@@ -826,7 +826,10 @@ final review before the tag, which I ask you about first (question 8).
 steps 0, 1 and 3 are built in the clone and land after the round, one at
 a time. So is the half of step 10 that needs no lab, the factory itself
 (your call, 2026-10-12: "build the mutant factory now"); its run waits
-for step 8. Step 2 is written on the round's `sc check -v` change. Steps 4 on
+for step 8. And so is step 5's applier: the shell that makes each change
+and undoes it, the applies commands and the probe commands, tested on a
+copy of the guest's files (after "continue", 2026-10-12); the root
+channel it runs over is step 4's. Step 2 is written on the round's `sc check -v` change. Steps 4 on
 use the lab, so they wait for the round, whose sign-off runs the lab too.
 
 ## 10. Estimate
