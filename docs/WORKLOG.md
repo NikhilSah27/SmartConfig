@@ -3108,3 +3108,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix1.log`).
   - **Next:** J6, the question only at a terminal.
+- **Questions only at a terminal** (2026-10-12, the chunk J review's J6,
+  your pick).
+  - **The gap:** sc restore's question read whatever stdin was and wrote
+    to stdout. `sc restore X > file` waited with its prompt in the file,
+    and in a `while read id; do sc restore $id; done < list` loop it took
+    the next line for its answer. sc prune's question did the same.
+  - **The fix:** both ask only when stdin and stdout are terminals
+    (`TCGETS`). Without one they read nothing, write nothing, name the
+    flag that does not ask (`--force`, `--yes`) on stderr, and exit 2.
+    `--help` and the README say so.
+  - **Tests:** `TestRestoreNoTerminal` and `TestPruneNoTerminal` failed
+    before the fix; `TestIsTerminal` (a buffer, a pipe and /dev/null are
+    not terminals, a pseudo-terminal is).
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix2.log`).
+  - **Next:** J1 and J7, what sc restore asks about.
