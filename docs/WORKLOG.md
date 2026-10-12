@@ -3153,3 +3153,19 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`~/smartconfig-work/fu-scratch/checks-j-fix3.log`).
   - **Next:** J2, sc status and sc check judge a version by its row's
     mode.
+- **sc status and sc check, by the row's mode** (2026-10-12, the chunk J
+  review's J2).
+  - **The gap:** follow-up 5a and `8b98817` taught scd and sc restore to
+    judge a version by its row's mode and owner, but not sc status or
+    `sc check <id>`. A sudoers drop-in made world-writable, which sudo
+    then ignores, was "no problem found" in the rescue report (no undo,
+    exit 0), and `sc check` of that row exited 0, while scd logged an
+    error and sc restore asked.
+  - **The fix:** `statusProblem` checks the row and the version it is
+    compared with by their own rows' mode and owner (`CheckVersion`),
+    and so does `sc check <id>` for a file row. `sc check --as` still
+    judges no mode: its file is not installed with its own.
+  - **Tests:** `TestStatusAndCheckJudgeRowMode` failed before the fix.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix4.log`).
+  - **Next:** J8, scd's check of the version after a change.
