@@ -7,6 +7,13 @@
     }
   ],
   "applies": "now",
+  "exposure": [
+    {
+      "run": "cat /etc/shadow",
+      "shows": "any user can read the password hashes",
+      "exit": 0
+    }
+  ],
   "cause": "/etc/shadow made readable by every user.",
   "fix": "restore",
   "guess": "error",

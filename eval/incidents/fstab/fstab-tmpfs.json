@@ -3,11 +3,11 @@
   "path": "/etc/fstab",
   "change": [
     {
-      "append": "tmpfs\t/mnt/scratch\ttmpfs\tdefaults,size=64M\t0 0"
+      "append": "tmpfs\t/mnt/scratch\ttmpfs\tdefaults,size=64M,X-mount.mkdir\t0 0"
     }
   ],
   "applies": "fstab-now",
-  "cause": "A small tmpfs on /mnt/scratch.",
+  "cause": "A small tmpfs on /mnt/scratch, which mount makes (X-mount.mkdir).",
   "fix": "restore",
   "guess": "none",
   "harmless": true,

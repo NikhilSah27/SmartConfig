@@ -10,6 +10,13 @@
     }
   ],
   "applies": "now",
+  "exposure": [
+    {
+      "run": "test -w /etc/ld.so.preload",
+      "shows": "any user can make every program, setuid ones too, load a library of theirs",
+      "exit": 0
+    }
+  ],
   "cause": "An empty /etc/ld.so.preload that every user may write; ld.so reads it for setuid programs too.",
   "fix": "restore",
   "guess": "error",

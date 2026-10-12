@@ -1,0 +1,24 @@
+{
+  "id": "sysctl-file-max-typo",
+  "path": "/etc/sysctl.d/99-tuning.conf",
+  "change": [
+    {
+      "create": {
+        "content": "fs.file-max = 1000\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "sysctl",
+  "expect": [
+    {
+      "run": "sysctl -n fs.file-max",
+      "as_written": "fs.file-max is 1000",
+      "match": "^1000$"
+    }
+  ],
+  "cause": "fs.file-max set to 1000, two zeros short of what was meant.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "chunk A review A6"
+}

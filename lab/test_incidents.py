@@ -6,6 +6,7 @@ fixture text, and the files are written to a temporary directory.
 """
 import contextlib
 import fnmatch
+import hashlib
 import io
 import json
 import os
@@ -18,6 +19,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
+import factory  # noqa: E402
 import incidents  # noqa: E402
 from incidents import IncidentError  # noqa: E402
 
@@ -446,6 +448,7 @@ class TestSurfaces(unittest.TestCase):
 
 
 EVAL = os.path.join(os.path.dirname(HERE), "eval")
+GRAPH = os.path.join(os.path.dirname(HERE), "internal", "check", "default.graph")
 
 
 class TestCatalogue(unittest.TestCase):
@@ -454,15 +457,38 @@ class TestCatalogue(unittest.TestCase):
     hold, and each change fits the lab guest's own file as
     eval/guest.json and eval/guest/ record it."""
     # Goal 1: per checker, at least this many incidents that are not
-    # harmless, and at least one that is.
+    # harmless, and at least one that is. This counts what the author
+    # means to break; the truth run (step 7) counts again on the labels,
+    # where some will come out "same" (chunk A's review, A6).
     MINIMUMS = {"fstab": 5, "sudoers": 5, "sshd": 5, "grub": 5, "netplan": 5, "units": 5,
                 "accounts": 2, "nsswitch": 2, "preload": 2, "hosts": 2, "flags": 2, "sysctl": 2, "udev": 2}
+
+    # What each checker's files take to come into effect: the graph's apply
+    # lines (docs/M6_PLAN.md, 3). "restart:" is any restart:UNIT.
+    APPLIES = {"fstab": {"fstab-now"}, "sudoers": {"sudo"}, "sshd": {"restart:ssh.service", "socket:ssh"},
+               "unit": {"restart:", "boot"}, "unitdropin": {"restart:"}, "shsyntax": {"update-grub"},
+               "grubcfg": {"boot"}, "nsswitch": {"now"}, "preload": {"now"}, "hosts": {"now"},
+               "flag": {"login", "restart:ssh.service"}, "netplan": {"netplan"}, "udev": {"udev"},
+               "passwd": {"now", "login"}, "group": {"now", "login"}, "sysctl": {"sysctl"}}
+    # The paths no checker reads.
+    UNCHECKED = {"/etc/pam.d/": {"now"}, "/etc/default/grub.d/": {"update-grub"}, "/etc/shadow": {"now"},
+                 "/etc/nologin.txt": {"login"}}
+    # Creates sc edit cannot make (surfaces leaves it out): empty, a mode
+    # other than the graph's for the path, or no directory yet.
+    NOT_BY_EDIT = {"flags-sshd-not-to-be-run", "preload-empty", "preload-world-writable",
+                   "sudoers-dropin-world-writable", "units-dropin-key-typo", "units-dropin-restart-sec",
+                   "units-ssh-dropin-double-exec"}
 
     @classmethod
     def setUpClass(cls):
         cls.incs = incidents.load_all(EVAL)
         with open(os.path.join(EVAL, "guest.json"), encoding="utf-8") as f:
             cls.guest = json.load(f)
+        with open(GRAPH, encoding="utf-8") as f:
+            text = f.read()
+        cls.checks = factory.graph_checks(text)
+        # The graph's "mode GLOB MODE" lines, as (mode, glob) for checker_for.
+        cls.modes = [(f[2], f[1]) for f in (line.split() for line in text.splitlines()) if f[:1] == ["mode"]]
 
     def test_the_minimums_of_goal_1(self):
         for consumer, least in sorted(self.MINIMUMS.items()):
@@ -490,6 +516,38 @@ class TestCatalogue(unittest.TestCase):
             copies |= {"/" + os.path.relpath(os.path.join(d, f), top) for f in files}
         edited = {i["path"] for i in self.incs if incidents.change_kind(i["change"]) == "content"}
         self.assertEqual(copies, edited)
+        for p in copies:
+            with open(os.path.join(top, p.lstrip("/")), "rb") as f:
+                self.assertEqual(hashlib.sha256(f.read()).hexdigest(), self.guest["paths"][p]["sha256"], p)
+        new = {i["path"] for i in self.incs if incidents.change_kind(i["change"]) in ("create", "symlink")}
+        self.assertEqual(set(self.guest["dirs"]), {os.path.dirname(p) for p in new})
+        self.assertTrue(all(d["type"] in ("dir", "absent") for d in self.guest["dirs"].values()))
+
+    def test_applies_follows_the_graph(self):
+        for i in self.incs:
+            checker = factory.checker_for(self.checks, i["path"])
+            if checker:
+                allowed = self.APPLIES[checker]
+            else:
+                allowed = next((v for k, v in self.UNCHECKED.items() if i["path"].startswith(k)), None)
+                self.assertIsNotNone(allowed, "%s: no checker reads %s; say what applies it" % (i["id"], i["path"]))
+            a = "restart:" if i["applies"].startswith("restart:") and "restart:" in allowed else i["applies"]
+            self.assertIn(a, allowed, i["id"])
+
+    def test_guess_none_is_harmless(self):
+        for i in self.incs:
+            self.assertEqual(i["guess"] == "none", bool(i.get("harmless")), i["id"])
+
+    def test_sc_edit_only_where_it_can_make_the_change(self):
+        left_out = set()
+        for i in self.incs:
+            if incidents.change_kind(i["change"]) not in ("content", "create"):
+                continue
+            d = self.guest["dirs"].get(os.path.dirname(i["path"]), {"type": "dir"})
+            mode = factory.checker_for(self.modes, i["path"]) or "0644"
+            if "edit" not in incidents.surfaces(i, dir_exists=d["type"] == "dir", edit_mode=int(mode, 8)):
+                left_out.add(i["id"])
+        self.assertEqual(left_out, self.NOT_BY_EDIT)
 
     def test_each_change_fits_the_guest(self):
         facts = self.guest["facts"]
@@ -509,6 +567,8 @@ class TestCatalogue(unittest.TestCase):
                 act = incidents.plan_change(i["change"], base, facts)
                 if kind in ("content", "mode", "owner"):
                     self.assertEqual(info["type"], "file")
+                if kind == "symlink":
+                    self.assertIn(info["type"], ("absent", "link"))
                 if kind == "mode":
                     self.assertNotEqual(act.mode, int(info["mode"], 8), "the mode it has already")
                 if kind == "owner":

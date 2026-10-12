@@ -10,6 +10,13 @@
     }
   ],
   "applies": "now",
+  "expect": [
+    {
+      "run": "sudo -i true",
+      "as_written": "root's new login shell runs",
+      "exit": 0
+    }
+  ],
   "cause": "root's login shell set to a shell that is not installed.",
   "fix": "restore",
   "guess": "warning",

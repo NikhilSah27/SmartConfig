@@ -1,5 +1,5 @@
 {
- "about": "The lab guest the incidents are written against (docs/M6_PLAN.md 4.1 and 5.1): the reference image of the pinned cloud image, as provisioned, before the installed-server profile. Read from the image with debugfs. guest/ holds a copy of each file a content change edits; paths gives the type, mode and owner of every path an incident changes.",
+ "about": "The lab guest the incidents are written against (docs/M6_PLAN.md 4.1 and 5.1): the reference image of the pinned cloud image, as provisioned, before the installed-server profile. Read from the image with debugfs. guest/ holds a copy of each file a content change edits; paths gives the type, mode and owner of every path an incident changes (with the sha256 of each copy), and dirs those of the directory each new file or link goes in.",
  "image": "release-20260926-ubuntu-24.04-server-cloudimg-amd64.img",
  "image_sha256": "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2",
  "provision_rev": "1",
@@ -16,32 +16,38 @@
   "/boot/grub/grub.cfg": {
    "mode": "0600",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "acf0581e3b1805b110ff1517e24921fc4da4363c9a8638d1a503b40d21665581"
   },
   "/etc/default/grub": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "6f9772386cacf83d917cca730a9970ee9e43034928ca8721bfe6c7117e31b58d"
   },
   "/etc/default/grub.d/50-cloudimg-settings.cfg": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "8b08ed0735d3d22d4098b4e10420f5781e8d6d04aab111eec351d27dee4d4243"
   },
   "/etc/fstab": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "e96bfa6d0c08f685624799172653f08ad6dc3ef391e0d459f56bc9b356b96433"
   },
   "/etc/group": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "9922ac55b8320c98a98c8dded387aa08dc26ed505f6f7e3e12ce0654df0e853d"
   },
   "/etc/hosts": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "16b275a9e41959b64450f275c59f97e8128b88f15e3092451d67881205c8586f"
   },
   "/etc/ld.so.preload": {
    "type": "absent"
@@ -49,7 +55,8 @@
   "/etc/netplan/50-cloud-init.yaml": {
    "mode": "0600",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "87b3109a032499482606143d31d470b8055651e23f06d69c1b0987ab3622c60b"
   },
   "/etc/nologin": {
    "type": "absent"
@@ -60,27 +67,32 @@
   "/etc/nsswitch.conf": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "b953df1d0016f515fc052ca6bb0ccd092b8d13c8789c51c4eaef2b0461574e57"
   },
   "/etc/pam.d/common-auth": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6"
   },
   "/etc/pam.d/common-session": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "f237c090d61f72820ede6f77f4889e9db292b84fafb2c5d19ae6c125ea3bd371"
   },
   "/etc/pam.d/sshd": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "65822d20f36db29cb50275526854b584df7a04a9efe975f3801473f81b44f521"
   },
   "/etc/passwd": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "5513a5bae1bee2da15eaf3767d2e17f9e93fb604fc286e3a404b51c80059a0f8"
   },
   "/etc/shadow": {
    "mode": "0640",
@@ -90,7 +102,8 @@
   "/etc/ssh/sshd_config": {
    "mode": "0644",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "64325541513d33ea1d2ccd19c77750d458e67e7967fd2e7ef81d92f0aa2ffe21"
   },
   "/etc/ssh/sshd_config.d/10-hardening.conf": {
    "type": "absent"
@@ -101,7 +114,8 @@
   "/etc/sudoers": {
    "mode": "0440",
    "owner": "root:root",
-   "type": "file"
+   "type": "file",
+   "sha256": "5bac27ce5ff1a78ace8f3ef81bfd60cbd44810ac3f3d280da9d7649fe90c18f8"
   },
   "/etc/sudoers.d/50-ops": {
    "type": "absent"
@@ -137,6 +151,51 @@
   },
   "/etc/udev/rules.d/70-disk.rules": {
    "type": "absent"
+  }
+ },
+ "dirs": {
+  "/boot/grub": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/ssh": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/ssh/sshd_config.d": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/sudoers.d": {
+   "mode": "0750",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/sysctl.d": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/systemd/system": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
+  },
+  "/etc/systemd/system/ssh.service.d": {
+   "type": "absent"
+  },
+  "/etc/udev/rules.d": {
+   "mode": "0755",
+   "owner": "root:root",
+   "type": "dir"
   }
  }
 }

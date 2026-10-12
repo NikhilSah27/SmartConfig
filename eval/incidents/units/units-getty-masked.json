@@ -6,8 +6,8 @@
       "symlink": "/dev/null"
     }
   ],
-  "applies": "restart:serial-getty@ttyS0.service",
-  "cause": "The serial console's getty masked.",
+  "applies": "boot",
+  "cause": "The serial console's getty masked; a masked unit cannot be restarted, so it shows at the next boot.",
   "fix": "restore",
   "guess": "blocker",
   "source": "M6 plan 5.1"

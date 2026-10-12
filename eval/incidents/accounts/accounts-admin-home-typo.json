@@ -1,0 +1,24 @@
+{
+  "id": "accounts-admin-home-typo",
+  "path": "/etc/passwd",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^({admin}:x:1000:1000:[^:]*:)/home/{admin}:",
+        "with": "\\1/hom/{admin}:"
+      }
+    }
+  ],
+  "applies": "login",
+  "expect": [
+    {
+      "run": "getent passwd {admin}",
+      "as_written": "the admin's home is /hom/owner",
+      "match": ":/hom/{admin}:"
+    }
+  ],
+  "cause": "The admin's home directory typed wrong in passwd (/hom/ for /home/), away from their ssh key.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "chunk A review A6"
+}
