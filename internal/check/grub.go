@@ -127,15 +127,46 @@ func shOpen(text string) bool {
 var (
 	// NAME = value, NAME =value: sh runs NAME as a command.
 	shSpacedEquals = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)[ \t]+=`)
-	// NAME=value more, NAME= value: sh runs "more" (or "value") as a
-	// command with NAME set for it. Only a plain value is judged: one
-	// with a quote, a $, a backslash or a backquote may be anything.
-	shUnquoted = regexp.MustCompile("^([A-Za-z_][A-Za-z0-9_]*)=([^\"'$`\\\\ \t;&|#]*)[ \t]+([^ \t;&|#])")
+	// NAME+=value is bash's, not sh's: sh runs the word as a command (the
+	// chunk J review, J3: what a drop-in that appends would write).
+	shAppend = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\+=`)
+	// NAME=value with a value sc can judge: plain characters, $NAME and
+	// ${NAME} (GRUB_X=$GRUB_X more, the other way a drop-in appends
+	// wrongly; J3 too). One with a quote, a backslash, a backquote or any
+	// other expansion may be anything, and is not judged.
+	shPlainAssign = regexp.MustCompile("^([A-Za-z_][A-Za-z0-9_]*)=((?:[^\"'$`\\\\ \t;&|#]|\\$[A-Za-z_][A-Za-z0-9_]*|\\$\\{[A-Za-z_][A-Za-z0-9_]*\\})*)")
+	// A word that is an assignment: sh sets it too.
+	shAssignWord = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 )
 
-// shAssignments finds the two mistakes in a shell fragment of NAME=value
-// lines that sh -n accepts but update-grub (set -e, then ". FILE") stops
-// at: spaces around =, and a value with spaces but no quotes. Lines
+// shCommandWord returns the name whose value is followed by a word sh runs
+// as a command (NAME=value more, NAME= value, NAME=$NAME more), or "".
+// Assignments in a row are fine: GRUB_TIMEOUT=0 GRUB_TIMEOUT_STYLE=hidden
+// sets both (the chunk J review, J9: that was called a blocker).
+func shCommandWord(t string) string {
+	for {
+		m := shPlainAssign.FindStringSubmatch(t)
+		if m == nil {
+			return "" // not an assignment sc judges
+		}
+		rest := t[len(m[0]):]
+		next := strings.TrimLeft(rest, " \t")
+		switch {
+		case len(next) == len(rest), next == "", strings.IndexByte(";&|#", next[0]) >= 0:
+			// The value goes on with something sc does not judge (a
+			// quote), or the command ends here, or a comment begins.
+			return ""
+		case shAssignWord.MatchString(next):
+			t = next
+		default:
+			return m[1]
+		}
+	}
+}
+
+// shAssignments finds the mistakes in a shell fragment of NAME=value lines
+// that sh -n accepts but update-grub (set -e, then ". FILE") stops at:
+// spaces around =, NAME+=, and a value with spaces but no quotes. Lines
 // inside a quoted value that runs over several lines are skipped.
 func shAssignments(data []byte) []Finding {
 	var out []Finding
@@ -150,8 +181,10 @@ func shAssignments(data []byte) []Finding {
 			}
 			if m := shSpacedEquals.FindStringSubmatch(t); m != nil {
 				add(fmt.Sprintf("spaces around = make sh run %s as a command: update-grub stops", m[1]))
-			} else if m := shUnquoted.FindStringSubmatch(t); m != nil {
-				add(fmt.Sprintf("the value of %s has a space but no quotes: update-grub runs the rest as a command and stops", m[1]))
+			} else if m := shAppend.FindStringSubmatch(t); m != nil {
+				add(fmt.Sprintf("%s+= is not sh: sh runs it as a command and update-grub stops (write %s=\"$%s more\")", m[1], m[1], m[1]))
+			} else if name := shCommandWord(t); name != "" {
+				add(fmt.Sprintf("the value of %s has a space but no quotes: update-grub runs the rest as a command and stops", name))
 			}
 		}
 		quote = shQuoteState(l, quote)

@@ -131,7 +131,8 @@ func TestShSyntaxReal(t *testing.T) {
 // /etc/default/grub.d/*.cfg are read by update-grub as /etc/default/grub
 // is, after it (the cloud image keeps its settings in one): the same check
 // and rules (M5 follow-up 4, found by the M6 pilot as G08). Other names in
-// grub.d are not sourced, and not checked.
+// grub.d are not sourced, and not checked, nor are names with a leading
+// dot, which sh's *.cfg skips (the chunk J review, J9).
 func TestShSyntaxGrubD(t *testing.T) {
 	c := &Checks{Home: filepath.Join(t.TempDir(), "schome")}
 	p := "/etc/default/grub.d/50-cloudimg-settings.cfg"
@@ -146,7 +147,7 @@ func TestShSyntaxGrubD(t *testing.T) {
 	if err != nil || brief(rep.Findings) != "1 grub-default-syntax blocker" {
 		t.Errorf("spaces around =: %+v %v", rep, err)
 	}
-	for _, other := range []string{"/etc/default/grub.d/50-x.cfg.bak", "/etc/default/grub.d/sub/x.cfg"} {
+	for _, other := range []string{"/etc/default/grub.d/50-x.cfg.bak", "/etc/default/grub.d/sub/x.cfg", "/etc/default/grub.d/.50-old.cfg"} {
 		if g := c.GraphInUse().Checker(other); g != "" {
 			t.Errorf("%s: checker %q", other, g)
 		}
@@ -259,8 +260,9 @@ func TestGrubCfgReal(t *testing.T) {
 
 // Two mistakes sh -n accepts and update-grub stops at (set -e, then
 // ". FILE": checked with dash, exit 127): spaces around =, and a value
-// with a space but no quotes. Quoted, escaped and multi-line values, and
-// comments, are fine.
+// with a space but no quotes, and NAME+= (the chunk J review, J3: the two
+// ways a drop-in appends wrongly). Quoted, escaped and multi-line values,
+// assignments in a row (J9), and comments, are fine.
 func TestShAssignments(t *testing.T) {
 	for _, tc := range []struct{ data, want string }{
 		{"GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"\n", ""},
@@ -269,12 +271,18 @@ func TestShAssignments(t *testing.T) {
 		{"  GRUB_TIMEOUT =5\n", "1 grub-default-syntax blocker"},
 		{"GRUB_TIMEOUT= 5\n", "1 grub-default-syntax blocker"},
 		{"GRUB_TIMEOUT=5 # five seconds\nGRUB_X=a;GRUB_Y=b\n", ""},
-		// A value with $ or ` is not judged (GRUB_W=$A b does fail).
+		// $NAME and ${NAME} are judged; another $ or a ` is not.
 		{"GRUB_X=a\\ b\nGRUB_Y='a b'\nGRUB_Z=a\"b c\"\n", ""},
 		{"GRUB_DISTRIBUTOR=`( . /etc/os-release; echo ${NAME:-Ubuntu} ) 2>/dev/null || echo Ubuntu`\n", ""},
 		{"GRUB_CMDLINE_LINUX=\"a\nB = c\nd\"\nGRUB_TIMEOUT = 5\n", "4 grub-default-syntax blocker"},
 		{"# GRUB_TIMEOUT = 5\n#GRUB_X=a b\n", ""},
 		{"GRUB_X='it''s'\nGRUB_Y=1 2\n", "2 grub-default-syntax blocker"},
+		{"GRUB_CMDLINE_LINUX_DEFAULT=$GRUB_CMDLINE_LINUX_DEFAULT nomodeset\n", "1 grub-default-syntax blocker"},
+		{"GRUB_CMDLINE_LINUX_DEFAULT=${GRUB_CMDLINE_LINUX_DEFAULT} nomodeset\n", "1 grub-default-syntax blocker"},
+		{"GRUB_CMDLINE_LINUX_DEFAULT=\"$GRUB_CMDLINE_LINUX_DEFAULT nomodeset\"\n", ""},
+		{"GRUB_CMDLINE_LINUX_DEFAULT+=\" nomodeset\"\n", "1 grub-default-syntax blocker"},
+		{"GRUB_TIMEOUT=0 GRUB_TIMEOUT_STYLE=hidden\nGRUB_A=1 GRUB_B=\"a b\" # c\nGRUB_C=${D:-x y}\n", ""},
+		{"GRUB_TIMEOUT=0 GRUB_TIMEOUT_STYLE=hidden quiet\n", "1 grub-default-syntax blocker"},
 	} {
 		if got := brief(shAssignments([]byte(tc.data))); got != tc.want {
 			t.Errorf("%q: %q, want %q", tc.data, got, tc.want)

@@ -125,11 +125,21 @@ func (g *Graph) parseLine(l string, known map[string]bool, applyLine map[string]
 // path), or "" when none does.
 func (g *Graph) Checker(p string) string {
 	for _, r := range g.checks {
-		if r.g.Match(p) {
+		if r.g.Match(p) && !wildHidden(r, p) {
 			return r.checker
 		}
 	}
 	return ""
+}
+
+// wildHidden reports whether p's name starts with a dot and only a
+// wildcard of r's pattern matched it. The readers sc checks for skip such
+// names (sh's and glob(3)'s *, systemd's and udev's directories, sudo's
+// includedir), so no checker reads it: update-grub never sources
+// /etc/default/grub.d/.50-old.cfg (the chunk J review, J9). The scope still
+// records it; only the graph, not the glob, knows who reads what.
+func wildHidden(r graphRule, p string) bool {
+	return strings.HasPrefix(filepath.Base(p), ".") && !strings.HasPrefix(filepath.Base(r.g.String()), ".")
 }
 
 // Checkers returns the names of the checkers the graph uses, in file order.

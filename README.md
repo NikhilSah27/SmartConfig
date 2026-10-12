@@ -250,7 +250,9 @@ with its unit (`systemd-analyze verify`), `/etc/default/grub` with
 a scratch copy of all its files), udev rules (`udevadm verify`), passwd
 and group (`pwck -r`, `grpck -r`, with a made-up shadow file), sysctl
 (`sysctl --dry-run`), and `nsswitch.conf`, `ld.so.preload`, `/etc/hosts`,
-`/etc/nologin`, `/etc/ssh/sshd_not_to_be_run` by sc's rules alone. Validators run on copies in a private
+`/etc/nologin`, `/etc/ssh/sshd_not_to_be_run` by sc's rules alone. A
+drop-in whose name starts with a dot (`grub.d/.50-old.cfg`) is not
+checked: its reader skips it. Validators run on copies in a private
 scratch directory, from fixed system directories (not `$PATH`), with no
 shell and a 10-second limit. If one is missing (in a rescue shell, say),
 sc's own rules still run and a note says so.

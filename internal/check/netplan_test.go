@@ -315,13 +315,15 @@ func TestNetplanGenerateFailed(t *testing.T) {
 	}
 }
 
-// netplan never reads a file whose name starts with a dot: there is
-// nothing to check, and the report says so.
+// netplan never reads a file whose name starts with a dot: no checker
+// reads it, as for every name a wildcard of the graph would only match with
+// a leading dot (the chunk J review, J9; netplan's own note said so
+// before), and the generator does not run.
 func TestNetplanDotFile(t *testing.T) {
 	c := netplanMachine(t, nil)
 	args := goldenTool(t, c, "generate", "testdata/netplan/unknownkey", 1)
 	rep, err := c.Check(context.Background(), "/etc/netplan/.60-local.yaml", []byte(npUnknown))
-	if err != nil || rep.Checker != "netplan" || len(rep.Findings) != 0 || len(rep.Notes) != 1 || !strings.Contains(rep.Notes[0], "netplan does not read this file") {
+	if err != nil || rep.Checker != "" || len(rep.Findings) != 0 || len(rep.Notes) != 0 {
 		t.Errorf("%+v %v", rep, err)
 	}
 	if _, err := os.Stat(args); err == nil {

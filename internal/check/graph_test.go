@@ -186,3 +186,38 @@ func TestDefaultGraph(t *testing.T) {
 		}
 	}
 }
+
+// A name with a leading dot that only a wildcard matched has no checker:
+// sh, glob(3), systemd, udev and sudo all skip it, so nothing reads it (the
+// chunk J review, J9). A literal name keeps its checker, and Files leaves
+// such names out.
+func TestGraphHiddenNames(t *testing.T) {
+	g := DefaultGraph()
+	for p, want := range map[string]string{
+		"/etc/default/grub.d/.50-old.cfg":        "",
+		"/etc/default/grub.d/50-x.cfg":           "shsyntax",
+		"/etc/sudoers.d/.admins":                 "",
+		"/etc/ssh/sshd_config.d/.old.conf":       "",
+		"/etc/netplan/.50-cloud-init.yaml":       "",
+		"/etc/netplan/50-cloud-init.yaml":        "netplan",
+		"/etc/systemd/system/.x.service":         "",
+		"/etc/sysctl.d/.99-x.conf":               "",
+		"/etc/udev/rules.d/.70-x.rules":          "",
+		"/etc/systemd/system/x.service.d/a.conf": "unitdropin",
+	} {
+		if got := g.Checker(p); got != want {
+			t.Errorf("%s: checker %q, want %q", p, got, want)
+		}
+	}
+	dir := t.TempDir()
+	tg, err := ParseGraph("check sysctl " + dir + "/*.conf\ncheck hosts " + dir + "/.literal\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a.conf", ".b.conf", ".literal"} {
+		os.WriteFile(filepath.Join(dir, n), nil, 0o644)
+	}
+	if got := strings.Join(tg.Files(), " "); got != filepath.Join(dir, ".literal")+" "+filepath.Join(dir, "a.conf") {
+		t.Errorf("Files: %s", got)
+	}
+}
