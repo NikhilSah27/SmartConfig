@@ -5,6 +5,7 @@ package watch
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,7 +90,7 @@ func (q *checkQueue) next() (string, checkJob, bool) {
 func (w *Watcher) queueCheck(c store.Change, reason string) {
 	deliberate := c.Origin == store.OriginRestore || c.Origin == store.OriginEdit
 	if deliberate {
-		if _, ok := w.lastFound(c.Path, c.Blob); ok || reason == reasonStartup {
+		if _, ok := w.lastFound(c.Path, c); ok || reason == reasonStartup {
 			return
 		}
 	}
@@ -170,11 +171,11 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 	var had []check.Finding
 	stale := false
 	if before != nil && before.Origin != store.OriginAuto {
-		_, ok := w.lastFound(p, before.Blob)
+		_, ok := w.lastFound(p, *before)
 		stale = !ok // nothing checked it: what was reported is not what was before
 	}
 	if before != nil && before.Kind == store.KindFile {
-		if c, ok := w.lastFound(p, before.Blob); ok {
+		if c, ok := w.lastFound(p, *before); ok {
 			had = c
 		} else if data, err := w.st.Blob(before.Blob); err == nil {
 			// Judged by its own mode and owner: the file's on disk now
@@ -193,7 +194,10 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 			}
 		}
 	}
-	rep, err := w.checks.Check(ctx, p, after)
+	// The new version by its own row's mode and owner too, not the file's
+	// on disk now, which a chmod since may have changed: that chmod has a
+	// row of its own, judged by its mode (the chunk J review, J8).
+	rep, err := w.checks.CheckVersion(ctx, p, after, check.Meta{Mode: last.Mode, UID: last.UID, GID: last.GID})
 	if err != nil {
 		if ctx.Err() == nil {
 			w.logOnce("check "+p, prioErr, fmt.Sprintf("check: %s: %v", show(p), err))
@@ -208,7 +212,7 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		// finish cannot say a problem it found before is gone.
 		w.logOnce("check incomplete "+p, prioNotice, fmt.Sprintf("check: %s: a validator did not finish; the check is incomplete (sc check %s)", show(p), show(p)))
 	} else {
-		w.rememberFound(p, last.Blob, rep.Findings)
+		w.rememberFound(p, *last, rep.Findings)
 	}
 	tier := w.tierOf(p)
 	// A file reported before: clean of what was reported, it is ok again.
@@ -268,27 +272,38 @@ func oneLine(s string) string {
 
 // found is what the last check of a path found in one version of it.
 type found struct {
-	blob     string
+	version  version
 	findings []check.Finding
 }
 
+// version is what a check judges: a row's content, mode and owner. Two
+// rows with the same content and another mode (a chmod) are two versions
+// (the chunk J review, J8: the cache was keyed by content alone).
+type version struct {
+	blob     string
+	mode     os.FileMode
+	uid, gid int
+}
+
+func versionOf(c store.Change) version { return version{c.Blob, c.Mode, c.UID, c.GID} }
+
 // lastFound returns what the last check of p found, if it checked the
-// version with blob: the next change compares with it without running the
+// version of row c: the next change compares with it without running the
 // validator on it again.
-func (w *Watcher) lastFound(p, blob string) ([]check.Finding, bool) {
+func (w *Watcher) lastFound(p string, c store.Change) ([]check.Finding, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	f, ok := w.lastChecked[p]
-	return f.findings, ok && f.blob == blob
+	return f.findings, ok && f.version == versionOf(c)
 }
 
-func (w *Watcher) rememberFound(p, blob string, fs []check.Finding) {
+func (w *Watcher) rememberFound(p string, c store.Change, fs []check.Finding) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if len(w.lastChecked) >= maxLogged {
 		w.lastChecked = map[string]found{} // a flood of names cannot grow it
 	}
-	w.lastChecked[p] = found{blob, fs}
+	w.lastChecked[p] = found{versionOf(c), fs}
 }
 
 // maxCheckLines bounds the journal lines of one check.

@@ -367,3 +367,51 @@ func TestCheckModeOnlyChange(t *testing.T) {
 		t.Errorf("line %q", l)
 	}
 }
+
+// A content row is judged by its own row's mode, not the file's on disk
+// when the checker gets to it, and the check is remembered by content,
+// mode and owner: a chmod between the content row and its check is the
+// next row's, whose line names it (the chunk J review, J8: the line
+// blamed the content row, mode 0440, and the mode row said nothing).
+func TestCheckAfterByRowMode(t *testing.T) {
+	e := newEnv(t)
+	d := filepath.Join(e.root, "sudoers.d")
+	os.Mkdir(d, 0o755)
+	f := filepath.Join(d, "admins")
+	put(t, f, "owner ALL=(ALL) ALL\n", 0o440)
+	g, err := check.ParseGraph("check sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfg.Checks = &check.Checks{Home: e.home, Graph: g, Run: check.Runner{Dirs: []string{t.TempDir()}}}
+	var armed atomic.Bool
+	testHookBeforeCheck = func(p string) {
+		if p == f && armed.CompareAndSwap(true, false) {
+			os.Chmod(f, 0o666) // after the content row, before its check
+		}
+	}
+	t.Cleanup(func() { testHookBeforeCheck = nil })
+	e.start()
+	e.barrier()
+	armed.Store(true)
+	// A new 0440 file renamed into place, as an editor saves it.
+	tmp := filepath.Join(filepath.Dir(e.root), "admins.new")
+	put(t, tmp, "owner ALL=(ALL) ALL\n# a comment\n", 0o440)
+	if err := os.Rename(tmp, f); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the mode row", func() bool { return len(e.history(f)) == 3 })
+	e.waitFor("an error line", func() bool { return len(e.lines(": check: error sudoers-mode")) >= 1 })
+	e.barrier()
+	cs, err := e.st.List(f, 0)
+	if err != nil || len(cs) != 3 {
+		t.Fatalf("rows: %v %d", err, len(cs))
+	}
+	content, modeRow := cs[1], cs[0]
+	if content.Mode.Perm() != 0o440 || modeRow.Mode.Perm() != 0o666 {
+		t.Fatalf("rows' modes: %v %v", content.Mode, modeRow.Mode)
+	}
+	if l := e.lines(": check: error sudoers-mode"); len(l) != 1 || !strings.Contains(l[0], "mode 0666") || !strings.Contains(l[0], "("+modeRow.ID+")") {
+		t.Errorf("want one line, for the mode row %s: %q", modeRow.ID, l)
+	}
+}
