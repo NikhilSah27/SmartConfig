@@ -682,14 +682,17 @@ func statusProblem(ctx context.Context, c *check.Checks, s *store.Store, r store
 	if err != nil {
 		return "not checked (content missing)", 0
 	}
-	rep, err := c.CheckSaved(ctx, r.Path, data)
+	// Each version by its own mode and owner, as scd judges a change: a
+	// sudoers drop-in made world-writable, which sudo then ignores, is an
+	// error here too (the chunk J review, J2).
+	rep, err := c.CheckVersion(ctx, r.Path, data, check.Meta{Mode: r.Mode, UID: r.UID, GID: r.GID})
 	if err != nil {
 		return "not checked", 0
 	}
 	var had []check.Finding
 	if before != nil && before.Kind == store.KindFile {
 		if b, err := s.Blob(before.Blob); err == nil {
-			if hr, err := c.CheckSaved(ctx, r.Path, b); err == nil {
+			if hr, err := c.CheckVersion(ctx, r.Path, b, check.Meta{Mode: before.Mode, UID: before.UID, GID: before.GID}); err == nil {
 				had = hr.Findings
 			}
 		}

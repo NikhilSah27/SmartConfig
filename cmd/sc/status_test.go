@@ -1367,3 +1367,41 @@ func TestStatusUndoMounts(t *testing.T) {
 		t.Errorf("a file mount point: %+v", r)
 	}
 }
+
+// sc status and sc check <id> judge a saved version by its own row's mode
+// and owner, as scd and sc restore do: a sudoers drop-in made
+// world-writable, which sudo then ignores, is an error in the rescue
+// report, with the undo, and in sc check of that row (the chunk J review,
+// J2: both said "no problem found").
+func TestStatusAndCheckJudgeRowMode(t *testing.T) {
+	_, fstab, home := statusEnv(t, "ro quiet", false)
+	d := filepath.Join(t.TempDir(), "sudoers.d")
+	os.Mkdir(d, 0o755)
+	g, err := check.ParseGraph("check fstab " + fstab + "\ncheck sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	p := filepath.Join(d, "admins")
+	os.WriteFile(p, []byte("owner ALL=(ALL) ALL\n"), 0o440)
+	os.Chmod(p, 0o440)
+	good := strings.Fields(mustSC(t, "snapshot", p))[1]
+	healthy := time.Now().Add(-time.Hour)
+	boot.Seen(home, "aaaaaaaa-1", healthy)
+	boot.Record(home, "aaaaaaaa-1", "ok", healthy, newestRow(t), "local-fs=active")
+	os.Chmod(p, 0o666)
+	open := strings.Fields(mustSC(t, "snapshot", p))[1]
+	if open == good {
+		t.Fatal("no row for the mode change")
+	}
+	os.Chmod(p, 0o440) // the file on disk is fine again: the row is what is judged
+	r := sc(t, "status")
+	if r.code != 2 || !strings.Contains(r.stdout, open+" ") || !strings.Contains(r.stdout, "sudoers-mode") ||
+		!strings.Contains(r.stdout, "\n  sc restore "+good+"\n") {
+		t.Errorf("sc status: %+v", r)
+	}
+	if r := sc(t, "check", open); r.code != 2 || !strings.Contains(r.stdout, "sudoers-mode") || !strings.Contains(r.stdout, "mode 0666") {
+		t.Errorf("sc check %s: %+v", open, r)
+	}
+}

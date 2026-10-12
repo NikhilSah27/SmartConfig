@@ -82,7 +82,7 @@ func runCheckAs(cmd *cobra.Command, path, file string, verbose bool) error {
 		return err
 	}
 	defer cleanup()
-	return runTargets(cmd, c, []checkTarget{{p + " (from " + file + ")", p, data, true}}, nil, 0, verbose)
+	return runTargets(cmd, c, []checkTarget{{p + " (from " + file + ")", p, data, true, nil}}, nil, 0, verbose)
 }
 
 // newChecks returns the checks sc check runs, with a scratch directory
@@ -138,6 +138,9 @@ type checkTarget struct {
 	path  string
 	data  []byte
 	saved bool // a version from the store, not the file on disk
+	// meta, for a file row, is its mode and owner: rules about them judge
+	// these, as scd and sc restore do (the chunk J review, J2).
+	meta *check.Meta
 }
 
 func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
@@ -163,7 +166,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 				unchecked++
 				notes = append(notes, show(p)+": not checked: "+err.Error())
 			case st.Kind == "file":
-				targets = append(targets, checkTarget{p, p, st.Data, false})
+				targets = append(targets, checkTarget{p, p, st.Data, false, nil})
 			}
 		}
 	}
@@ -187,7 +190,11 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 			if err != nil {
 				return err
 			}
-			targets = append(targets, checkTarget{row.Path + " (" + row.ID + ")", row.Path, data, true})
+			var meta *check.Meta
+			if row.Kind == store.KindFile {
+				meta = &check.Meta{Mode: row.Mode, UID: row.UID, GID: row.GID}
+			}
+			targets = append(targets, checkTarget{row.Path + " (" + row.ID + ")", row.Path, data, true, meta})
 			continue
 		}
 		p, err := filepath.Abs(a)
@@ -201,7 +208,7 @@ func runCheck(cmd *cobra.Command, args []string, verbose bool) error {
 		if st.Kind != "file" {
 			return fmt.Errorf("%s is a symlink; sc check reads files", p)
 		}
-		targets = append(targets, checkTarget{p, p, st.Data, false})
+		targets = append(targets, checkTarget{p, p, st.Data, false, nil})
 	}
 
 	return runTargets(cmd, c, targets, notes, unchecked, verbose)
@@ -215,11 +222,16 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 	var said []string        // the validators' words behind the notes, for -v
 	checked, partial := 0, 0 // partial: a validator was cut short (its note says so)
 	for _, t := range targets {
-		check := c.Check
-		if t.saved {
-			check = c.CheckSaved
+		var rep check.Report
+		var err error
+		switch {
+		case t.meta != nil:
+			rep, err = c.CheckVersion(cmd.Context(), t.path, t.data, *t.meta)
+		case t.saved:
+			rep, err = c.CheckSaved(cmd.Context(), t.path, t.data)
+		default:
+			rep, err = c.Check(cmd.Context(), t.path, t.data)
 		}
-		rep, err := check(cmd.Context(), t.path, t.data)
 		if err != nil {
 			return err
 		}
