@@ -19,8 +19,11 @@ after every step. For the full history, decisions and recovery guide see
   OK. **Chunk I (steps 1-2) is done and reviewed**
   ([reviews/2026-10-09-m5-followups-chunk-i.md](reviews/2026-10-09-m5-followups-chunk-i.md),
   fixes `9d43980`). **Chunk J (steps 3, 4, 5, 5a and `8b98817`) is
-  done; next: its review.** The handoff, if this session stops:
-  `~/smartconfig-work/M5FU-RESUME.md`.
+  done and reviewed** (2026-10-12: J1-J13, none high; the report is
+  `~/smartconfig-work/review-m5fu-j/findings.md`). **Now: its fixes**,
+  one step at a time, on your picks for J1, J6 and J7 (2026-10-12, all
+  on the recommended answer; see the log). The handoff, if this session
+  stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -3068,3 +3071,40 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **The M6 clone** (`~/smartconfig-work/m6/smartconfig`) was not
     hit: `git fsck` is clean and its two commits are there.
   - **Next:** the chunk J review.
+- **The chunk J review** (2026-10-12).
+  - **The first run** died in a crash of this VM before it reported. Its
+    work is in `~/smartconfig-work/review-m5fu-j/run1-crashed/`.
+  - **The second run** reported J1-J13
+    (`~/smartconfig-work/review-m5fu-j/findings.md`), none high. Each
+    finding was read in the code, and its 14 failing review tests failed
+    again here.
+    - Medium: J1, the undo a rescue report prints can ask, and exits 2
+      without a terminal; J2, `sc status` and `sc check <id>` judge a
+      version without its mode; J3, `NAME=$NAME word` and `NAME+=` pass
+      the grub.d check.
+    - Low: J4-J10. Cleanup: J11-J13.
+  - **Your picks** (2026-10-12, all on the recommended answer):
+    - J1: sc restore never asks for the version a rescue report names,
+      the path's version at the last healthy boot.
+    - J6: sc restore and sc prune ask only when stdin and stdout are
+      terminals; else they refuse, name `--force`, and exit 2.
+    - J7: a removal that `sc status` would call "error: deleted" asks,
+      unless `--force`.
+  - **Next:** the fixes, one step at a time, then the write-up.
+- **Restore's refusals before its check** (2026-10-12, the chunk J
+  review's J5, J4 and J11).
+  - **J5:** sc restore checked the version and asked before Restore's
+    own refusals ran. A read-only store, a fingerprint-only path or a
+    directory that became a symlink was asked about, and a yes was then
+    refused; the symlink's refusal read differently with `--force`.
+    `store.RestoreRefusal` now runs those refusals first, in Restore's
+    order (Restore runs the same code).
+  - **J4:** a check cut short (a validator out of time) restored without
+    a word. Its notes now go to stderr, one line each.
+  - **J11:** whether a path is checked is now known before a scratch
+    directory is made, so a file no checker reads needs none.
+  - **Tests:** `TestRestoreRefusalsFirst`, `TestRestoreNotFullyChecked`
+    and `TestRestoreNoCheckerNoScratch` each failed before the fix.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix1.log`).
+  - **Next:** J6, the question only at a terminal.
