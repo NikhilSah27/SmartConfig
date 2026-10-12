@@ -3124,3 +3124,32 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix2.log`).
   - **Next:** J1 and J7, what sc restore asks about.
+- **What sc restore asks about** (2026-10-12, the chunk J review's J1
+  and J7, your picks).
+  - **J1:** the undo a rescue report prints, `sc restore GOOD`, asked
+    when GOOD had an error the file now lacked, or when the file was now
+    missing or a link (all of GOOD's problems counted as added); without
+    a terminal it then exited 2. The README said it asks nothing.
+    - **The fix:** the version sc status's undo names, the path's row at
+      the last healthy boot whose row is known, booted healthy: sc
+      restore writes it with no check and no question. Both find it with
+      `healthyLine`, which status's boundary code became. Any other
+      version is checked as before.
+    - **The comment** that said a link at the path is refused by Restore
+      was wrong (Restore replaces it); it now says what happens.
+  - **J7:** restoring a "did not exist" or deleted row of a checked file
+    removed it with no question, and sc status then called the path
+    "error: deleted".
+    - **The fix:** a removal that sc status would call an error asks, as
+      a version that adds an error does: a file a checker reads, but not
+      a flag file, ld.so.preload, or a unit a later unit directory
+      stands in for. `--force` does not ask.
+    - **Scripts:** `accept-m2.sh`'s removals are of `/etc/sc-accept.d/`
+      files, which no checker reads, and every lab restore is of the
+      rescue version.
+  - **Tests:** `TestRestoreRescueUndoNotAsked` and
+    `TestRestoreRemovalAsks` failed before the fix.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix3.log`).
+  - **Next:** J2, sc status and sc check judge a version by its row's
+    mode.
