@@ -787,7 +787,9 @@ final review before the tag, which I ask you about first (question 8).
 
 **While the M5 follow-up round runs** (in the repo, by another session):
 steps 0, 1 and 3 are built in the clone and land after the round, one at
-a time. Step 2 is written on the round's `sc check -v` change. Steps 4 on
+a time. So is the half of step 10 that needs no lab, the factory itself
+(your call, 2026-10-12: "build the mutant factory now"); its run waits
+for step 8. Step 2 is written on the round's `sc check -v` change. Steps 4 on
 use the lab, so they wait for the round, whose sign-off runs the lab too.
 
 ## 10. Estimate
