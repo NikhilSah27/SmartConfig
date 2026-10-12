@@ -224,6 +224,9 @@ Each incident is one JSON file in `eval/incidents/<consumer>/<id>.json`.
     (a new file).
   - Values that differ per machine come from the guest: `{root_uuid}`,
     `{root_uuid~1}`, `{nic}`, `{admin}`, `{kernel}`.
+  - A `create` or a `symlink` makes any missing parent directory first,
+    as `systemctl edit` does for a drop-in; undoing the change removes
+    the directories it made.
   - Incidents are never applied through apt or dpkg. scd checks only
     the rows it records as `auto`; changes made during an apt run are
     tagged `apt` once the M5 follow-up round's step 8 is in, and are
@@ -271,14 +274,27 @@ Each incident is one JSON file in `eval/incidents/<consumer>/<id>.json`.
   - **unlink:** scd's deletion row and the restore only. `sc check` on a
     missing path exits 1 with only an error line, and scd does not check
     a deletion row;
+  - **a create sc edit cannot make:** sc edit writes nothing for an
+    empty new file ("unchanged"), gives a new file the graph's mode for
+    the path (0644 when no `mode` line matches), not the incident's, and
+    makes no directory. Such a create is not scored on sc edit
+    (`incidents.surfaces`);
   - **a path outside scd's scope** (`/etc/sudoers.d/*.*`, for example):
     no scd row, so no restore of it; the report says "not recorded".
     sc edit does not look at the scope: its own rows, and their restore,
     still apply.
 - **`cause`** is one unchecked sentence, written with the incident, that
   names each miss in the report.
-- **`fix`** is `restore` or an edit. The oracle runs it and checks that
-  the machine is healthy again.
+- **`exposure`** (optional) is for a change that weakens security
+  while everything still works: probes run as an unprivileged user
+  (`nobody`) through the root channel, each with what a pass `shows`.
+  One that passes makes the outcome "exposed" (4.3). For example
+  `cat /etc/shadow`.
+- **`fix`** is `restore` (put back what was there, or remove what the
+  change made) or an edit. The oracle runs it, then the incident's
+  `applies` again (`update-grub`, `netplan apply` and the rest; for
+  `boot`, the reboot that proves health), and checks that the machine
+  is healthy again.
 - **`guess`** is the author's guess at the severity. It is kept, and never
   scored.
 - **`"harmless": true`** marks a harmless incident. Its truth must come
@@ -398,14 +414,23 @@ Each incident is one JSON file in `eval/incidents/<consumer>/<id>.json`.
    | network | the guest's address and routes (`ip route get` an outside address), through the root channel; ssh from the host | kept or lost |
    | `update-grub` | its exit status, and whether `grub.cfg` changed | |
    | `expect` | the incident's own probes (section 3) | as written, or not |
+   | `exposure` | the incident's exposure probes, as `nobody` (section 3) | exposed, or not |
    | journal | the boot's journal against the control boot's, for the consumers' messages (for example ld.so's "cannot be preloaded (…): ignored.", udev's "Invalid key", the initramfs's "Target filesystem doesn't have requested") | new messages |
 
 2. **Reboot** (every incident that is not harmless, `now` ones too: a
    change to passwd, group or nsswitch can hit a service's own user, and
    that shows at boot). Observe the same, plus GRUB, the kernel, the
    initramfs, and the systemd target reached.
-3. **Fix.** Run `fix`, then the health check: sudo, an ssh login, no unit
-   newly failed. If the health check fails, the guest is discarded.
+3. **Fix.** Run `fix`, then the incident's `applies` again, then the
+   health check: sudo, an ssh login, no unit newly failed. If the health
+   check fails, the guest is discarded.
+
+**Where a boot ends.** The lab ends a boot today on the ttyS0 login
+prompt (`console.py`, `e2e.py`'s `wait_healthy_end`). An incident that
+masks that getty (`units-getty-masked`) never shows it, and the lab
+would call the boot a stall. Step 6 ends a boot on the root shell's
+sentinel on ttyS1, or the target reached, instead (chunk A's review,
+A5).
 
 **Outcome classes, and the severity each gives:**
 
@@ -511,8 +536,9 @@ of goal 1:
 Each incident is reviewed when it is written: the change must be one an
 owner or a tool could plausibly make. Each one makes one change.
 
-**The first catalogue (step 3, 2026-10-12):** 81 incidents in 14
-consumers, 15 of them harmless. What the guest's own files changed in
+**The first catalogue (step 3, 2026-10-12):** 83 incidents in 14
+consumers, 15 of them harmless (81, and two that chunk A's review
+added). What the guest's own files changed in
 the table above:
 - the image has no `nfs-common`, so there is no `mount.nfs`. The NFS
   incident is the other one: a share on a guest with no NFS client,
@@ -524,9 +550,20 @@ the table above:
 
 Each change is checked against the guest's files, as
 `eval/guest.json` (the type, mode and owner of each path an incident
-changes, and the guest's facts) and `eval/guest/` (a copy of each file
-a content change edits) record them. Both are read from the reference
-image with `debugfs`, before the profile.
+changes, with the sha256 of each copy; the directory each new file or
+link goes in; and the guest's facts) and `eval/guest/` (a copy of each
+file a content change edits) record them. Both are read from the
+reference image with `debugfs`, before the profile.
+
+**The minimums count what the author means to break.** Some incidents
+will come out "same" (`hosts-no-localhost`, which systemd-resolved may
+answer anyway, for one). After the truth run (step 7) the minimums are
+counted again on the labels, and a consumer that falls short gets
+incidents that do break something.
+
+**For fstab, the reboot labels most incidents.** `fstab-now` is
+`mount -a`, which skips `noauto` lines and makes no mount point (only
+`X-mount.mkdir` does); systemd, at boot, does both.
 
 ### 5.2 Mutants (generated)
 
@@ -770,8 +807,8 @@ changed while they run, so the nights they take are planned.
 | 3 | A | the first catalogue (about 80) | all parse; ids are unique; the minimums of goal 1 |
 | 4 | B | the lab: an optional extra chardev in `Vm`, a log prefix for the `Mux`, the second port in `vm.py up` and `console`; the root shell unit (4.2) installed per run; the order and the server profile (4.1) | unit tests; one live run with `vm.py up`: the shell outlives emergency mode and both isolate paths; nothing is written to it before its sentinel (OVMF on COM2) |
 | 5 | B | the take-effect oracles, the `expect` probes, the journal against the control boot, and the health check (4.3) | fake guest transcripts for each class |
-| 6 | B | the boot oracle: the reboot, the causal-line rule, emergency read from the console, the control boot, two out of two, every lab retry signature as inconclusive; try `snapshot-save` with qcow2 vars and node names | the classifier on saved console logs from the lab's own runs, stalls, slow-udev and no-ssh among them |
-| 7 | B | the first truth run (two to three nights, detached, after `make lab-clean`), then `eval-freeze`. Each label is read against its evidence. | the stale-label check |
+| 6 | B | the boot oracle: the reboot, the causal-line rule, emergency read from the console, the control boot, two out of two, every lab retry signature as inconclusive; try `snapshot-save` with qcow2 vars and node names | the classifier on saved console logs from the lab's own runs, stalls, slow-udev and no-ssh among them; a boot that ends with no ttyS0 login prompt |
+| 7 | B | the first truth run (two to three nights, detached, after `make lab-clean`), then `eval-freeze`. Each label is read against its evidence. | the stale-label check; goal 1's minimums on the labels |
 | 8 | C | the sc-side run (6.1) | a fake guest; one live incident end to end |
 | 9 | C | the scorer and the report | canned results; every metric |
 | 10 | C | the factory (5.2) and its run | determinism; the neutral operators are neutral on fixtures |
