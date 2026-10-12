@@ -775,8 +775,9 @@ eval/                        the set: data, never shipped (not in the .deb)
                              outcome, when, severity, evidence
   REPORT.md                  the latest score, copied in by the freeze step
 lab/incidents.py             applying changes, the oracles, the root channel, the sc-side run
+lab/oracle.py                the outcome class, when and severity from what the oracle saw (4.3)
 lab/factory.py               the mutation operators, deterministic
-lab/test_incidents.py, lab/test_factory.py
+lab/test_incidents.py, lab/test_oracle.py, lab/test_factory.py
 cmd/sc/check.go              --tsv (question 5)
 Makefile                     eval-truth, eval, eval-freeze
 ```
@@ -829,7 +830,9 @@ a time. So is the half of step 10 that needs no lab, the factory itself
 for step 8. And so is step 5's applier: the shell that makes each change
 and undoes it, the applies commands and the probe commands, tested on a
 copy of the guest's files (after "continue", 2026-10-12); the root
-channel it runs over is step 4's. Step 2 is written on the round's `sc check -v` change. Steps 4 on
+channel it runs over is step 4's. And the rules of 4.3 that make a
+label from what the oracle saw (`lab/oracle.py`), tested on made-up
+observations; gathering them is steps 5 and 6. Step 2 is written on the round's `sc check -v` change. Steps 4 on
 use the lab, so they wait for the round, whose sign-off runs the lab too.
 
 ## 10. Estimate
