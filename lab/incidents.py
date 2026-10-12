@@ -2,20 +2,29 @@
 """incidents.py: M6's incidents (docs/M6_PLAN.md, section 3).
 
 An incident is one JSON file, eval/incidents/<consumer>/<id>.json: one
-change to one file of the lab guest, what makes it take effect, and how
-to tell that it took effect as written.
+change to one file of the lab guest, what makes it take effect, how to
+tell that it took effect as written, and, for a change that weakens
+security, how to see that it did.
 
   load, load_all  read and check one incident, or the whole set
   change_kind     what kind of change it is: content, create, mode,
                   owner, symlink or unlink
   surfaces        which of sc's surfaces score it (sc edit, scd, sc check,
-                  sc restore), by that kind and by scd's scope
+                  sc restore), by that kind, by scd's scope, and by what
+                  sc edit can make
   substitute      put the guest's own values into a text ({root_uuid},
                   {root_uuid~1}, {nic}, {admin}, {kernel})
   plan_change     what a change does to the guest's file: its new content,
                   or its new mode, owner or link target, or its removal
-  content_hash    the hash its truth label is keyed on: the fields that
-                  decide what the change does, not the prose
+  content_hash    the hash its truth label is keyed on: what the change
+                  does, written any equivalent way, and not the prose
+
+What the applier does beyond plan_change: a create or a symlink makes
+any missing parent directory first (as "systemctl edit" does), and
+undoing the change removes the directories it made. A replace works on
+the file's raw text, so on a CRLF file "$" comes after the "\\r", where
+delete and insert match each line without its line end; an append adds
+a line ending in "\\n" alone. The guest's files are LF.
 
 The command line checks a set: "incidents.py check eval". Python 3
 standard library only.
@@ -29,10 +38,13 @@ import re
 import sys
 
 REQUIRED = ("id", "path", "change", "applies", "cause", "fix", "guess")
-OPTIONAL = ("expect", "source", "harmless")
+OPTIONAL = ("expect", "exposure", "source", "harmless")
 # What decides the truth: a change to any of these makes the label stale.
-# cause, guess and source are prose and leave it as it is.
-HASHED = ("id", "path", "change", "applies", "expect", "fix", "harmless")
+# cause, guess, source and each probe's words are prose and leave it as
+# it is.
+HASHED = ("id", "path", "change", "applies", "expect", "exposure", "fix", "harmless")
+# A probe's words: "as_written" for expect, "shows" for exposure.
+PROBE_WORDS = {"expect": "as_written", "exposure": "shows"}
 GUESSES = ("blocker", "error", "warning", "none", "unknown")
 APPLIES = ("sudo", "login", "netplan", "sysctl", "udev", "now", "fstab-now",
            "update-grub", "boot", "socket:ssh")
@@ -46,8 +58,9 @@ SURFACES = ("edit", "scd", "check", "restore")
 
 FACTS = ("root_uuid", "nic", "admin", "kernel")
 PLACEHOLDER = re.compile(r"\{(root_uuid|nic|admin|kernel)(?:~([1-9]))?\}")
-# A "{name~N}" whose name is not a fact is a typo, not a udev ATTR{...}.
-LOOKS_LIKE = re.compile(r"\{([A-Za-z_]+)~[0-9]+\}")
+# A "{name~...}" is meant as a placeholder, not a udev ATTR{...}: one that
+# PLACEHOLDER does not take whole is a typo.
+LOOKS_LIKE = re.compile(r"\{([A-Za-z_]+)~([^{}]*)\}")
 
 
 class IncidentError(ValueError):
@@ -77,11 +90,16 @@ def _regex(where, v):
 
 
 def _placeholders(where, v):
-    """Refuse a {name~N} for a name that is not a fact, and ~N on a fact
-    that is not a UUID."""
+    """Refuse a {name~N} for a name that is not a fact, a fact's {name~...}
+    whose step is not one digit, 1 to 9, and ~N on a fact that is not a
+    UUID. A typo must not reach the guest's file as literal text."""
     for m in LOOKS_LIKE.finditer(v):
-        if m.group(1) not in FACTS:
-            _fail(where, "unknown placeholder {%s~...}: the facts are %s" % (m.group(1), ", ".join(FACTS)))
+        name, step = m.groups()
+        if name not in FACTS:
+            if step.isdigit():
+                _fail(where, "unknown placeholder {%s~%s}: the facts are %s" % (name, step, ", ".join(FACTS)))
+        elif not re.fullmatch(r"[1-9]", step):
+            _fail(where, "{%s~%s}: ~N takes one digit, 1 to 9" % (name, step))
     for m in PLACEHOLDER.finditer(v):
         if m.group(2) and m.group(1) != "root_uuid":
             _fail(where, "{%s~%s}: only {root_uuid} takes ~N" % (m.group(1), m.group(2)))
@@ -155,17 +173,21 @@ def change_kind(edits):
     return _edits("change", edits)
 
 
-def _expect(where, v):
+def _probes(where, v, words):
+    """expect probes (words "as_written": what the output shows when the
+    change took effect as written, run as root) or exposure probes
+    (words "shows": what a pass shows, run as an unprivileged user)."""
     if not isinstance(v, list):
         _fail(where, "must be a list of probes")
     for i, p in enumerate(v):
         w = "%s[%d]" % (where, i)
         tests = [k for k in ("exit", "match", "no_match") if isinstance(p, dict) and k in p]
-        if not isinstance(p, dict) or not {"run", "as_written"} <= set(p) or len(tests) != 1 or \
-                set(p) - {"run", "as_written", "exit", "match", "no_match"}:
-            _fail(w, 'a probe is {"run": CMD, "as_written": WHAT, and one of "exit": N, "match": REGEX, "no_match": REGEX}')
+        if not isinstance(p, dict) or not {"run", words} <= set(p) or len(tests) != 1 or \
+                set(p) - {"run", words, "exit", "match", "no_match"}:
+            _fail(w, 'a probe is {"run": CMD, "%s": WHAT, and one of "exit": N, "match": REGEX, "no_match": REGEX}'
+                  % words)
         _placeholders(w + ".run", _text(w + ".run", p["run"]))
-        _text(w + ".as_written", p["as_written"])
+        _text("%s.%s" % (w, words), p[words])
         t = tests[0]
         if t == "exit":
             if type(p["exit"]) is not int or not 0 <= p["exit"] <= 255:
@@ -193,7 +215,8 @@ def check(inc, where="incident"):
     a = inc["applies"]
     if not isinstance(a, str) or not (a in APPLIES or (a.startswith("restart:") and UNIT.fullmatch(a[8:]))):
         _fail(where + ".applies", "must be one of %s, or restart:UNIT" % ", ".join(APPLIES))
-    _expect(where + ".expect", inc.get("expect", []))
+    for k, words in PROBE_WORDS.items():
+        _probes("%s.%s" % (where, k), inc.get(k, []), words)
     _text(where + ".cause", inc["cause"])
     fix = inc["fix"]
     if fix != "restore":
@@ -253,41 +276,83 @@ def load_all(root):
     return out
 
 
+def _canonical_edits(edits):
+    out = []
+    for e in edits:
+        (op, v), = e.items()
+        if op == "create":
+            v = {"content": v} if isinstance(v, str) else dict(v)
+            if "mode" in v:
+                v["mode"] = "%04o" % int(v["mode"], 8)
+        elif op == "mode":
+            v = "%04o" % int(v, 8)
+        out.append({op: v})
+    return out
+
+
+def _canonical(inc):
+    """The fields that decide what a checked incident does, each written
+    one way: a create as an object, modes in four digits, no empty
+    probe list or false harmless, and no probe's words."""
+    core = {}
+    for k in HASHED:
+        v = inc.get(k)
+        if v is None or (k in PROBE_WORDS and not v) or (k == "harmless" and v is False):
+            continue
+        if k == "change" or (k == "fix" and v != "restore"):
+            v = _canonical_edits(v)
+        elif k in PROBE_WORDS:
+            v = [{x: y for x, y in p.items() if x != PROBE_WORDS[k]} for p in v]
+        core[k] = v
+    return core
+
+
 def content_hash(inc):
-    """sha256 of the fields that decide what the incident does, as
-    canonical JSON: the same for any key order or spacing in the file."""
-    core = {k: inc[k] for k in HASHED if k in inc}
-    blob = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    """sha256 of what decides what the (checked) incident does, as
+    canonical JSON: the same for any key order or spacing in the file,
+    and for any equivalent way of writing it (_canonical)."""
+    blob = json.dumps(_canonical(inc), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def surfaces(inc, in_scope=True):
+def surfaces(inc, in_scope=True, dir_exists=True, edit_mode=0o644):
     """The sc surfaces that score this incident (docs/M6_PLAN.md, 3 and
-    6.1). in_scope: whether scd records the path (sc scope PATH)."""
+    6.1). in_scope: whether scd records the path (sc scope PATH).
+    dir_exists: whether the path's directory is there before the change.
+    edit_mode: the mode sc edit gives a new file at the path, the graph's
+    mode line for it (Graph.Mode: 0644 when none matches)."""
     kind = change_kind(inc["change"])
-    if kind in ("content", "create"):
+    if kind == "content":
         s = ["edit", "scd", "check", "restore"]
+    elif kind == "create":
+        v = inc["change"][0]["create"]
+        v = {"content": v} if isinstance(v, str) else v
+        # sc edit writes nothing for an empty new file ("unchanged"), makes
+        # no directory, and gives a new file edit_mode, not the incident's.
+        made = v["content"] != "" and dir_exists and int(v.get("mode", "0644"), 8) == edit_mode
+        s = (["edit"] if made else []) + ["scd", "check", "restore"]
     elif kind in ("mode", "owner"):
         s = ["scd", "check", "restore"]  # sc edit keeps the mode and owner
     else:
         s = ["scd", "restore"]  # symlink, unlink: no checker reads them
     if not in_scope:
-        # No scd row, so nothing for sc restore to put back; sc edit
-        # does not look at the scope and keeps its own rows.
-        s = [x for x in s if x not in ("scd", "restore")]
+        # No scd row. sc edit does not look at the scope, and its own rows
+        # (for a new file, a "did not exist" row first) still restore.
+        s = [x for x in s if x != "scd" and (x != "restore" or "edit" in s)]
     return tuple(s)
 
 
 def _uuid_off(value, n):
-    """VALUE with its last N hex digits each moved on by one."""
+    """VALUE with its last N hex digits each moved on by one, in the
+    value's own case."""
     chars, done = list(value), 0
+    form = "%X" if any(c in "ABCDEF" for c in value) else "%x"
     for i in range(len(chars) - 1, -1, -1):
         if done == n:
             break
         c = chars[i]
         if c in "0123456789abcdefABCDEF":
-            d = (int(c, 16) + 1) % 16
-            chars[i] = ("%x" if not c.isupper() else "%X") % d
+            chars[i] = form % ((int(c, 16) + 1) % 16)
             done += 1
     if done < n:
         raise IncidentError("{root_uuid~%d}: %r has fewer than %d hex digits" % (n, value, n))
@@ -357,7 +422,7 @@ def plan_change(edits, base, facts):
     """What EDITS do to a file whose content now is BASE (bytes, or None
     when there is no file), with the guest's FACTS. Returns an Action:
     kind content: content is the new bytes; create: content and mode
-    (None: the default); mode: mode as an int; owner: "USER:GROUP";
+    (None: the default, 0644); mode: mode as an int; owner: "USER:GROUP";
     symlink: target, with or without a file there before (masking a
     unit makes a link where there was none); unlink: nothing more. An
     edit that does not fit the file (no line matches, or the file is

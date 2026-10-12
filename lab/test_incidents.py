@@ -196,6 +196,38 @@ class TestPlaceholders(unittest.TestCase):
         with self.assertRaisesRegex(IncidentError, r"only \{root_uuid\} takes ~N"):
             incidents.check(incident(change=[{"append": "{nic~1}"}]))
 
+    def test_a_step_is_one_digit_1_to_9(self):
+        # Else the typo reaches the guest's file as literal text.
+        for text in ("UUID={root_uuid~0} /x", "UUID={root_uuid~10} /x", "{nic~0}", "{root_uuid~}", "{admin~a}"):
+            with self.assertRaisesRegex(IncidentError, "takes one digit, 1 to 9"):
+                incidents.check(incident(change=[{"append": text}]))
+        # Not a fact and not a number: shell's ${VAR~~} and the like stay.
+        incidents.check(incident(change=[{"append": "X=${GRUB_X~~}"}]))
+
+    def test_every_field_is_checked_for_placeholders(self):
+        bad = "{rootuuid~1}"
+        for over in ({"change": [{"append": bad}]}, {"change": [{"write": bad}]},
+                     {"change": [{"insert": {"before": bad, "text": "x"}}]},
+                     {"change": [{"insert": {"before": "x", "text": bad}}]},
+                     {"change": [{"replace": {"pattern": bad, "with": "x"}}]},
+                     {"change": [{"replace": {"pattern": "x", "with": bad}}]},
+                     {"change": [{"delete": bad}]}, {"change": [{"create": bad}]},
+                     {"change": [{"owner": bad + ":root"}]}, {"change": [{"symlink": bad}]},
+                     {"expect": [{"run": bad, "exit": 0, "as_written": "x"}]},
+                     {"exposure": [{"run": bad, "exit": 0, "shows": "x"}]}):
+            with self.assertRaisesRegex(IncidentError, "unknown placeholder", msg=over):
+                incidents.check(incident(**over))
+
+    def test_upper_case_and_every_edit_substitute(self):
+        self.assertEqual(incidents.substitute("{root_uuid~2}", dict(FACTS, root_uuid="9F")), "A0")
+        self.assertEqual(plan([{"write": "{admin}\n"}]).content, b"owner\n")
+        self.assertEqual(plan([{"symlink": "/home/{admin}/x"}], base=None).target, "/home/owner/x")
+        self.assertEqual(plan([{"owner": "{admin}:{admin}"}]).owner, "owner:owner")
+        # A fact in a pattern is matched as text, not as a regex.
+        dotted = dict(FACTS, nic="en.1")
+        a = incidents.plan_change([{"insert": {"before": "^{nic}$", "text": "x"}}], b"enx1\nen.1\n", dotted)
+        self.assertEqual(a.content, b"enx1\nx\nen.1\n")
+
 
 class TestCheck(unittest.TestCase):
     def assertRefused(self, regex, **over):
@@ -235,6 +267,9 @@ class TestCheck(unittest.TestCase):
         self.assertRefused("octal mode", change=[{"mode": 666}])
         self.assertRefused("octal mode", change=[{"mode": "0999"}])
         self.assertRefused('"USER:GROUP"', change=[{"owner": "root"}])
+        self.assertRefused(r"create\.mode: must be an octal", change=[{"create": {"content": "x", "mode": "rw"}}])
+        self.assertRefused('"content": TEXT', change=[{"create": {"content": "x", "owner": "root:root"}}])
+        self.assertRefused(r"\.count: must be", change=[{"replace": {"pattern": "a", "with": "b", "count": True}}])
         self.assertRefused("must be true", change=[{"unlink": "yes"}])
         self.assertRefused("non-empty string", change=[{"append": ""}])
 
@@ -250,7 +285,16 @@ class TestCheck(unittest.TestCase):
         for e in bad:
             self.assertRefused("a probe is", expect=e)
         self.assertRefused("an exit status", expect=[{"run": "x", "as_written": "y", "exit": 256}])
+        self.assertRefused("an exit status", expect=[{"run": "x", "as_written": "y", "exit": False}])
         self.assertRefused("not a regular expression", expect=[{"run": "x", "as_written": "y", "no_match": "("}])
+
+    def test_exposure(self):
+        incidents.check(incident(exposure=[{"run": "test -r /etc/shadow", "exit": 0, "shows": "readable"}]))
+        self.assertRefused(r'exposure\[0\]: a probe is \{"run": CMD, "shows"',
+                           exposure=[{"run": "x", "exit": 0, "as_written": "y"}])
+        self.assertRefused(r'expect\[0\]: a probe is \{"run": CMD, "as_written"',
+                           expect=[{"run": "x", "exit": 0, "shows": "y"}])
+        self.assertRefused("must be a list", exposure={"run": "x"})
 
     def test_fix_guess_harmless(self):
         incidents.check(incident(fix=[{"delete": "^UUID="}]))
@@ -326,8 +370,9 @@ class TestFiles(unittest.TestCase):
 class TestHash(unittest.TestCase):
     def test_stable_and_pinned(self):
         # Pinned: a label written today must still match after a refactor.
+        # (Moved once, in the fixes of chunk A's review, before any label.)
         self.assertEqual(incidents.content_hash(incident()),
-                         "e9d274ed90373a57ea73ced3c7fe6da0079d69a56be3a1e00590fdbdafbd73b4")
+                         "2596092fc96bbc16497dbf2d45506400cf8dec3871c3a0f065a4d595be7f2131")
 
     def test_key_order_and_spacing_do_not_count(self):
         inc = incident()
@@ -340,11 +385,45 @@ class TestHash(unittest.TestCase):
         self.assertEqual(incidents.content_hash(dict(incident(), consumer="fstab")), h)
         for over in ({"change": [{"append": "UUID={root_uuid~2} /data ext4 defaults 0 2"}]},
                      {"applies": "boot"}, {"expect": []}, {"fix": [{"delete": "^UUID="}]},
-                     {"harmless": False}, {"path": "/etc/fstab.d/x"}):
+                     {"harmless": True}, {"path": "/etc/fstab.d/x"},
+                     {"exposure": [{"run": "true", "shows": "x", "exit": 0}]},
+                     {"expect": [{"run": "findmnt -n /data", "exit": 1, "as_written": "a mount on /data"}]}):
             self.assertNotEqual(incidents.content_hash(incident(**over)), h, over)
+
+    def test_the_same_meaning_written_another_way(self):
+        def same(a, b):
+            for x in (a, b):
+                incidents.check(x)
+            self.assertEqual(incidents.content_hash(a), incidents.content_hash(b), (a, b))
+        bare = incident(expect=None)
+        same(bare, dict(bare, expect=[]))
+        same(bare, dict(bare, harmless=False))
+        same(bare, dict(bare, exposure=[]))
+        same(incident(), incident(expect=[{"run": "findmnt -n /data", "exit": 0, "as_written": "other words"}]))
+        probe = {"run": "test -r /etc/shadow", "exit": 0}
+        same(incident(exposure=[dict(probe, shows="a")]), incident(exposure=[dict(probe, shows="b")]))
+        same(incident(change=[{"mode": "644"}]), incident(change=[{"mode": "0644"}]))
+        same(incident(change=[{"create": "x"}]), incident(change=[{"create": {"content": "x"}}]))
+        same(incident(change=[{"create": {"content": "x", "mode": "440"}}]),
+             incident(change=[{"create": {"content": "x", "mode": "0440"}}]))
+        same(incident(fix=[{"mode": "644"}]), incident(fix=[{"mode": "0644"}]))
 
 
 class TestSurfaces(unittest.TestCase):
+    def test_what_sc_edit_cannot_make(self):
+        def s(v, **kw):
+            return incidents.surfaces(incident(change=[{"create": v}]), **kw)
+        every = ("edit", "scd", "check", "restore")
+        self.assertEqual(s({"content": "x", "mode": "0644"}), every)
+        self.assertEqual(s({"content": "x", "mode": "0440"}, edit_mode=0o440), every)
+        # An empty new file: sc edit says "unchanged" and writes nothing.
+        self.assertEqual(s(""), every[1:])
+        # sc edit gives a new file the graph's mode, not the incident's.
+        self.assertEqual(s({"content": "x", "mode": "0666"}, edit_mode=0o440), every[1:])
+        self.assertEqual(s("x", edit_mode=0o440), every[1:])
+        # sc edit makes no directory.
+        self.assertEqual(s("x", dir_exists=False), every[1:])
+
     def test_by_kind(self):
         def s(edits, **kw):
             return incidents.surfaces(incident(change=edits), **kw)
@@ -358,7 +437,10 @@ class TestSurfaces(unittest.TestCase):
     def test_outside_scds_scope(self):
         def s(edits):
             return incidents.surfaces(incident(change=edits), in_scope=False)
-        self.assertEqual(s([{"append": "x"}]), ("edit", "check"))
+        # sc edit's own rows still restore; scd has none.
+        self.assertEqual(s([{"append": "x"}]), ("edit", "check", "restore"))
+        self.assertEqual(s([{"create": "x"}]), ("edit", "check", "restore"))
+        self.assertEqual(s([{"create": ""}]), ("check",))
         self.assertEqual(s([{"mode": "0666"}]), ("check",))
         self.assertEqual(s([{"symlink": "/dev/null"}]), ())
 
