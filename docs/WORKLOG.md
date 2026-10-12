@@ -3169,3 +3169,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix4.log`).
   - **Next:** J8, scd's check of the version after a change.
+- **scd's check after a change, by the row's mode** (2026-10-12, the
+  chunk J review's J8).
+  - **The gap:** follow-up 5a judged the version before a change by its
+    row's mode, but the version after was still checked with the mode on
+    disk when the checker got to it, and that result was remembered by
+    content alone. A chmod between a content row (0440) and its check
+    put the error line on the content row, and the chmod's own row said
+    nothing.
+  - **The fix:** the version after is checked with `CheckVersion` and its
+    row's mode and owner, and the checker remembers a result by content,
+    mode and owner.
+  - **Tests:** `TestCheckAfterByRowMode` failed before the fix.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix5.log`).
+  - **Next:** J3 and J9, the grub rules.
