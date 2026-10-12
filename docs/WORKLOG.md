@@ -3184,3 +3184,28 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix5.log`).
   - **Next:** J3 and J9, the grub rules.
+- **The grub rules** (2026-10-12, the chunk J review's J3 and J9).
+  - **J3:** the two ways a grub.d drop-in appends wrongly passed the
+    check: `GRUB_CMDLINE_LINUX_DEFAULT=$GRUB_CMDLINE_LINUX_DEFAULT
+    nomodeset` (a value with `$` was never judged) and
+    `GRUB_CMDLINE_LINUX_DEFAULT+=" nomodeset"` (bash's, not sh's). dash
+    runs `nomodeset`, or the whole `+=` word, as a command, and
+    update-grub stops. Both are now blockers; a value of plain
+    characters, `$NAME` and `${NAME}` is judged.
+  - **J9a:** `GRUB_TIMEOUT=0 GRUB_TIMEOUT_STYLE=hidden` sets both, but was
+    a blocker. Assignments in a row are now fine; a word after them that
+    is not one is still a blocker.
+  - **J9b:** a name with a leading dot (`grub.d/.50-old.cfg`) was checked,
+    though sh's `*.cfg` skips it. The graph now gives no checker to a
+    name with a leading dot that only a wildcard matched, in every
+    directory: sh, glob(3), systemd, udev and sudo all skip such names.
+    The scope still records them. netplan's own note for a dot-file is
+    now the graph's "no checker reads this file".
+  - **Tests:** `TestShAssignments` (6 cases more, each checked with dash
+    as before), `TestShSyntaxGrubD` and `TestGraphHiddenNames` failed
+    before the fix. `TestNetplanDotFile` now expects no checker (the
+    first full run caught it:
+    `~/smartconfig-work/fu-scratch/checks-j-fix6-run1-netplan-fail.log`).
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix6.log`).
+  - **Next:** J10, `sc help <command> <word>`.
