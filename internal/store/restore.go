@@ -35,30 +35,9 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 	if err != nil {
 		return Change{}, nil, err
 	}
-	if s.FingerprintOnly(src.Path) {
-		return Change{}, nil, fmt.Errorf("%s is fingerprint-only; sc never restores it", src.Path)
-	}
-	if src.Kind == KindDigest {
-		return Change{}, nil, fmt.Errorf("%s keeps only a fingerprint of %s, not its content", src.ID, src.Path)
-	}
-	if src.Kind == KindDeleted {
-		if _, err := os.Lstat(src.Path); errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			return Change{}, nil, nil // already absent, as the row says
-		}
-	}
-	if err := safeDir(src); err != nil {
-		return Change{}, nil, err
-	}
-	var data []byte
-	if src.Kind == KindFile {
-		if data, err = s.Blob(src.Blob); err != nil {
-			return Change{}, nil, err
-		}
-	}
-	// After every other refusal, which says more, and after safeDir, so it
-	// never opens through a directory sc would refuse.
-	if err := fsutil.ReplaceRefused(src.Path); err != nil {
-		return Change{}, nil, fmt.Errorf("restore %s: %w (file not changed)", src.ID, err)
+	data, absent, err := s.restoreRefusals(src)
+	if err != nil || absent {
+		return Change{}, nil, err // absent: already, as the row says
 	}
 	var pending *fsutil.Pending
 	if src.Kind == KindFile {
@@ -120,6 +99,49 @@ func (s *Store) Restore(id string) (restored Change, prev *Change, err error) {
 		return Change{}, prev, fmt.Errorf("%s but not recorded: %w (run: sc snapshot %s)", what, err, src.Path)
 	}
 	return Change{}, prev, fmt.Errorf("restore %s: %w (file not changed)", src.Path, err)
+}
+
+// RestoreRefusal is the refusal Restore would give src before it writes
+// anything, or nil. sc restore asks it before it checks the version and
+// asks the owner, so that a yes is not then refused, and a refusal reads
+// the same with or without --force (the chunk J review, J5).
+func (s *Store) RestoreRefusal(src Change) error {
+	if s.readOnly != "" {
+		return s.readOnlyErr()
+	}
+	_, _, err := s.restoreRefusals(src)
+	return err
+}
+
+// restoreRefusals runs Restore's refusals of src, in Restore's order, and
+// returns the content a file row writes. absent: a deletion whose path is
+// already absent, which Restore leaves as it is.
+func (s *Store) restoreRefusals(src Change) (data []byte, absent bool, err error) {
+	if s.FingerprintOnly(src.Path) {
+		return nil, false, fmt.Errorf("%s is fingerprint-only; sc never restores it", src.Path)
+	}
+	if src.Kind == KindDigest {
+		return nil, false, fmt.Errorf("%s keeps only a fingerprint of %s, not its content", src.ID, src.Path)
+	}
+	if src.Kind == KindDeleted {
+		if _, err := os.Lstat(src.Path); errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, true, nil
+		}
+	}
+	if err := safeDir(src); err != nil {
+		return nil, false, err
+	}
+	if src.Kind == KindFile {
+		if data, err = s.Blob(src.Blob); err != nil {
+			return nil, false, err
+		}
+	}
+	// After every other refusal, which says more, and after safeDir, so it
+	// never opens through a directory sc would refuse.
+	if err := fsutil.ReplaceRefused(src.Path); err != nil {
+		return nil, false, fmt.Errorf("restore %s: %w (file not changed)", src.ID, err)
+	}
+	return data, false, nil
 }
 
 // testHookBeforePreRestore, if set by a test, runs in Restore after the

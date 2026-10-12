@@ -99,6 +99,17 @@ func newChecks() (*check.Checks, func(), error) {
 	return c, cleanup, nil
 }
 
+// checkerOf is the checker of path in the graph newChecks uses, found
+// without a scratch directory: a command that only needs to know whether a
+// path is checked makes none (the chunk J review, J11).
+func checkerOf(path string) string {
+	c := &check.Checks{}
+	if testHookChecks != nil {
+		testHookChecks(c)
+	}
+	return c.GraphInUse().Checker(path)
+}
+
 // readCandidate reads a file to check with --as, refusing what sc would
 // not keep (more than 8 MB) and anything that is not a regular file.
 // O_NONBLOCK: a FIFO with no writer opens at once and is then refused,

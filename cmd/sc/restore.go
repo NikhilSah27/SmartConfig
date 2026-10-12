@@ -53,6 +53,11 @@ exit 2). --force writes without checking.`,
 				return fmt.Errorf("%s is under %s, which /etc/fstab mounts and is not mounted: run %s, then this again (file not changed)",
 					show(src.Path), show(mps[len(mps)-1]), mountCommands(mps, " && "))
 			}
+			// Restore's own refusals first: a question whose yes is then
+			// refused says nothing true (the chunk J review, J5).
+			if err := s.RestoreRefusal(src); err != nil {
+				return err
+			}
 			out := cmd.OutOrStdout()
 			if !force && src.Kind == store.KindFile {
 				ok, err := restoreChecked(cmd, s, src)
@@ -100,19 +105,20 @@ exit 2). --force writes without checking.`,
 // its path as it is now (M5 follow-up 3), as sc edit checks an edit. It
 // reports whether to go on: yes when the version adds no blocker or
 // error, when the path has no checker, or when the owner says y. A check
-// that cannot run does not stop a restore: it says so on stderr and goes
-// on (a rescue shell may lack a validator, or a place for scratch files).
-// On a read-only root, as on the rescue console, only sc's own rules run.
+// that cannot run, or is cut short, does not stop a restore: it says so on
+// stderr and goes on (a rescue shell may lack a validator, or a place for
+// scratch files). On a read-only root, as on the rescue console, only sc's
+// own rules run.
 func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool, error) {
+	if checkerOf(src.Path) == "" {
+		return true, nil
+	}
 	c, cleanup, err := newChecks()
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not checked (%v)\n", show(src.Path), err)
 		return true, nil
 	}
 	defer cleanup()
-	if c.GraphInUse().Checker(src.Path) == "" {
-		return true, nil
-	}
 	if rootReadOnly() {
 		c.Run.Dirs = []string{}
 	}
@@ -121,18 +127,22 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 		return false, err
 	}
 	var had []check.Finding
+	var cut []string // what a check cut short says (the chunk J review, J4)
 	st, err := fsutil.ReadState(src.Path)
 	switch {
 	case fsutil.IsNotExist(err):
 	case err != nil:
 		return false, err
 	case st.Kind == "file": // a link: restore refuses it itself
-		rep, err := c.Check(cmd.Context(), src.Path, st.Data)
+		now, err := c.Check(cmd.Context(), src.Path, st.Data)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not checked (%v)\n", show(src.Path), err)
 			return true, nil
 		}
-		had = rep.Findings
+		had = now.Findings
+		if now.Incomplete {
+			cut = append(cut, now.Notes...)
+		}
 	}
 	// The version as sc restore writes it: its content with its row's mode
 	// and owner, not the file's on disk now.
@@ -140,6 +150,18 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not checked (%v)\n", show(src.Path), err)
 		return true, nil
+	}
+	if rep.Incomplete {
+		cut = append(cut, rep.Notes...)
+	}
+	// A problem the cut check would have found is not listed below, nor
+	// asked about: say so, as sc edit does.
+	said := map[string]bool{}
+	for _, n := range cut {
+		if !said[n] {
+			said[n] = true
+			fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not fully checked: %s\n", show(src.Path), show(n))
+		}
 	}
 	added := check.Added(had, rep.Findings)
 	if check.Worst(added) < check.Error {

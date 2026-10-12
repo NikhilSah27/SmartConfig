@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"smartconfig/internal/check"
+	"smartconfig/internal/store"
 )
 
 func restoreAnswers(t *testing.T, answers string) {
@@ -131,5 +133,105 @@ func TestRestoreChecksMode(t *testing.T) {
 	}
 	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o440 {
 		t.Errorf("mode %v", fi.Mode())
+	}
+}
+
+// Restore's own refusals come before the check and its question: a yes
+// that is then refused says nothing true, and a refusal reads the same
+// with or without --force (the chunk J review, J5).
+func TestRestoreRefusalsFirst(t *testing.T) {
+	dir, fstab := checkEnv(t)
+	mustSC(t, "init")
+	bad := snap(t, fstab, badLine)
+	os.WriteFile(fstab, []byte(goodLine), 0o644)
+
+	testHookOpenStore = func(s *store.Store) { s.SetFingerprintOnly(func(p string) bool { return p == fstab }) }
+	restoreAnswers(t, "y\n")
+	r := sc(t, "restore", bad)
+	testHookOpenStore = nil
+	if r.code != 1 || !strings.Contains(r.stderr, "fingerprint-only") || strings.Contains(r.stdout, "Restore anyway?") {
+		t.Errorf("fingerprint-only: %+v", r)
+	}
+
+	// A directory that became a symlink.
+	sub := filepath.Join(dir, "sub")
+	os.Mkdir(sub, 0o755)
+	p := filepath.Join(sub, "fstab")
+	g, err := check.ParseGraph("check fstab " + p + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	id := snap(t, p, badLine)
+	moved := filepath.Join(dir, "moved")
+	os.Rename(sub, moved)
+	os.Symlink(moved, sub)
+	r, f := sc(t, "restore", id), sc(t, "restore", "--force", id)
+	if r.code != 1 || r.stderr != f.stderr || !strings.Contains(r.stderr, "(a symlink)") || r.stdout != "" {
+		t.Errorf("a directory that is a symlink:\n  without --force: %+v\n  with --force:    %+v", r, f)
+	}
+
+	if os.Geteuid() == 0 {
+		return // root writes through the mode below
+	}
+	// A store that can only be read (the rescue console before the
+	// remount): refused at once, not asked.
+	_, fstab = checkEnv(t)
+	mustSC(t, "init")
+	bad = snap(t, fstab, badLine)
+	os.WriteFile(fstab, []byte(goodLine), 0o644)
+	home := os.Getenv("SC_HOME")
+	os.Chmod(home, 0o500)
+	t.Cleanup(func() { os.Chmod(home, 0o700) })
+	for _, answer := range []string{"y\n", ""} {
+		restoreAnswers(t, answer)
+		if r := sc(t, "restore", bad); r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "may not write") {
+			t.Errorf("a read-only store, answer %q: %+v", answer, r)
+		}
+	}
+}
+
+// A check cut short (a validator out of time) does not stop a restore, but
+// it is said on stderr: a problem it would have found is neither listed
+// nor asked about (the chunk J review, J4).
+func TestRestoreNotFullyChecked(t *testing.T) {
+	_, fstab := checkEnv(t)
+	mustSC(t, "init")
+	tools := t.TempDir()
+	// Out of time on a file that mentions /slow, clean on any other.
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\nfor f; do :; done\nif grep -q /slow \"$f\"; then sleep 30; fi\nexit 0\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs, c.Run.Timeout = []string{tools}, 300*time.Millisecond }
+	slow := snap(t, fstab, goodLine+"/dev/null /slow ext4 defaults 0 2\n")
+	os.WriteFile(fstab, []byte(goodLine), 0o644)
+	restoreAnswers(t, "")
+	r := sc(t, "restore", slow)
+	if r.code != 0 || strings.Count(r.stderr, "\n") != 1 || !strings.HasPrefix(r.stderr, "sc: note: "+fstab+" not fully checked: ") ||
+		!strings.Contains(r.stderr, "did not finish in time") || !strings.HasPrefix(r.stdout, "restored ") {
+		t.Errorf("%+v", r)
+	}
+}
+
+// Whether a path is checked is known without a scratch directory: a file
+// no checker reads restores without a note when there is no place for one
+// (the chunk J review, J11).
+func TestRestoreNoCheckerNoScratch(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through the mode of the scratch parent")
+	}
+	dir, _ := checkEnv(t)
+	mustSC(t, "init")
+	motd := filepath.Join(dir, "motd")
+	first := snap(t, motd, "one\n")
+	os.WriteFile(motd, []byte("two\n"), 0o644)
+	ro := t.TempDir()
+	os.Chmod(ro, 0o500)
+	t.Cleanup(func() { os.Chmod(ro, 0o700) })
+	old := scratchParents
+	scratchParents = func() []string { return []string{ro} }
+	t.Cleanup(func() { scratchParents = old })
+	if r := sc(t, "restore", first); r.code != 0 || r.stderr != "" || !strings.HasPrefix(r.stdout, "restored ") {
+		t.Errorf("%+v", r)
 	}
 }
