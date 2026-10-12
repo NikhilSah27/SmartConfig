@@ -86,6 +86,7 @@ func pruneAt(t *testing.T, at time.Time, answers string) {
 	oldNow, oldIn := pruneNow, pruneStdin
 	pruneNow, pruneStdin = func() time.Time { return at }, strings.NewReader(answers)
 	t.Cleanup(func() { pruneNow, pruneStdin = oldNow, oldIn })
+	answeredAtTerminal(t)
 }
 
 // sc prune says what can go and asks; anything but y, and end of input,

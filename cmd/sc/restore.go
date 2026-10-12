@@ -31,7 +31,9 @@ is now is saved first, so the restore can itself be undone.
 A file sc has a checker for is checked first: when the version to write
 adds a blocker or an error compared with the file as it is now, sc
 restore lists them and asks (end of input means no: nothing is written,
-exit 2). --force writes without checking.`,
+exit 2). It asks only at a terminal: without one (a script, a pipe,
+output to a file) it writes nothing and exits 2. --force writes without
+checking.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -178,6 +180,12 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 	}
 	explain(out, added)
 	fmt.Fprintf(out, "\nRestoring %s adds %s compared with %s as it is now.\n", src.ID, tally(n), show(src.Path))
+	if !atTerminal(restoreStdin, out) {
+		// No one to ask (a script, a pipe, output to a file): stdin is not
+		// read, so a script's next line is not taken for a yes.
+		fmt.Fprintf(cmd.ErrOrStderr(), "sc: not restored: %s is unchanged (no terminal to ask at; sc restore --force %s writes it)\n", show(src.Path), src.ID)
+		return false, exitCode(2)
+	}
 	fmt.Fprint(out, "Restore anyway? [y/N]: ")
 	answer, _ := bufio.NewReader(restoreStdin).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(answer)) {

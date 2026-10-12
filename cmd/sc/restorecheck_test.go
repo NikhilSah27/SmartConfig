@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,16 @@ func restoreAnswers(t *testing.T, answers string) {
 	old := restoreStdin
 	restoreStdin = strings.NewReader(answers)
 	t.Cleanup(func() { restoreStdin = old })
+	answeredAtTerminal(t)
+}
+
+// answeredAtTerminal makes the commands ask, as at a terminal, while the
+// test feeds the answers.
+func answeredAtTerminal(t *testing.T) {
+	t.Helper()
+	old := atTerminal
+	atTerminal = func(io.Reader, io.Writer) bool { return true }
+	t.Cleanup(func() { atTerminal = old })
 }
 
 // sc restore checks the version it is about to write against the file as

@@ -39,6 +39,8 @@ version at every boot the boots file records, which is what sc status
 compares with; and every manual, sc edit, restore and pre-restore row.
 
 sc prune says what it would delete and asks first; --yes does not ask.
+It asks only at a terminal: without one (a script, a pipe, output to a
+file) it deletes nothing and exits 2.
 It deletes nothing until a healthy boot is recorded, nor while scd still
 runs a sc that an upgrade replaced. Nothing is ever deleted unless
 sc prune is run.`,
@@ -92,6 +94,12 @@ sc prune is run.`,
 			fmt.Fprintln(out, "Kept: each file's newest and first rows, its version at every recorded")
 			fmt.Fprintln(out, "boot, and every manual, sc edit, restore and pre-restore row.")
 			if !yes {
+				if !atTerminal(pruneStdin, out) {
+					// No one to ask: stdin is not read (the chunk J
+					// review, J6).
+					fmt.Fprintln(cmd.ErrOrStderr(), "sc: nothing deleted (no terminal to ask at; sc prune --yes deletes them)")
+					return exitCode(2)
+				}
 				fmt.Fprint(out, "Delete them? [y/N]: ")
 				answer, _ := bufio.NewReader(pruneStdin).ReadString('\n')
 				switch strings.ToLower(strings.TrimSpace(answer)) {

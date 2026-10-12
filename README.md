@@ -135,6 +135,9 @@ edit.
   `/etc/group` that no longer has your admin in `sudo`, say), it lists
   them and asks.
 - **No answer:** end of input means no; nothing is written, and it exits 2.
+- **Only at a terminal:** without one (a script, a pipe, output to a
+  file) it does not ask or read stdin: it lists what the version adds,
+  names `--force` on stderr, writes nothing, and exits 2.
 - **`--force`:** writes without checking.
 - **No question:** restoring the healthy version a rescue report gives
   adds nothing, so it asks nothing.
@@ -180,7 +183,8 @@ then the stored content no row uses any more.
     `sc status` compares with);
   - every manual, `sc edit`, restore and pre-restore row.
 - **The prompt:** it says what would go and asks first; `--yes` does not
-  ask.
+  ask. It asks only at a terminal: without one it deletes nothing, names
+  `--yes` on stderr, and exits 2.
 - **When it deletes nothing:**
   - until a healthy boot is recorded;
   - while scd still runs an `sc` that an upgrade replaced (restart scd
