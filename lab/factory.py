@@ -24,13 +24,14 @@ robustness rule of goal 5. No operator reorders lines: sudoers is
 last-match-wins and sshd first-match-wins.
 
 The command line makes a set from a copy of the guest's files:
-"factory.py make --seed S --graph GRAPH ROOT OUT". Python 3 standard
+"factory.py make --seed S --graph GRAPH [--modes JSON] ROOT OUT". Python 3 standard
 library only.
 """
 import argparse
 import collections
 import fnmatch
 import hashlib
+import json
 import os
 import random
 import re
@@ -85,17 +86,24 @@ def _braces(glob):
 
 def graph_checks(text):
     """[(checker, glob)] from the graph's "check CHECKER GLOB..." lines,
-    in order, with {a,b} expanded."""
+    in order, with {a,b} expanded. The graph's globs are
+    internal/scope/glob.go's; this reads the part of them the graph uses,
+    "*" and "?" within a segment and {a,b}. A glob with a class [...],
+    "**" or a "\\" escape is refused, not read differently from Go."""
     out = []
     for line in text.splitlines():
         f = line.split()
         if len(f) >= 3 and f[0] == "check":
-            out += [(f[1], g) for glob in f[2:] for g in _braces(glob)]
+            for glob in f[2:]:
+                if re.search(r"[\[\\]|\*\*", glob):
+                    raise ValueError("graph glob %r: [...], ** and \\ are not read here" % glob)
+                out += [(f[1], g) for g in _braces(glob)]
     return out
 
 
 def _match(glob, path):
-    # As Go's filepath.Match: * and ? do not cross a /.
+    # As scope.Glob for the part graph_checks lets through: * and ? do not
+    # cross a /.
     g, p = glob.split("/"), path.split("/")
     return len(g) == len(p) and all(fnmatch.fnmatchcase(b, a) for a, b in zip(g, p))
 
@@ -122,12 +130,23 @@ def _is_comment(line, checker):
     return s.startswith("#")
 
 
+HEREDOC = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+
+
 def _quote_states(lines):
-    """For shell and GRUB script: whether a quote is still open after each
-    line (a simple scanner: '...', "..." with backslash escapes, and #
-    comments at the start of a word)."""
-    state, out = None, []
+    """For shell and GRUB script: whether each line ends inside a quote or
+    a heredoc, where its line end and the next lines are part of a value
+    (a simple scanner: '...', "..." with backslash escapes, # comments at
+    the start of a word, and <<WORD or <<-WORD up to the line WORD)."""
+    state, out, heredocs = None, [], []
     for line in lines:
+        if heredocs and state is None:
+            # A line of a heredoc's body, or the line that ends it.
+            dash, word = heredocs[0]
+            if (line.lstrip("\t") if dash else line).rstrip("\r\n") == word:
+                heredocs.pop(0)
+            out.append(bool(heredocs))
+            continue
         i, n = 0, len(line)
         while i < n:
             c = line[i]
@@ -138,6 +157,11 @@ def _quote_states(lines):
                     state = c
                 elif c == "#" and (i == 0 or line[i - 1] in " \t\n;"):
                     break
+                elif c == "<":
+                    m = HEREDOC.match(line, i)
+                    if m:
+                        heredocs.append((m.group(1) == "-", m.group(3)))
+                        i = m.end() - 1
             elif state == "'":
                 if c == "'":
                     state = None
@@ -145,6 +169,37 @@ def _quote_states(lines):
                 if c == "\\":
                     i += 1
                 elif c == '"':
+                    state = None
+            i += 1
+        out.append(state is not None or bool(heredocs))
+    return out
+
+
+def _yaml_quote_states(lines):
+    """For YAML: whether each line ends inside a quoted scalar ("..." or
+    '...') that goes on to the next line. A quote opens a scalar only
+    where one may start: after "key:", "- ", "[", "{" or ",", or at the
+    start of the line."""
+    state, out = None, []
+    for line in lines:
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i]
+            if state is None:
+                before = line[:i].rstrip(" \t")
+                if c == "#" and (i == 0 or line[i - 1] in " \t"):
+                    break
+                if c in "'\"" and (before == "" or before[-1] in ":-[{,"):
+                    state = c
+            elif state == '"':
+                if c == "\\":
+                    i += 1
+                elif c == '"':
+                    state = None
+            elif c == "'":
+                if line[i + 1:i + 2] == "'":
+                    i += 1  # '' is a quote inside the scalar
+                else:
                     state = None
             i += 1
         out.append(state is not None)
@@ -178,7 +233,12 @@ class _File:
         n = len(self.lines)
         body = [x.rstrip("\r\n") for x in self.lines]
         self.cont = [b.endswith("\\") for b in body]
-        self.open = _quote_states(self.lines) if checker in QUOTED else [False] * n
+        if checker in QUOTED:
+            self.open = _quote_states(self.lines)
+        elif checker == "netplan":
+            self.open = _yaml_quote_states(self.lines)
+        else:
+            self.open = [False] * n
         self.block = _yaml_block_lines(self.lines) if checker == "netplan" else set()
         self.comment = [_is_comment(b, checker) and b.strip() != "" for b in body]
         self.content = [i for i in range(n) if body[i].strip() and not self.comment[i]]
@@ -437,9 +497,14 @@ def write(mutants, out):
         f.write("".join(r + "\n" for r in rows))
 
 
-def read_root(root):
+def read_root(root, meta=None):
     """{path: Stock} for each regular file under ROOT, a copy of the
-    guest's files (ROOT/etc/fstab is /etc/fstab). Links are left out."""
+    guest's files after the installed-server profile (ROOT/etc/fstab is
+    /etc/fstab). Links are left out. Each file's mode and owner come from
+    META ({path: {"mode": "0440", "owner": "root:root"}}) when it has the
+    path; else the mode is the copy's, which a git checkout does not
+    keep, and the owner is not known."""
+    meta = meta or {}
     files = {}
     for d, dirs, names in os.walk(root):
         dirs.sort()
@@ -449,7 +514,10 @@ def read_root(root):
                 continue
             with open(p, "rb") as f:
                 data = f.read()
-            files["/" + os.path.relpath(p, root)] = Stock(data, os.stat(p).st_mode & 0o7777, None)
+            path = "/" + os.path.relpath(p, root)
+            m = meta.get(path, {})
+            mode = int(m["mode"], 8) if "mode" in m else os.stat(p).st_mode & 0o7777
+            files[path] = Stock(data, mode, m.get("owner"))
     return files
 
 
@@ -460,12 +528,19 @@ def main(argv=None):
     mk.add_argument("--seed", required=True)
     mk.add_argument("--per-file", type=int, default=40)
     mk.add_argument("--graph", required=True, help="internal/check/default.graph")
-    mk.add_argument("root", help="a copy of the guest's files: ROOT/etc/fstab is /etc/fstab")
+    mk.add_argument("--modes", help="JSON of each path's mode and owner in the guest, "
+                                    "{path: {mode, owner}} or eval/guest.json's form, {\"paths\": ...}")
+    mk.add_argument("root", help="a copy of the guest's files after the profile: ROOT/etc/fstab is /etc/fstab")
     mk.add_argument("out")
     args = ap.parse_args(argv)
     with open(args.graph, encoding="utf-8") as f:
         checks = graph_checks(f.read())
-    ms = generate(read_root(args.root), checks, args.seed, args.per_file)
+    meta = None
+    if args.modes:
+        with open(args.modes, encoding="utf-8") as f:
+            meta = json.load(f)
+        meta = meta.get("paths", meta)
+    ms = generate(read_root(args.root, meta), checks, args.seed, args.per_file)
     write(ms, args.out)
     kinds = collections.Counter(m.kind for m in ms)
     print("%d mutants of %d files: %s" % (len(ms), len({m.path for m in ms}),

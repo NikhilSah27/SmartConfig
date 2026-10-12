@@ -59,6 +59,18 @@ class TestGraph(unittest.TestCase):
         self.assertIsNone(factory.checker_for(checks, "/etc/sudoers.d/a/b"))  # * stops at a /
         self.assertIsNone(factory.checker_for(checks, "/boot/grub/grubenv"))
 
+    def test_globs_go_reads_otherwise_are_refused(self):
+        # scope.Glob: [^x] negates and [!x] does not, ** spans segments, \\
+        # escapes; fnmatch differs on each. The graph uses none of them.
+        for glob in ("/etc/udev/rules.d/[!7]*.rules", "/etc/udev/rules.d/[^7]*.rules", "/etc/x/**", "/etc/a\\*b"):
+            with self.assertRaisesRegex(ValueError, "not read here", msg=glob):
+                factory.graph_checks("check udev %s\n" % glob)
+
+    def test_the_first_match_wins(self):
+        # As Graph.Checker: the first check line whose glob matches.
+        checks = factory.graph_checks("check a /etc/*\ncheck b /etc/x\n")
+        self.assertEqual(factory.checker_for(checks, "/etc/x"), "a")
+
     def test_the_real_graph(self):
         for path, checker in (("/etc/fstab", "fstab"), ("/etc/sudoers.d/README", "sudoers"),
                               ("/etc/ssh/sshd_config.d/50-cloud-init.conf", "sshd"),
@@ -153,6 +165,49 @@ class TestNeutral(unittest.TestCase):
         for m in edits:
             self.assertTrue(m.content.startswith(b"# a comment (local note)\n"), m.content)
 
+    def test_a_heredoc_is_left_whole(self):
+        for text, body in (('A=$(cat <<EOT\none\n# two\nEOT\n)\nB=1\n', b"<<EOT\none\n# two\nEOT\n"),
+                           ("A=$(cat <<-'EOT'\n\tone\n\tEOT\n)\n# c\nB=1\n", b"<<-'EOT'\n\tone\n\tEOT\n")):
+            ms = self.neutral(text, "shsyntax")
+            self.assertTrue(ms)
+            for m in ms:
+                self.assertIn(body, m.content, m.note)
+        self.assertEqual(factory._quote_states(["A=$(cat <<EOT\n", "x\n", "EOT\n", "B=1\n"]),
+                         [True, True, False, False])
+
+    def test_a_quoted_yaml_scalar_is_left_whole(self):
+        text = ('network:\n  version: 2\n  x: "one\n\n    # two\n    three"\n  y: it\'s\n  z: \'a\'\'b\'\n'
+                "  w: 'it''s\n    long'\n")
+        ms = self.neutral(text, "netplan")
+        self.assertTrue(ms)
+        for m in ms:
+            self.assertIn(b'  x: "one\n\n    # two\n    three"\n', m.content, m.note)
+        # A quote inside a plain scalar, and '' inside a quoted one, open nothing.
+        self.assertEqual(factory._yaml_quote_states(text.splitlines(keepends=True)),
+                         [False, False, True, True, True, False, False, False, True, False])
+
+    def test_the_quote_scanner(self):
+        lines = ['A="x\\"y"\n', "B='it'\\''s'\n", '# "a comment\n', 'C=1 # "after a word\n',
+                 "D=\"it's\"\n", 'E="open\n', 'still"\n', "F='a\n", "b'\n"]
+        self.assertEqual(factory._quote_states(lines), [False, False, False, False, False, True, False, True, False])
+
+    def test_what_is_a_comment(self):
+        self.assertTrue(factory._is_comment("; a note", "unit"))
+        self.assertTrue(factory._is_comment("; a note", "sysctl"))
+        self.assertFalse(factory._is_comment("; a note", "fstab"))
+        self.assertFalse(factory._is_comment("#1000 ALL=(ALL) ALL", "sudoers"))
+        self.assertTrue(factory._is_comment("#1000 ALL=(ALL) ALL", "fstab"))
+        self.assertTrue(factory._is_comment("  # indented", "sshd"))
+
+    def test_comment_edit_leaves_these(self):
+        text = "#!/bin/sh\nA=1 \\\n# inside a continued line\nB=2\n"
+        self.assertFalse([m for m in mutants(text, "shsyntax") if m.op == "comment_edit"])
+
+    def test_every_checker_that_may_have_neutral_mutants_gets_them(self):
+        for checker in factory.NEUTRAL_OK:
+            ms = mutants("# a comment\nkey = value\nother = value\n", checker, n=60)
+            self.assertEqual({m.op for m in ms if m.kind == "neutral"}, set(factory.NEUTRAL), checker)
+
     def test_a_yaml_block_scalar_is_left_whole(self):
         text = "network:\n  version: 2\n  note: |\n    one\n    two\n  renderer: networkd\n"
         ms = self.neutral(text, "netplan")
@@ -189,6 +244,13 @@ class TestChanged(unittest.TestCase):
                 self.assertEqual(lines[0], "# comment words here", m.note)
                 self.assertNotEqual(lines[1], text.splitlines()[1], m.note)
                 self.assertRegex(m.note, r"^line 2: \w+ -> \w+$")
+
+    def test_whole_file_operators_skip_what_is_there(self):
+        import random
+        rng = random.Random(1)
+        for op, data in (("crlf", b"a\r\nb\r\n"), ("crlf", b"no newline"), ("no_final_newline", b"a"),
+                         ("bom", factory.BOM + b"a\n"), ("empty", b""), ("cut", b"a")):
+            self.assertIsNone(factory._whole(factory._File(data, "fstab"), rng, op), (op, data))
 
     def test_keyboard_neighbours(self):
         # A plain grid: the rows are not staggered.
@@ -241,14 +303,48 @@ class TestWrite(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(os.path.join(out, "files"))),
                              sorted(os.path.basename(r[6]) for r in rows if r[6] != "-"))
 
+    def test_mode_and_owner_columns(self):
+        ms = [factory.Mutant("/etc/sudoers#mode.0440", "/etc/sudoers", "sudoers", "mode", "mode", None, 0o440, None,
+                             "mode 0440"),
+              factory.Mutant("/etc/sudoers#owner.x", "/etc/sudoers", "sudoers", "owner", "owner", None, None,
+                             "nobody:root", "owner nobody:root")]
+        with tempfile.TemporaryDirectory() as out:
+            factory.write(ms, out)
+            with open(os.path.join(out, "manifest.tsv"), encoding="utf-8") as f:
+                rows = [line.rstrip("\n").split("\t") for line in f]
+        self.assertEqual([r[6:10] for r in rows], [["-", "-", "0440", "-"], ["-", "-", "-", "nobody:root"]])
+
+    def test_make_takes_the_guests_modes(self):
+        with tempfile.TemporaryDirectory() as out:
+            with contextlib.redirect_stdout(io.StringIO()):
+                factory.main(["make", "--seed", "s", "--per-file", "2", "--graph",
+                              os.path.join(TOP, "internal", "check", "default.graph"),
+                              "--modes", os.path.join(EVAL, "guest.json"), os.path.join(EVAL, "guest"), out])
+            with open(os.path.join(out, "manifest.tsv"), encoding="utf-8") as f:
+                rows = [line.rstrip("\n").split("\t") for line in f]
+        # The guest's /etc/sudoers is 0440 root:root: no MODES or OWNERS entry is left out.
+        self.assertEqual(sorted(r[8] for r in rows if r[4] == "mode"), sorted(factory.MODES))
+        self.assertEqual([r[9] for r in rows if r[4] == "owner"], list(factory.OWNERS))
+
+    def test_read_root(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "etc"))
+            with open(os.path.join(root, "etc", "a"), "w") as f:
+                f.write("x\n")
+            os.chmod(os.path.join(root, "etc", "a"), 0o600)
+            os.symlink("a", os.path.join(root, "etc", "b"))
+            self.assertEqual(factory.read_root(root), {"/etc/a": Stock(b"x\n", 0o600, None)})
+            meta = {"/etc/a": {"mode": "0440", "owner": "root:root"}}
+            self.assertEqual(factory.read_root(root, meta), {"/etc/a": Stock(b"x\n", 0o440, "root:root")})
+
     def test_cells_are_escaped(self):
-        m = factory.Mutant("/x#cut.1", "/x", "fstab", "changed", "cut", b"a", None, None, "a\tb\nc\\d")
+        m = factory.Mutant("/x#cut.1", "/x", "fstab", "changed", "cut", b"a", None, None, "a\tb\nc\\d\re")
         with tempfile.TemporaryDirectory() as out:
             factory.write([m], out)
             with open(os.path.join(out, "manifest.tsv"), encoding="utf-8") as f:
                 line = f.read()
         self.assertEqual(line.count("\n"), 1)
-        self.assertTrue(line.endswith("\ta\\tb\\nc\\\\d\n"), line)
+        self.assertTrue(line.endswith("\ta\\tb\\nc\\\\d\\re\n"), line)
         self.assertTrue(re.match(r"1\t/x#cut\.1\t/x\tfstab\tchanged\tcut\tfiles/0001\t[0-9a-f]{64}\t-\t-\t", line))
 
 
