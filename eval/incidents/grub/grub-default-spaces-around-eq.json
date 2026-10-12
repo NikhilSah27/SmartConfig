@@ -1,0 +1,17 @@
+{
+  "id": "grub-default-spaces-around-eq",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_DEFAULT=0$",
+        "with": "GRUB_DEFAULT = 0"
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "Spaces around = in /etc/default/grub, which the shell reads as a command.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot G05"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "fstab-automount-missing-disk",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "LABEL=backup\t/mnt/backup\text4\tnoauto,x-systemd.automount\t0 2"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "timeout 150 stat /mnt/backup/lost+found",
+      "as_written": "the backup disk mounted on first use",
+      "exit": 0
+    }
+  ],
+  "cause": "An automount of a backup disk that is not attached.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 plan 5.1"
+}

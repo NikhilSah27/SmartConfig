@@ -1,0 +1,24 @@
+{
+  "id": "fstab-few-fields",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^LABEL=BOOT\\t/boot\\text4\\tdefaults\\t0 2$",
+        "with": "LABEL=BOOT\t/boot"
+      }
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /boot",
+      "as_written": "/boot mounted",
+      "exit": 0
+    }
+  ],
+  "cause": "The /boot line cut short after its mount point.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot F05"
+}

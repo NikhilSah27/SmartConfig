@@ -1,0 +1,15 @@
+{
+  "id": "grub-disable-os-prober",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "append": "GRUB_DISABLE_OS_PROBER=true"
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "GRUB_DISABLE_OS_PROBER=true added.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot G07"
+}

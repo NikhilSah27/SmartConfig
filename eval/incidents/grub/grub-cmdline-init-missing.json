@@ -1,0 +1,24 @@
+{
+  "id": "grub-cmdline-init-missing",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_CMDLINE_LINUX=\"\"$",
+        "with": "GRUB_CMDLINE_LINUX=\"init=/sbin/openrc-init\""
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "expect": [
+    {
+      "run": "cat /proc/1/comm",
+      "as_written": "PID 1 is the init= program",
+      "match": "^openrc-init$"
+    }
+  ],
+  "cause": "init= names a program that is not installed.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot G03"
+}

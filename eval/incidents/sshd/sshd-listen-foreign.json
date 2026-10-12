@@ -1,0 +1,14 @@
+{
+  "id": "sshd-listen-foreign",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "append": "ListenAddress 192.0.2.10"
+    }
+  ],
+  "applies": "socket:ssh",
+  "cause": "ListenAddress names an address the machine does not have.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot H04"
+}

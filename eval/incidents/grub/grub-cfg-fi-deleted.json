@@ -1,0 +1,17 @@
+{
+  "id": "grub-cfg-fi-deleted",
+  "path": "/boot/grub/grub.cfg",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^  fi\\nfi\\n### END /etc/grub\\.d/00_header ###$",
+        "with": "fi\n### END /etc/grub.d/00_header ###"
+      }
+    }
+  ],
+  "applies": "boot",
+  "cause": "grub.cfg edited by hand, and one fi of the timeout block deleted.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

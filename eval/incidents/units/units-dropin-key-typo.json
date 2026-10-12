@@ -1,0 +1,24 @@
+{
+  "id": "units-dropin-key-typo",
+  "path": "/etc/systemd/system/ssh.service.d/override.conf",
+  "change": [
+    {
+      "create": {
+        "content": "[Service]\nRestrt=always\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "expect": [
+    {
+      "run": "systemctl show -p Restart --value ssh.service",
+      "as_written": "ssh.service restarts always",
+      "match": "^always$"
+    }
+  ],
+  "cause": "A drop-in for ssh.service with a typo in a key (Restrt=).",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot U01, split in two"
+}

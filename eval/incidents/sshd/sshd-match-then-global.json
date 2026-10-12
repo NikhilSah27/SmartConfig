@@ -1,0 +1,14 @@
+{
+  "id": "sshd-match-then-global",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "append": "Match User backup\n\tForceCommand internal-sftp\nUseDNS no"
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A line meant to be global written after a Match block, with a keyword Match does not allow (UseDNS).",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot H05"
+}

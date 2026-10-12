@@ -1,0 +1,18 @@
+{
+  "id": "sudoers-timestamp-timeout",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "insert": {
+        "before": "^Defaults\\tuse_pty$",
+        "text": "Defaults\ttimestamp_timeout=10"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "cause": "sudo's password timeout set to 10 minutes.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot S05"
+}

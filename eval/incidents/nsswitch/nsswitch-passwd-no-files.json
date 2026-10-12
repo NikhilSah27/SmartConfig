@@ -1,0 +1,17 @@
+{
+  "id": "nsswitch-passwd-no-files",
+  "path": "/etc/nsswitch.conf",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^passwd:\\s+files systemd$",
+        "with": "passwd:         systemd"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "files taken off the passwd line, where the local users are.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot P01"
+}

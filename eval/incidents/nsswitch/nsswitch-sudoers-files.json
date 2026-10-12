@@ -1,0 +1,15 @@
+{
+  "id": "nsswitch-sudoers-files",
+  "path": "/etc/nsswitch.conf",
+  "change": [
+    {
+      "append": "sudoers:        files"
+    }
+  ],
+  "applies": "now",
+  "cause": "A sudoers line naming files, which is what sudo does without one.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

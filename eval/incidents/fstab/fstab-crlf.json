@@ -1,0 +1,17 @@
+{
+  "id": "fstab-crlf",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "replace": {
+        "pattern": "\\n",
+        "with": "\r\n"
+      }
+    }
+  ],
+  "applies": "fstab-now",
+  "cause": "The whole file saved with CRLF line ends, as an editor on another system might.",
+  "fix": "restore",
+  "guess": "unknown",
+  "source": "M6 pilot F09"
+}

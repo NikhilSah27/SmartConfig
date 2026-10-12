@@ -1,0 +1,18 @@
+{
+  "id": "grub-cfg-root-wrong",
+  "path": "/boot/grub/grub.cfg",
+  "change": [
+    {
+      "replace": {
+        "pattern": "root=UUID={root_uuid} ro",
+        "with": "root=UUID={root_uuid~1} ro",
+        "count": 1
+      }
+    }
+  ],
+  "applies": "boot",
+  "cause": "The default entry's root= edited by hand in grub.cfg, one character off.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "units-default-target-missing",
+  "path": "/etc/systemd/system/default.target",
+  "change": [
+    {
+      "symlink": "/usr/lib/systemd/system/multi-user.targt"
+    }
+  ],
+  "applies": "boot",
+  "cause": "default.target pointed at a unit that does not exist (multi-user.targt).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1; the isolate path of step 4"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "grub-custom-cfg-unclosed",
+  "path": "/boot/grub/custom.cfg",
+  "change": [
+    {
+      "create": {
+        "content": "menuentry 'Memory test' {\n\tlinux16 /memtest86+x64.bin\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "boot",
+  "cause": "A new custom.cfg whose menu entry is never closed.",
+  "fix": "restore",
+  "guess": "unknown",
+  "source": "M6 plan 5.1"
+}

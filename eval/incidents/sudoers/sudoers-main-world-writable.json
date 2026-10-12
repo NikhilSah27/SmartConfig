@@ -1,0 +1,14 @@
+{
+  "id": "sudoers-main-world-writable",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "mode": "0666"
+    }
+  ],
+  "applies": "sudo",
+  "cause": "/etc/sudoers made writable by every user.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

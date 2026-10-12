@@ -1,0 +1,15 @@
+{
+  "id": "hosts-gateway-name",
+  "path": "/etc/hosts",
+  "change": [
+    {
+      "append": "10.0.2.2\tgateway"
+    }
+  ],
+  "applies": "now",
+  "cause": "A name for the gateway added.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

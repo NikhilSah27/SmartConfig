@@ -1,0 +1,17 @@
+{
+  "id": "accounts-root-shell-missing",
+  "path": "/etc/passwd",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^root:x:0:0:root:/root:/bin/bash$",
+        "with": "root:x:0:0:root:/root:/usr/bin/zsh"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "root's login shell set to a shell that is not installed.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot P05"
+}

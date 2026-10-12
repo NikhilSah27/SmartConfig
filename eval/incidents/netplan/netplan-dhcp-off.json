@@ -1,0 +1,17 @@
+{
+  "id": "netplan-dhcp-off",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^      dhcp4: true$",
+        "with": "      dhcp4: false"
+      }
+    }
+  ],
+  "applies": "netplan",
+  "cause": "DHCP turned off with no static address in its place.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

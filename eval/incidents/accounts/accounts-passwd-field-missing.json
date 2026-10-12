@@ -1,0 +1,17 @@
+{
+  "id": "accounts-passwd-field-missing",
+  "path": "/etc/passwd",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^({admin}:x:1000:1000:[^:]*:/home/{admin}):/bin/bash$",
+        "with": "\\1"
+      }
+    }
+  ],
+  "applies": "login",
+  "cause": "The admin's passwd line lost its last field, the shell.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "units-dropin-restart-sec",
+  "path": "/etc/systemd/system/ssh.service.d/override.conf",
+  "change": [
+    {
+      "create": {
+        "content": "[Service]\nRestartSec=5\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A drop-in for ssh.service that sets RestartSec=5.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

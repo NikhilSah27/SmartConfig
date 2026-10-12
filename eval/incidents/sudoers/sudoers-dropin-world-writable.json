@@ -1,0 +1,24 @@
+{
+  "id": "sudoers-dropin-world-writable",
+  "path": "/etc/sudoers.d/50-ops",
+  "change": [
+    {
+      "create": {
+        "content": "{admin} ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n",
+        "mode": "0666"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "expect": [
+    {
+      "run": "sudo -l -U {admin}",
+      "as_written": "the admin may run systemctl without a password",
+      "match": "NOPASSWD: /usr/bin/systemctl"
+    }
+  ],
+  "cause": "A new drop-in that every user may write.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 plan 5.1"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "flags-nologin-txt",
+  "path": "/etc/nologin.txt",
+  "change": [
+    {
+      "create": {
+        "content": "Maintenance until 18:00.\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "login",
+  "cause": "A note next to /etc/nologin, not /etc/nologin itself; pam_nologin reads only /etc/nologin and /run/nologin.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

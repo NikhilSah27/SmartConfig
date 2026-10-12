@@ -1,0 +1,18 @@
+{
+  "id": "sysctl-swappiness",
+  "path": "/etc/sysctl.d/99-tuning.conf",
+  "change": [
+    {
+      "create": {
+        "content": "vm.swappiness = 10\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "sysctl",
+  "cause": "vm.swappiness set to 10.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

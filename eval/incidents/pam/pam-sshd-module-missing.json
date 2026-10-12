@@ -1,0 +1,17 @@
+{
+  "id": "pam-sshd-module-missing",
+  "path": "/etc/pam.d/sshd",
+  "change": [
+    {
+      "insert": {
+        "before": "^@include common-auth$",
+        "text": "auth       required     pam_google_authenticator.so"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "sshd's auth stack requires a module that is not installed (pam_google_authenticator.so).",
+  "fix": "restore",
+  "guess": "unknown",
+  "source": "M6 plan 5.1"
+}

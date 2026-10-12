@@ -1,0 +1,17 @@
+{
+  "id": "sshd-permitrootlogin-yess",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^#PermitRootLogin prohibit-password$",
+        "with": "PermitRootLogin yess"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A typo in PermitRootLogin's value.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot H01"
+}

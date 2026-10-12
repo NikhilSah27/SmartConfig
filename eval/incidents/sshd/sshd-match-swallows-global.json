@@ -1,0 +1,21 @@
+{
+  "id": "sshd-match-swallows-global",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "append": "Match User backup\n\tForceCommand internal-sftp\nMaxAuthTries 3"
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "expect": [
+    {
+      "run": "sshd -T",
+      "as_written": "MaxAuthTries 3 for every user",
+      "match": "(?m)^maxauthtries 3$"
+    }
+  ],
+  "cause": "A line meant to be global written after a Match block, with a keyword Match allows (MaxAuthTries).",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 plan 5.1"
+}

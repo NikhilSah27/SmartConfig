@@ -511,6 +511,23 @@ of goal 1:
 Each incident is reviewed when it is written: the change must be one an
 owner or a tool could plausibly make. Each one makes one change.
 
+**The first catalogue (step 3, 2026-10-12):** 81 incidents in 14
+consumers, 15 of them harmless. What the guest's own files changed in
+the table above:
+- the image has no `nfs-common`, so there is no `mount.nfs`. The NFS
+  incident is the other one: a share on a guest with no NFS client,
+  which fails at once. A server that times out needs `nfs-common` in the
+  image, a change to the provisioning;
+- the guest's netplan file has `set-name`, so there is no NIC-rename
+  incident;
+- `x-systemd.automount` is tried on the missing backup disk, not on NFS.
+
+Each change is checked against the guest's files, as
+`eval/guest.json` (the type, mode and owner of each path an incident
+changes, and the guest's facts) and `eval/guest/` (a copy of each file
+a content change edits) record them. Both are read from the reference
+image with `debugfs`, before the profile.
+
 ### 5.2 Mutants (generated)
 
 `lab/factory.py` applies operators to the guest's stock files, for every
@@ -716,6 +733,7 @@ M3 deferred it. Its incidents stay in the set as named misses.
 eval/                        the set: data, never shipped (not in the .deb)
   README.md                  what an incident is; how to add one; how to run the eval
   incidents/<consumer>/*.json
+  guest.json, guest/         the guest the incidents are written against (5.1)
   labels.json                the truth: id, content hash, image sha256, recipe, profile,
                              outcome, when, severity, evidence
   REPORT.md                  the latest score, copied in by the freeze step

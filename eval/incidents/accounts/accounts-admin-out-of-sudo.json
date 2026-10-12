@@ -1,0 +1,17 @@
+{
+  "id": "accounts-admin-out-of-sudo",
+  "path": "/etc/group",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^sudo:x:27:{admin}$",
+        "with": "sudo:x:27:"
+      }
+    }
+  ],
+  "applies": "login",
+  "cause": "The admin taken out of group sudo.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

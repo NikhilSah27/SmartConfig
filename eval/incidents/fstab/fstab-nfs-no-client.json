@@ -1,0 +1,21 @@
+{
+  "id": "fstab-nfs-no-client",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "10.0.2.200:/export\t/mnt/nfs\tnfs\tdefaults\t0 0"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /mnt/nfs",
+      "as_written": "the NFS share mounted",
+      "exit": 0
+    }
+  ],
+  "cause": "An NFS share, on a guest with no NFS client: the image has no nfs-common, so there is no mount.nfs.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot F08, changed: the plan's unreachable server needs nfs-common in the image (5.1)"
+}

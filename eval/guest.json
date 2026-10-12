@@ -1,0 +1,142 @@
+{
+ "about": "The lab guest the incidents are written against (docs/M6_PLAN.md 4.1 and 5.1): the reference image of the pinned cloud image, as provisioned, before the installed-server profile. Read from the image with debugfs. guest/ holds a copy of each file a content change edits; paths gives the type, mode and owner of every path an incident changes.",
+ "image": "release-20260926-ubuntu-24.04-server-cloudimg-amd64.img",
+ "image_sha256": "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2",
+ "provision_rev": "1",
+ "facts": {
+  "root_uuid": "1bfefdfb-34c9-46c7-854f-399d0a1dea04",
+  "nic": "enp0s1",
+  "admin": "owner",
+  "kernel": "6.8.0-142-generic"
+ },
+ "paths": {
+  "/boot/grub/custom.cfg": {
+   "type": "absent"
+  },
+  "/boot/grub/grub.cfg": {
+   "mode": "0600",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/default/grub": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/default/grub.d/50-cloudimg-settings.cfg": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/fstab": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/group": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/hosts": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/ld.so.preload": {
+   "type": "absent"
+  },
+  "/etc/netplan/50-cloud-init.yaml": {
+   "mode": "0600",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/nologin": {
+   "type": "absent"
+  },
+  "/etc/nologin.txt": {
+   "type": "absent"
+  },
+  "/etc/nsswitch.conf": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/pam.d/common-auth": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/pam.d/common-session": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/pam.d/sshd": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/passwd": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/shadow": {
+   "mode": "0640",
+   "owner": "root:shadow",
+   "type": "file"
+  },
+  "/etc/ssh/sshd_config": {
+   "mode": "0644",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/ssh/sshd_config.d/10-hardening.conf": {
+   "type": "absent"
+  },
+  "/etc/ssh/sshd_not_to_be_run": {
+   "type": "absent"
+  },
+  "/etc/sudoers": {
+   "mode": "0440",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/sudoers.d/50-ops": {
+   "type": "absent"
+  },
+  "/etc/sudoers.d/60-deploy": {
+   "type": "absent"
+  },
+  "/etc/sudoers.d/README": {
+   "mode": "0440",
+   "owner": "root:root",
+   "type": "file"
+  },
+  "/etc/sudoers.d/admins.conf": {
+   "type": "absent"
+  },
+  "/etc/sysctl.d/99-tuning.conf": {
+   "type": "absent"
+  },
+  "/etc/systemd/system/backup.service": {
+   "type": "absent"
+  },
+  "/etc/systemd/system/default.target": {
+   "type": "absent"
+  },
+  "/etc/systemd/system/serial-getty@ttyS0.service": {
+   "type": "absent"
+  },
+  "/etc/systemd/system/ssh.service.d/override.conf": {
+   "type": "absent"
+  },
+  "/etc/udev/rules.d/60-usb-storage.rules": {
+   "type": "absent"
+  },
+  "/etc/udev/rules.d/70-disk.rules": {
+   "type": "absent"
+  }
+ }
+}

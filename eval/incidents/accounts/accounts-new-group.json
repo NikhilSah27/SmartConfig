@@ -1,0 +1,15 @@
+{
+  "id": "accounts-new-group",
+  "path": "/etc/group",
+  "change": [
+    {
+      "append": "deploy:x:1001:{admin}"
+    }
+  ],
+  "applies": "login",
+  "cause": "A new group with the admin in it.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

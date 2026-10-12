@@ -1,0 +1,14 @@
+{
+  "id": "sudoers-no-sudo-rule",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "delete": "^%sudo\\t"
+    }
+  ],
+  "applies": "sudo",
+  "cause": "The %sudo rule deleted; under the installed-server profile it is the admin's only way to root.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot S03, split in two (5.1)"
+}

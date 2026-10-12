@@ -1,0 +1,17 @@
+{
+  "id": "units-ssh-dropin-double-exec",
+  "path": "/etc/systemd/system/ssh.service.d/override.conf",
+  "change": [
+    {
+      "create": {
+        "content": "[Service]\nExecStart=/usr/sbin/sshd -D -o LogLevel=VERBOSE $SSHD_OPTS\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A drop-in for ssh.service that sets ExecStart without clearing it first (ExecStart=), so the service has two.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot U03"
+}

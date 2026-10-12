@@ -1,0 +1,18 @@
+{
+  "id": "netplan-nameserver",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "insert": {
+        "before": "^      set-name: ",
+        "text": "      nameservers:\n        addresses: [10.0.2.3]"
+      }
+    }
+  ],
+  "applies": "netplan",
+  "cause": "The DNS server DHCP already gives written in as a static nameserver.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot N04"
+}

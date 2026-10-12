@@ -1,0 +1,17 @@
+{
+  "id": "sudoers-unclosed-paren",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^%sudo\\tALL=\\(ALL:ALL\\) ALL$",
+        "with": "%sudo\tALL=(ALL:ALL ALL"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "cause": "The %sudo rule's runas list lost its closing parenthesis.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot S02"
+}

@@ -5,6 +5,7 @@ fixture text, and the files are written to a temporary directory.
   python3 -m unittest discover -s lab -p 'test_incidents.py'
 """
 import contextlib
+import fnmatch
 import io
 import json
 import os
@@ -360,6 +361,76 @@ class TestSurfaces(unittest.TestCase):
         self.assertEqual(s([{"append": "x"}]), ("edit", "check"))
         self.assertEqual(s([{"mode": "0666"}]), ("check",))
         self.assertEqual(s([{"symlink": "/dev/null"}]), ())
+
+
+EVAL = os.path.join(os.path.dirname(HERE), "eval")
+
+
+class TestCatalogue(unittest.TestCase):
+    """The set in eval/ (docs/M6_PLAN.md, goal 1 and 5.1): every incident
+    loads (load_all also refuses an id used twice), goal 1's minimums
+    hold, and each change fits the lab guest's own file as
+    eval/guest.json and eval/guest/ record it."""
+    # Goal 1: per checker, at least this many incidents that are not
+    # harmless, and at least one that is.
+    MINIMUMS = {"fstab": 5, "sudoers": 5, "sshd": 5, "grub": 5, "netplan": 5, "units": 5,
+                "accounts": 2, "nsswitch": 2, "preload": 2, "hosts": 2, "flags": 2, "sysctl": 2, "udev": 2}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.incs = incidents.load_all(EVAL)
+        with open(os.path.join(EVAL, "guest.json"), encoding="utf-8") as f:
+            cls.guest = json.load(f)
+
+    def test_the_minimums_of_goal_1(self):
+        for consumer, least in sorted(self.MINIMUMS.items()):
+            mine = [i for i in self.incs if i["consumer"] == consumer]
+            harmful = sum(1 for i in mine if not i.get("harmless"))
+            self.assertGreaterEqual(harmful, least, consumer)
+            self.assertGreaterEqual(len(mine) - harmful, 1, "%s: no harmless incident" % consumer)
+
+    def test_what_goal_1_names(self):
+        kind = lambda i: incidents.change_kind(i["change"])  # noqa: E731
+        for name, pred in (
+                ("/etc/default/grub", lambda i: i["path"] == "/etc/default/grub"),
+                ("/etc/default/grub.d/*.cfg", lambda i: fnmatch.fnmatch(i["path"], "/etc/default/grub.d/*.cfg")),
+                ("grub.cfg", lambda i: i["path"] == "/boot/grub/grub.cfg"),
+                ("a unit's drop-in", lambda i: fnmatch.fnmatch(i["path"], "/etc/systemd/system/*.d/*.conf")),
+                ("a symlinked unit", lambda i: i["consumer"] == "units" and kind(i) == "symlink"),
+                ("PAM, which has no checker", lambda i: i["consumer"] == "pam")):
+            self.assertTrue([i for i in self.incs if not i.get("harmless") and pred(i)], name)
+
+    def test_the_guest_record_is_what_the_set_uses(self):
+        self.assertEqual(sorted(self.guest["facts"]), sorted(incidents.FACTS))
+        self.assertEqual(set(self.guest["paths"]), {i["path"] for i in self.incs})
+        top, copies = os.path.join(EVAL, "guest"), set()
+        for d, _, files in os.walk(top):
+            copies |= {"/" + os.path.relpath(os.path.join(d, f), top) for f in files}
+        edited = {i["path"] for i in self.incs if incidents.change_kind(i["change"]) == "content"}
+        self.assertEqual(copies, edited)
+
+    def test_each_change_fits_the_guest(self):
+        facts = self.guest["facts"]
+        for i in self.incs:
+            with self.subTest(i["id"]):
+                kind = incidents.change_kind(i["change"])
+                info = self.guest["paths"][i["path"]]
+                self.assertIn(info["type"], ("file", "link", "absent"))
+                base = None
+                if info["type"] != "absent":
+                    base = b""
+                    if kind == "content":
+                        with open(os.path.join(EVAL, "guest", i["path"].lstrip("/")), "rb") as f:
+                            base = f.read()
+                # Raises when an edit finds nothing to change, or the file
+                # is there or not when it should be.
+                act = incidents.plan_change(i["change"], base, facts)
+                if kind in ("content", "mode", "owner"):
+                    self.assertEqual(info["type"], "file")
+                if kind == "mode":
+                    self.assertNotEqual(act.mode, int(info["mode"], 8), "the mode it has already")
+                if kind == "owner":
+                    self.assertNotEqual(act.owner, info["owner"], "the owner it has already")
 
 
 if __name__ == "__main__":

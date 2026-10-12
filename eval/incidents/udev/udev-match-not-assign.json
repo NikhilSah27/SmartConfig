@@ -1,0 +1,24 @@
+{
+  "id": "udev-match-not-assign",
+  "path": "/etc/udev/rules.d/70-disk.rules",
+  "change": [
+    {
+      "create": {
+        "content": "ACTION==\"add|change\", KERNEL==\"vda\", ATTR{queue/scheduler}==\"mq-deadline\"\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "udev",
+  "expect": [
+    {
+      "run": "cat /sys/block/vda/queue/scheduler",
+      "as_written": "vda uses mq-deadline",
+      "match": "\\[mq-deadline\\]"
+    }
+  ],
+  "cause": "== written where = was meant, so the rule only matches and sets nothing.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 plan 5.1"
+}

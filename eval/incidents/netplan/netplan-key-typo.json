@@ -1,0 +1,17 @@
+{
+  "id": "netplan-key-typo",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^      dhcp4: true$",
+        "with": "      dhcp: true"
+      }
+    }
+  ],
+  "applies": "netplan",
+  "cause": "A typo in a key (dhcp for dhcp4).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot N03"
+}

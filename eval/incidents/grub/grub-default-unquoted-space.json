@@ -1,0 +1,17 @@
+{
+  "id": "grub-default-unquoted-space",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_CMDLINE_LINUX=\"\"$",
+        "with": "GRUB_CMDLINE_LINUX=console=tty0 nomodeset"
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "A value with a space and no quotes in /etc/default/grub.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot G06"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "netplan-mac-typo",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "replace": {
+        "pattern": "macaddress: \"52:54:00:12:34:56\"",
+        "with": "macaddress: \"52:54:00:12:34:65\""
+      }
+    }
+  ],
+  "applies": "netplan",
+  "cause": "The interface's MAC address with its last two digits swapped, so no interface matches.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot N02"
+}

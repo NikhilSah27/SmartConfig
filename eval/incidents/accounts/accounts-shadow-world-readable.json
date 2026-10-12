@@ -1,0 +1,14 @@
+{
+  "id": "accounts-shadow-world-readable",
+  "path": "/etc/shadow",
+  "change": [
+    {
+      "mode": "0644"
+    }
+  ],
+  "applies": "now",
+  "cause": "/etc/shadow made readable by every user.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 plan 4.3 and 5.1 (exposed)"
+}

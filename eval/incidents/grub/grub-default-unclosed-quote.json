@@ -1,0 +1,17 @@
+{
+  "id": "grub-default-unclosed-quote",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"$",
+        "with": "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash"
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "An unclosed quote in /etc/default/grub.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot G01"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "preload-empty",
+  "path": "/etc/ld.so.preload",
+  "change": [
+    {
+      "create": {
+        "content": "",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "An empty /etc/ld.so.preload, as touch leaves it.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

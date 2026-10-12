@@ -1,0 +1,17 @@
+{
+  "id": "sshd-dropin-keyword-typo",
+  "path": "/etc/ssh/sshd_config.d/10-hardening.conf",
+  "change": [
+    {
+      "create": {
+        "content": "PermitRootLogin no\nPasswordAuthentcation no\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A new drop-in with a typo in a keyword (PasswordAuthentcation).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

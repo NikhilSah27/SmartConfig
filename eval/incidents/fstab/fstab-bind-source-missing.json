@@ -1,0 +1,21 @@
+{
+  "id": "fstab-bind-source-missing",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "/srv/data\t/var/www\tnone\tbind\t0 0"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /var/www",
+      "as_written": "/srv/data bound on /var/www",
+      "exit": 0
+    }
+  ],
+  "cause": "A bind mount whose source directory does not exist.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot F07"
+}

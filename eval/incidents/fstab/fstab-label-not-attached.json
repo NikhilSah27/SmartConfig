@@ -1,0 +1,21 @@
+{
+  "id": "fstab-label-not-attached",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "LABEL=backup\t/mnt/backup\text4\tdefaults\t0 2"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /mnt/backup",
+      "as_written": "the backup disk mounted",
+      "exit": 0
+    }
+  ],
+  "cause": "A backup disk named by LABEL= that is not attached (the guest has no USB controller), without nofail.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot F02"
+}

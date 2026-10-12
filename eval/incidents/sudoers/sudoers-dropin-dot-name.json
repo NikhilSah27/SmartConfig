@@ -1,0 +1,24 @@
+{
+  "id": "sudoers-dropin-dot-name",
+  "path": "/etc/sudoers.d/admins.conf",
+  "change": [
+    {
+      "create": {
+        "content": "{admin} ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n",
+        "mode": "0440"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "expect": [
+    {
+      "run": "sudo -l -U {admin}",
+      "as_written": "the admin may run systemctl without a password",
+      "match": "NOPASSWD: /usr/bin/systemctl"
+    }
+  ],
+  "cause": "A drop-in whose name has a dot, which sudo skips and scd's scope leaves out.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot S04"
+}

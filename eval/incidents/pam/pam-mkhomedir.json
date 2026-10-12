@@ -1,0 +1,15 @@
+{
+  "id": "pam-mkhomedir",
+  "path": "/etc/pam.d/common-session",
+  "change": [
+    {
+      "append": "session optional\tpam_mkhomedir.so skel=/etc/skel umask=0077"
+    }
+  ],
+  "applies": "now",
+  "cause": "pam_mkhomedir added to the session stack.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

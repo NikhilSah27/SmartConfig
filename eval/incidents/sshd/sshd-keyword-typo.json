@@ -1,0 +1,17 @@
+{
+  "id": "sshd-keyword-typo",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^X11Forwarding yes$",
+        "with": "X11Forwardng yes"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "A typo in a keyword (X11Forwardng).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot H02"
+}

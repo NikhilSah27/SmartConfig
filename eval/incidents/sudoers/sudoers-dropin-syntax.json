@@ -1,0 +1,24 @@
+{
+  "id": "sudoers-dropin-syntax",
+  "path": "/etc/sudoers.d/60-deploy",
+  "change": [
+    {
+      "create": {
+        "content": "{admin} ALL=(ALL) NOPASSWD /usr/bin/systemctl\n",
+        "mode": "0440"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "expect": [
+    {
+      "run": "sudo -l -U {admin}",
+      "as_written": "the admin may run systemctl without a password",
+      "match": "NOPASSWD: /usr/bin/systemctl"
+    }
+  ],
+  "cause": "A new drop-in whose rule lacks the colon after NOPASSWD.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 plan 5.1"
+}

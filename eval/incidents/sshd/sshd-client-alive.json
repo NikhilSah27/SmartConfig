@@ -1,0 +1,15 @@
+{
+  "id": "sshd-client-alive",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "append": "ClientAliveInterval 120"
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "ClientAliveInterval set to 120 seconds.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot H06"
+}

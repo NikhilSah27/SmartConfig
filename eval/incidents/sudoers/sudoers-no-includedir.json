@@ -1,0 +1,14 @@
+{
+  "id": "sudoers-no-includedir",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "delete": "^@includedir /etc/sudoers\\.d$"
+    }
+  ],
+  "applies": "sudo",
+  "cause": "The @includedir line deleted, so sudo reads no drop-in from /etc/sudoers.d.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot S03, split in two (5.1)"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "grub-cmdline-root-wrong",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_CMDLINE_LINUX=\"\"$",
+        "with": "GRUB_CMDLINE_LINUX=\"root=UUID={root_uuid~1}\""
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "root= in GRUB_CMDLINE_LINUX, one character off; it comes after each entry's own root=, and the last one wins.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot G04"
+}

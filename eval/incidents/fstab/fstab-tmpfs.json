@@ -1,0 +1,15 @@
+{
+  "id": "fstab-tmpfs",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "tmpfs\t/mnt/scratch\ttmpfs\tdefaults,size=64M\t0 0"
+    }
+  ],
+  "applies": "fstab-now",
+  "cause": "A small tmpfs on /mnt/scratch.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot F11"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "nsswitch-group-typo",
+  "path": "/etc/nsswitch.conf",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^group:\\s+files systemd$",
+        "with": "group:          file systemd"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "A typo in the group line's first source (file for files).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

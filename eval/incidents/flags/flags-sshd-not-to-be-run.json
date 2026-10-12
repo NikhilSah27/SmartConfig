@@ -1,0 +1,17 @@
+{
+  "id": "flags-sshd-not-to-be-run",
+  "path": "/etc/ssh/sshd_not_to_be_run",
+  "change": [
+    {
+      "create": {
+        "content": "",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "/etc/ssh/sshd_not_to_be_run created; ssh.service has a condition on it.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

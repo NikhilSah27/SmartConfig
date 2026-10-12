@@ -1,0 +1,14 @@
+{
+  "id": "units-getty-masked",
+  "path": "/etc/systemd/system/serial-getty@ttyS0.service",
+  "change": [
+    {
+      "symlink": "/dev/null"
+    }
+  ],
+  "applies": "restart:serial-getty@ttyS0.service",
+  "cause": "The serial console's getty masked.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

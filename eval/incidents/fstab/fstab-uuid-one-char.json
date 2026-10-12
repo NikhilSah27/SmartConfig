@@ -1,0 +1,21 @@
+{
+  "id": "fstab-uuid-one-char",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "UUID={root_uuid~1}\t/data\text4\tdefaults\t0 2"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /data",
+      "as_written": "the disk mounted on /data",
+      "exit": 0
+    }
+  ],
+  "cause": "A disk's UUID with one character wrong, on a line without nofail.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot F01; the M3 owner scenario"
+}

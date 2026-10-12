@@ -1,0 +1,14 @@
+{
+  "id": "sshd-allowusers-nobody",
+  "path": "/etc/ssh/sshd_config",
+  "change": [
+    {
+      "append": "AllowUsers deploy"
+    }
+  ],
+  "applies": "restart:ssh.service",
+  "cause": "AllowUsers names only a user who does not exist, which leaves the admin out.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot H03"
+}

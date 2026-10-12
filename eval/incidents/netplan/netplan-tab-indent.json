@@ -1,0 +1,17 @@
+{
+  "id": "netplan-tab-indent",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^      dhcp4: true$",
+        "with": "\tdhcp4: true"
+      }
+    }
+  ],
+  "applies": "netplan",
+  "cause": "One line indented with a tab.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot N01"
+}

@@ -1,0 +1,24 @@
+{
+  "id": "sysctl-inline-comment",
+  "path": "/etc/sysctl.d/99-tuning.conf",
+  "change": [
+    {
+      "create": {
+        "content": "vm.swappiness = 10 # prefer RAM\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "sysctl",
+  "expect": [
+    {
+      "run": "sysctl -n vm.swappiness",
+      "as_written": "vm.swappiness is 10",
+      "match": "^10$"
+    }
+  ],
+  "cause": "A comment after the value on the same line; sysctl.d has no inline comments, so the value is the whole rest.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot C01 (a value of the wrong kind)"
+}

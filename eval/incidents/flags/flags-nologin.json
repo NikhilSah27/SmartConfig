@@ -1,0 +1,17 @@
+{
+  "id": "flags-nologin",
+  "path": "/etc/nologin",
+  "change": [
+    {
+      "create": {
+        "content": "Maintenance until 18:00.\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "login",
+  "cause": "/etc/nologin left behind after maintenance.",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

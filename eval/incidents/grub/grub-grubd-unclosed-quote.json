@@ -1,0 +1,17 @@
+{
+  "id": "grub-grubd-unclosed-quote",
+  "path": "/etc/default/grub.d/50-cloudimg-settings.cfg",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_CMDLINE_LINUX_DEFAULT=\"console=tty1 console=ttyS0\"$",
+        "with": "GRUB_CMDLINE_LINUX_DEFAULT=\"console=tty1 console=ttyS0"
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "cause": "An unclosed quote in a file of /etc/default/grub.d.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot G08"
+}

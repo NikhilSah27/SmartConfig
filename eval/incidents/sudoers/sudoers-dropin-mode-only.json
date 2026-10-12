@@ -1,0 +1,14 @@
+{
+  "id": "sudoers-dropin-mode-only",
+  "path": "/etc/sudoers.d/README",
+  "change": [
+    {
+      "mode": "0666"
+    }
+  ],
+  "applies": "sudo",
+  "cause": "A file in /etc/sudoers.d made writable by every user, by a change of mode alone.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 plan 7: scd's mode check"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "units-exec-missing",
+  "path": "/etc/systemd/system/backup.service",
+  "change": [
+    {
+      "create": {
+        "content": "[Unit]\nDescription=Nightly backup\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/backup.sh\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "restart:backup.service",
+  "cause": "A new service whose ExecStart program does not exist.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot U01, split in two"
+}

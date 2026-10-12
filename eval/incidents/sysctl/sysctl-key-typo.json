@@ -1,0 +1,24 @@
+{
+  "id": "sysctl-key-typo",
+  "path": "/etc/sysctl.d/99-tuning.conf",
+  "change": [
+    {
+      "create": {
+        "content": "vm.swapiness = 10\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "sysctl",
+  "expect": [
+    {
+      "run": "sysctl -n vm.swappiness",
+      "as_written": "vm.swappiness is 10",
+      "match": "^10$"
+    }
+  ],
+  "cause": "A typo in a key (vm.swapiness).",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot C02"
+}

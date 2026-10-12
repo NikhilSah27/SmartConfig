@@ -1,0 +1,17 @@
+{
+  "id": "preload-world-writable",
+  "path": "/etc/ld.so.preload",
+  "change": [
+    {
+      "create": {
+        "content": "",
+        "mode": "0666"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "An empty /etc/ld.so.preload that every user may write; ld.so reads it for setuid programs too.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 plan 4.3 (exposed)"
+}

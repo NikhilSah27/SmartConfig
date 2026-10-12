@@ -1,0 +1,24 @@
+{
+  "id": "grub-default-kernel-missing",
+  "path": "/etc/default/grub",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^GRUB_DEFAULT=0$",
+        "with": "GRUB_DEFAULT=\"Advanced options for Ubuntu>Ubuntu, with Linux 6.8.0-999-generic\""
+      }
+    }
+  ],
+  "applies": "update-grub",
+  "expect": [
+    {
+      "run": "uname -r",
+      "as_written": "the kernel GRUB_DEFAULT names is running",
+      "match": "^6\\.8\\.0-999-generic$"
+    }
+  ],
+  "cause": "GRUB_DEFAULT names a kernel the machine does not have.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot G02, with an expect probe"
+}

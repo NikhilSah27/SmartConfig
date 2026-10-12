@@ -1,0 +1,24 @@
+{
+  "id": "netplan-gateway-off-subnet",
+  "path": "/etc/netplan/50-cloud-init.yaml",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^      dhcp4: true$",
+        "with": "      dhcp4: false\n      addresses: [10.0.2.15/24]\n      routes:\n        - to: default\n          via: 10.0.3.2"
+      }
+    }
+  ],
+  "applies": "netplan",
+  "expect": [
+    {
+      "run": "ip route get 1.1.1.1",
+      "as_written": "a route to the outside",
+      "exit": 0
+    }
+  ],
+  "cause": "A static address whose gateway is typed off the subnet (10.0.3.2 for 10.0.2.2).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "sudoers-missing-all",
+  "path": "/etc/sudoers",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^%sudo\\tALL=\\(ALL:ALL\\) ALL$",
+        "with": "%sudo\tALL=(ALL:ALL)"
+      }
+    }
+  ],
+  "applies": "sudo",
+  "cause": "The %sudo rule lost its command list (the last ALL).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot S01"
+}

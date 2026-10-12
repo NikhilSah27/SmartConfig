@@ -1,0 +1,17 @@
+{
+  "id": "pam-module-typo",
+  "path": "/etc/pam.d/common-auth",
+  "change": [
+    {
+      "replace": {
+        "pattern": "pam_unix\\.so nullok$",
+        "with": "pam_unx.so nullok"
+      }
+    }
+  ],
+  "applies": "now",
+  "cause": "A typo in the name of the module that checks passwords (pam_unx.so).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 pilot P04"
+}

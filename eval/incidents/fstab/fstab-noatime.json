@@ -1,0 +1,18 @@
+{
+  "id": "fstab-noatime",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "replace": {
+        "pattern": "commit=30,errors=remount-ro",
+        "with": "commit=30,errors=remount-ro,noatime"
+      }
+    }
+  ],
+  "applies": "fstab-now",
+  "cause": "noatime added to the root file system's options.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 pilot F10"
+}

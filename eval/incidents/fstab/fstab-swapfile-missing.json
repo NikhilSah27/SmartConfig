@@ -1,0 +1,21 @@
+{
+  "id": "fstab-swapfile-missing",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "append": "/swap.img\tnone\tswap\tsw\t0 0"
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "swapon --show=NAME --noheadings",
+      "as_written": "/swap.img in use as swap",
+      "match": "^/swap\\.img$"
+    }
+  ],
+  "cause": "A swap file that was never made.",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot F06"
+}

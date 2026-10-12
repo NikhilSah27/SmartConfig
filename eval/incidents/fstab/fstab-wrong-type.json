@@ -1,0 +1,24 @@
+{
+  "id": "fstab-wrong-type",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "replace": {
+        "pattern": "^LABEL=BOOT\\t/boot\\text4\\t",
+        "with": "LABEL=BOOT\t/boot\txfs\t"
+      }
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n /boot",
+      "as_written": "/boot mounted",
+      "exit": 0
+    }
+  ],
+  "cause": "The /boot line names the wrong file system type (xfs for an ext4 partition).",
+  "fix": "restore",
+  "guess": "blocker",
+  "source": "M6 plan 5.1"
+}

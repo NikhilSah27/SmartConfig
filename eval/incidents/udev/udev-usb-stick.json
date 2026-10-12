@@ -1,0 +1,18 @@
+{
+  "id": "udev-usb-stick",
+  "path": "/etc/udev/rules.d/60-usb-storage.rules",
+  "change": [
+    {
+      "create": {
+        "content": "SUBSYSTEM==\"block\", ATTRS{idVendor}==\"0781\", GROUP=\"disk\", MODE=\"0660\"\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "udev",
+  "cause": "A rule for a USB stick that is not attached.",
+  "fix": "restore",
+  "guess": "none",
+  "harmless": true,
+  "source": "M6 plan 5.1"
+}

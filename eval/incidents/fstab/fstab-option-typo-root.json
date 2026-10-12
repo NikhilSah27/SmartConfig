@@ -1,0 +1,24 @@
+{
+  "id": "fstab-option-typo-root",
+  "path": "/etc/fstab",
+  "change": [
+    {
+      "replace": {
+        "pattern": "commit=30,errors=remount-ro",
+        "with": "commit=30,erors=remount-ro"
+      }
+    }
+  ],
+  "applies": "fstab-now",
+  "expect": [
+    {
+      "run": "findmnt -n -o OPTIONS /",
+      "as_written": "/ mounted read-write",
+      "match": "(^|,)rw(,|$)"
+    }
+  ],
+  "cause": "A typo in an option on the root file system's line (erors= for errors=).",
+  "fix": "restore",
+  "guess": "error",
+  "source": "M6 pilot F04"
+}

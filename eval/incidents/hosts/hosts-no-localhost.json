@@ -1,0 +1,14 @@
+{
+  "id": "hosts-no-localhost",
+  "path": "/etc/hosts",
+  "change": [
+    {
+      "delete": "^127\\.0\\.0\\.1\\s+localhost$"
+    }
+  ],
+  "applies": "now",
+  "cause": "The localhost line deleted.",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot P03"
+}

@@ -1,0 +1,24 @@
+{
+  "id": "preload-missing-lib",
+  "path": "/etc/ld.so.preload",
+  "change": [
+    {
+      "create": {
+        "content": "/usr/lib/x86_64-linux-gnu/libfaketime/libfaketime.so.1\n",
+        "mode": "0644"
+      }
+    }
+  ],
+  "applies": "now",
+  "expect": [
+    {
+      "run": "grep -q libfaketime /proc/self/maps",
+      "as_written": "libfaketime loaded into every program",
+      "exit": 0
+    }
+  ],
+  "cause": "A library preloaded into every program that is not installed (libfaketime).",
+  "fix": "restore",
+  "guess": "warning",
+  "source": "M6 pilot P02"
+}
