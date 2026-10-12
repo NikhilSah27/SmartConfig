@@ -3209,3 +3209,18 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix6.log`).
   - **Next:** J10, `sc help <command> <word>`.
+- **sc help <command> <word>** (2026-10-12, the chunk J review's J10).
+  - **The gap:** follow-up 5 made a word after a command an error, but
+    the message called the command unknown: `sc help restore abc123`
+    said `unknown command "restore abc123"`. `sc help help` had lost
+    cobra's text on what it is for.
+  - **The fix:** an unknown topic is still `unknown command`, exit 1; a
+    command sc has, then a word it does not know, says `restore has no
+    command "abc123" (see: sc help restore)`, exit 1. `sc help help`
+    says what it does.
+  - **Tests:** `TestHelpUnknown` (the new messages, `sc help boot seen`,
+    and the `-h` line of a command's help, which the review's mutation
+    H2 showed nothing pinned) failed before the fix.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix7.log`).
+  - **Next:** J13, the tests the review's mutations showed missing.
