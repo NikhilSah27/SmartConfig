@@ -358,9 +358,11 @@ def plan_change(edits, base, facts):
     when there is no file), with the guest's FACTS. Returns an Action:
     kind content: content is the new bytes; create: content and mode
     (None: the default); mode: mode as an int; owner: "USER:GROUP";
-    symlink: target; unlink: nothing more. An edit that does not fit
-    the file (no line matches, or the file is there or not) raises
-    IncidentError, and so does a change that changes nothing."""
+    symlink: target, with or without a file there before (masking a
+    unit makes a link where there was none); unlink: nothing more. An
+    edit that does not fit the file (no line matches, or the file is
+    there or not) raises IncidentError, and so does a change that
+    changes nothing."""
     kind = _edits("change", edits)
     if kind == "create":
         if base is not None:
@@ -369,15 +371,15 @@ def plan_change(edits, base, facts):
         v = {"content": v} if isinstance(v, str) else v
         mode = int(v["mode"], 8) if "mode" in v else None
         return Action("create", substitute(v["content"], facts).encode("utf-8", "surrogateescape"), mode, None, None)
+    (op, v), = edits[0].items()
+    if kind == "symlink":
+        return Action("symlink", None, None, None, substitute(v, facts))
     if base is None:
         raise IncidentError("%s: there is no file to change (a new file is a create)" % kind)
-    (op, v), = edits[0].items()
     if kind == "mode":
         return Action("mode", None, int(v, 8), None, None)
     if kind == "owner":
         return Action("owner", None, None, substitute(v, facts), None)
-    if kind == "symlink":
-        return Action("symlink", None, None, None, substitute(v, facts))
     if kind == "unlink":
         return Action("unlink", None, None, None, None)
     text = base.decode("utf-8", "surrogateescape")

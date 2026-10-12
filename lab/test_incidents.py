@@ -148,9 +148,13 @@ class TestOtherKinds(unittest.TestCase):
         self.assertEqual(plan([{"owner": "{admin}:root"}]).owner, "owner:root")
         self.assertEqual(plan([{"symlink": "/dev/null"}]).target, "/dev/null")
         self.assertEqual(plan([{"unlink": True}]).kind, "unlink")
-        for edits in ([{"mode": "0666"}], [{"symlink": "/dev/null"}], [{"unlink": True}]):
+        for edits in ([{"mode": "0666"}], [{"owner": "root:root"}], [{"unlink": True}]):
             with self.assertRaisesRegex(IncidentError, "no file to change"):
                 plan(edits, base=None)
+
+    def test_a_symlink_may_make_a_new_path(self):
+        # Masking a unit links a path in /etc/systemd/system that was not there.
+        self.assertEqual(plan([{"symlink": "/dev/null"}], base=None), ("symlink", None, None, None, "/dev/null"))
 
     def test_a_single_change_is_never_mixed(self):
         for other in ({"mode": "0600"}, {"append": "x"}):
