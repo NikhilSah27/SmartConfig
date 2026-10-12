@@ -133,14 +133,18 @@ checks the version against the file as it is now, as `sc edit` checks an
 edit.
 - **When it asks:** if the version adds a blocker or an error (an older
   `/etc/group` that no longer has your admin in `sudo`, say), it lists
-  them and asks.
+  them and asks. Removing a file `sc check` has a checker for (a
+  "did not exist" or deleted row), which `sc status` would then call an
+  error, asks too.
 - **No answer:** end of input means no; nothing is written, and it exits 2.
 - **Only at a terminal:** without one (a script, a pipe, output to a
   file) it does not ask or read stdin: it lists what the version adds,
   names `--force` on stderr, writes nothing, and exits 2.
 - **`--force`:** writes without checking.
-- **No question:** restoring the healthy version a rescue report gives
-  adds nothing, so it asks nothing.
+- **No question:** the version a rescue report's undo names, the file as
+  it was at the last healthy boot, booted healthy: `sc restore` writes it
+  with no check and no question, even if the file is now missing or a
+  link.
 
 Ids are 6 hex characters; any unique prefix works. Data lives under
 `$SC_HOME` (default `/var/lib/smartconfig`): file contents in `objects/`,

@@ -384,16 +384,7 @@ func runStatus(cmd *cobra.Command, console bool) (err error) {
 			failed = append(failed, b)
 		}
 	}
-	// The boundary of "changed since": the last healthy boot whose row is
-	// known (a verdict given while the store could not be read has none).
-	var from boot.Boot
-	bounded := false
-	for i := li; i >= 0; i-- {
-		if boots[i].Verdict == "ok" && boots[i].RowID >= 0 {
-			from, bounded = boots[i], true
-			break
-		}
-	}
+	from, bounded := healthyLine(boots, li)
 
 	root := "read-write"
 	if ro {
@@ -635,6 +626,19 @@ func standIn(path string) string {
 		}
 	}
 	return ""
+}
+
+// healthyLine is the boundary of "changed since": the last healthy boot,
+// at or before boots[li], whose row is known (a verdict given while the
+// store could not be read has none). The undo names each path's version
+// at this line; sc restore finds that version by it too (rescueUndo).
+func healthyLine(boots []boot.Boot, li int) (boot.Boot, bool) {
+	for i := li; i >= 0; i-- {
+		if boots[i].Verdict == "ok" && boots[i].RowID >= 0 {
+			return boots[i], true
+		}
+	}
+	return boot.Boot{}, false
 }
 
 // statusProblem is the PROBLEM column of a changed path: for a file with

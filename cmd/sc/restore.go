@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"smartconfig/internal/boot"
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/store"
@@ -31,9 +32,14 @@ is now is saved first, so the restore can itself be undone.
 A file sc has a checker for is checked first: when the version to write
 adds a blocker or an error compared with the file as it is now, sc
 restore lists them and asks (end of input means no: nothing is written,
-exit 2). It asks only at a terminal: without one (a script, a pipe,
-output to a file) it writes nothing and exits 2. --force writes without
-checking.`,
+exit 2). Removing a file sc has a checker for, which sc status would then
+call an error, asks too. It asks only at a terminal: without one (a
+script, a pipe, output to a file) it writes nothing and exits 2. --force
+writes without checking.
+
+The version sc status's undo names (the file as it was at the last
+healthy boot) booted healthy: it is written without a check or a
+question.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -61,15 +67,20 @@ checking.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if !force && src.Kind == store.KindFile {
-				ok, err := restoreChecked(cmd, s, src)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					fmt.Fprintf(out, "not restored: %s is unchanged\n", show(src.Path))
-					return exitCode(2)
-				}
+			ok := true
+			switch {
+			case force:
+			case src.Kind == store.KindFile && !rescueUndo(s, src):
+				ok, err = restoreChecked(cmd, s, src)
+			case src.Kind == store.KindDeleted:
+				ok, err = removalChecked(cmd, src)
+			}
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintf(out, "not restored: %s is unchanged\n", show(src.Path))
+				return exitCode(2)
 			}
 			// Only the writing is a mutating command: a signal at the
 			// question ends sc at once.
@@ -135,7 +146,10 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 	case fsutil.IsNotExist(err):
 	case err != nil:
 		return false, err
-	case st.Kind == "file": // a link: restore refuses it itself
+	case st.Kind == "file":
+		// A link or anything else is compared with nothing, as a missing
+		// file is: sc status calls a checked file a link replaced an error
+		// itself, and its undo, the rescue version, is not asked about.
 		now, err := c.Check(cmd.Context(), src.Path, st.Data)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "sc: note: %s not checked (%v)\n", show(src.Path), err)
@@ -180,10 +194,58 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 	}
 	explain(out, added)
 	fmt.Fprintf(out, "\nRestoring %s adds %s compared with %s as it is now.\n", src.ID, tally(n), show(src.Path))
+	return askRestore(cmd, src, "writes it")
+}
+
+// rescueUndo reports whether src is the version sc status's undo names
+// for its path: the path's row at the last healthy boot whose row is known
+// (healthyLine). That version booted healthy, so sc restore writes it
+// without a check or a question, even when it has an error of its own or
+// the file is now missing or a link (the chunk J review, J1, your pick).
+func rescueUndo(s *store.Store, src store.Change) bool {
+	boots, err := boot.Read(store.Home())
+	if err != nil {
+		return false
+	}
+	_, li, _ := boot.LastHealthy(boots)
+	from, ok := healthyLine(boots, li)
+	if !ok {
+		return false
+	}
+	v, err := s.AsOf(src.Path, from.RowID)
+	return err == nil && v != nil && v.ID == src.ID
+}
+
+// removalChecked asks before a restore removes a file that sc status would
+// then call "error: deleted" (statusProblem): one a checker reads, but not
+// a flag file or ld.so.preload, whose own findings ask for their removal,
+// nor a unit or drop-in that one of the same name in a later unit
+// directory stands in for (the chunk J review, J7, your pick). A path
+// that is already absent has nothing to remove.
+func removalChecked(cmd *cobra.Command, src store.Change) (bool, error) {
+	checker := checkerOf(src.Path)
+	switch {
+	case checker == "", checker == "flag", checker == "preload":
+		return true, nil
+	case (checker == "unit" || checker == "unitdropin") && standIn(src.Path) != "":
+		return true, nil
+	}
+	if _, err := os.Lstat(src.Path); err != nil {
+		return true, nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Restoring %s removes %s, which sc checks (%s): sc status would call that an error.\n",
+		src.ID, show(src.Path), checker)
+	return askRestore(cmd, src, "removes it")
+}
+
+// askRestore asks whether to restore src anyway, only at a terminal (the
+// chunk J review, J6): without one (a script, a pipe, output to a file)
+// stdin is not read, so a script's next line is not taken for a yes, and
+// the refusal names --force, which does what (writes it, removes it).
+func askRestore(cmd *cobra.Command, src store.Change, what string) (bool, error) {
+	out := cmd.OutOrStdout()
 	if !atTerminal(restoreStdin, out) {
-		// No one to ask (a script, a pipe, output to a file): stdin is not
-		// read, so a script's next line is not taken for a yes.
-		fmt.Fprintf(cmd.ErrOrStderr(), "sc: not restored: %s is unchanged (no terminal to ask at; sc restore --force %s writes it)\n", show(src.Path), src.ID)
+		fmt.Fprintf(cmd.ErrOrStderr(), "sc: not restored: %s is unchanged (no terminal to ask at; sc restore --force %s %s)\n", show(src.Path), src.ID, what)
 		return false, exitCode(2)
 	}
 	fmt.Fprint(out, "Restore anyway? [y/N]: ")

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"smartconfig/internal/boot"
 	"smartconfig/internal/check"
 	"smartconfig/internal/store"
 )
@@ -245,4 +246,99 @@ func TestRestoreNoCheckerNoScratch(t *testing.T) {
 	if r := sc(t, "restore", first); r.code != 0 || r.stderr != "" || !strings.HasPrefix(r.stdout, "restored ") {
 		t.Errorf("%+v", r)
 	}
+}
+
+// The version sc status's undo names, the file as it was at the last
+// healthy boot, booted healthy: sc restore writes it with no check and no
+// question, even when it has an error of its own, or the file is now
+// missing or a link. Any other version is still checked (the chunk J
+// review, J1, your pick).
+func TestRestoreRescueUndoNotAsked(t *testing.T) {
+	dir, fstab, home := statusEnv(t, "BOOT_IMAGE=/vmlinuz ro", false)
+	good := snap(t, fstab, goodLine+"/dev/sdb1 /data2\n") // fstab-fields, an error; the boot was healthy
+	healthy := time.Now().Add(-time.Hour)
+	boot.Seen(home, "aaaaaaaa-1", healthy)
+	boot.Record(home, "aaaaaaaa-1", "ok", healthy, newestRow(t), "local-fs=active")
+	other := snap(t, fstab, goodLine+"/dev/sdc1 /data3\n") // the same error, recorded after that boot
+	snap(t, fstab, badLine)                                // a blocker
+	if r := sc(t, "status"); !strings.Contains(r.stdout, "\n  sc restore "+good+"\n") {
+		t.Fatalf("sc status names no undo with %s: %+v", good, r)
+	}
+	real := filepath.Join(dir, "fstab.real")
+	for name, now := range map[string]func(){
+		"a blocker now": func() { os.WriteFile(fstab, []byte(badLine), 0o644) },
+		"missing now":   func() { os.Remove(fstab) },
+		"a link now": func() {
+			os.WriteFile(real, []byte(badLine), 0o644)
+			os.Remove(fstab)
+			os.Symlink(real, fstab)
+		},
+	} {
+		now()
+		restoreAnswers(t, "") // a question would be answered no
+		r := sc(t, "restore", good)
+		if r.code != 0 || strings.Contains(r.stdout, "Restore anyway?") || !strings.HasPrefix(r.stdout, "restored "+fstab+" from "+good+" (") {
+			t.Errorf("%s: %+v", name, r)
+		}
+		if fi, err := os.Lstat(fstab); err != nil || !fi.Mode().IsRegular() {
+			t.Errorf("%s: %s is not a file now (%v)", name, fstab, err)
+		}
+	}
+	os.WriteFile(fstab, []byte(goodLine), 0o644)
+	restoreAnswers(t, "")
+	if r := sc(t, "restore", other); r.code != 2 || !strings.Contains(r.stdout, "adds 1 error compared with") || !strings.Contains(r.stdout, "Restore anyway?") {
+		t.Errorf("a version after the healthy boot: %+v", r)
+	}
+}
+
+// Removing a file sc checks, which sc status would then call "error:
+// deleted", asks as a version that adds an error does; --force does not,
+// nor does a file no checker reads (the chunk J review, J7, your pick).
+func TestRestoreRemovalAsks(t *testing.T) {
+	dir, fstab := checkEnv(t)
+	mustSC(t, "init")
+	created(t, fstab, goodLine)
+	dne := oldestRow(t, fstab) // its "did not exist" row
+	restoreAnswers(t, "")
+	r := sc(t, "restore", dne)
+	if r.code != 2 || r.stdout != "Restoring "+dne+" removes "+fstab+", which sc checks (fstab): sc status would call that an error.\n"+
+		"Restore anyway? [y/N]: \nnot restored: "+fstab+" is unchanged\n" {
+		t.Errorf("no answer: %+v", r)
+	}
+	oldTerm := atTerminal
+	atTerminal = func(io.Reader, io.Writer) bool { return false }
+	r = sc(t, "restore", dne)
+	atTerminal = oldTerm
+	if r.code != 2 || r.stderr != "sc: not restored: "+fstab+" is unchanged (no terminal to ask at; sc restore --force "+dne+" removes it)\n" {
+		t.Errorf("no terminal: %+v", r)
+	}
+	if _, err := os.Stat(fstab); err != nil {
+		t.Fatalf("removed without a yes: %v", err)
+	}
+	restoreAnswers(t, "y\n")
+	if r := sc(t, "restore", dne); r.code != 0 || !strings.Contains(r.stdout, "[y/N]: removed "+fstab+" to match "+dne) {
+		t.Errorf("y: %+v", r)
+	}
+	if _, err := os.Stat(fstab); err == nil {
+		t.Error("y did not remove it")
+	}
+	os.WriteFile(fstab, []byte(goodLine), 0o644)
+	restoreAnswers(t, "")
+	if r := sc(t, "restore", "--force", dne); r.code != 0 || !strings.HasPrefix(r.stdout, "removed "+fstab) {
+		t.Errorf("--force: %+v", r)
+	}
+	motd := filepath.Join(dir, "motd")
+	created(t, motd, "hello\n")
+	other := oldestRow(t, motd)
+	if r := sc(t, "restore", other); r.code != 0 || !strings.HasPrefix(r.stdout, "removed "+motd) {
+		t.Errorf("a file no checker reads: %+v", r)
+	}
+}
+
+// oldestRow is the id of p's oldest row, from sc log: after created, its
+// "did not exist" row.
+func oldestRow(t *testing.T, p string) string {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(mustSC(t, "log", "-n", "0", p)), "\n")
+	return strings.Fields(lines[len(lines)-1])[0]
 }
