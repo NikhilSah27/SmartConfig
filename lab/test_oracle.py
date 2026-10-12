@@ -133,5 +133,53 @@ class TestLabel(unittest.TestCase):
             self.assertEqual(oracle.SEVERITY[c], s)
 
 
+class TestLabels(unittest.TestCase):
+    SHA, REV = "6a" * 32, "1"
+
+    def setUp(self):
+        self.incs = [dict(id="fstab-x", path="/etc/fstab", change=[{"append": "x"}], applies="fstab-now",
+                          cause="c", fix="restore", guess="blocker"),
+                     dict(id="hosts-y", path="/etc/hosts", change=[{"append": "y"}], applies="now",
+                          cause="c", fix="restore", guess="warning")]
+        self.labels = oracle.new_labels(self.SHA, self.REV)
+        for inc in self.incs:
+            self.labels["labels"][inc["id"]] = oracle.record(inc, oracle.Label("same", "effect", "none", []),
+                                                             ["runs/x/%s.log" % inc["id"]])
+
+    def stale(self, incs=None, **kw):
+        return oracle.stale(self.labels, self.incs if incs is None else incs,
+                            kw.get("sha", self.SHA), kw.get("rev", self.REV), kw.get("profile", oracle.PROFILE))
+
+    def test_current_labels_are_not_stale(self):
+        self.assertEqual(self.stale(), {})
+        # Prose does not make a label stale.
+        self.assertEqual(self.stale([dict(self.incs[0], cause="Other words.", guess="error"), self.incs[1]]), {})
+
+    def test_what_makes_a_label_stale(self):
+        changed = [dict(self.incs[0], change=[{"append": "z"}]), self.incs[1]]
+        self.assertEqual(self.stale(changed), {"fstab-x": "the incident changed since its label"})
+        new = self.incs + [dict(self.incs[1], id="hosts-z")]
+        self.assertEqual(self.stale(new), {"hosts-z": "no label"})
+        self.assertEqual(self.stale(self.incs[:1]), {"hosts-y": "a label for an incident no longer in the set"})
+        for kw in ({"sha": "7b" * 32}, {"rev": "2"}, {"profile": "installed-server-2"}):
+            got = self.stale(**kw)
+            self.assertEqual(set(got), {"fstab-x", "hosts-y"}, kw)
+            self.assertTrue(all(v.startswith("labelled on another guest") for v in got.values()), got)
+        self.labels["labels"]["hosts-y"] = oracle.record(
+            self.incs[1], oracle.Label(oracle.INCONCLUSIVE, "boot", None, ["the lab's own stall, never a label"]))
+        self.assertEqual(self.stale(), {"hosts-y": "inconclusive: the lab's own stall, never a label"})
+
+    def test_write_and_read(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "labels.json")
+            oracle.write_labels(path, self.labels)
+            self.assertEqual(oracle.read_labels(path), self.labels)
+            self.assertEqual(os.listdir(d), ["labels.json"])
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o644)
+            rec = self.labels["labels"]["fstab-x"]
+            self.assertEqual(sorted(rec), ["evidence", "hash", "outcome", "reasons", "severity", "when"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,12 +13,21 @@ gathering them through the root channel and from the console is steps
   FLAKES    the lab's own retry signatures: never a label
   classify  the class one observation shows, with its reasons
   label     an incident's label from its observations
+  record    a label as eval/labels.json keeps it, keyed on the incident's
+            content hash
+  stale     which incidents have no label that can be used, and why
+  read_labels, write_labels   eval/labels.json (written by rename)
 
 Python 3 standard library only.
 """
 import collections
 import dataclasses
 import fnmatch
+import json
+import os
+import tempfile
+
+import incidents
 
 # Worst first. Within one severity the order only says which name a
 # label takes when an observation shows two.
@@ -141,3 +150,70 @@ def label(inc, seens, control_ok=True):
         results.append((RANK[c], s.phase, c, why))
     _, when, c, why = min(results, key=lambda r: r[0])
     return Label(c, when, SEVERITY[c], why)
+
+
+# The installed-server profile of plan 4.1 (the admin's password, sudo
+# through %sudo only, ssh by key). Bump it when the profile changes: every
+# label goes stale.
+PROFILE = "installed-server-1"
+
+
+def new_labels(image_sha256, provision_rev, profile=PROFILE):
+    """An empty labels.json for one guest: the image, its provisioning
+    recipe (lab.conf's IMAGE_SHA256 and PROVISION_REV) and the profile."""
+    return {"image_sha256": image_sha256, "provision_rev": str(provision_rev), "profile": profile, "labels": {}}
+
+
+def record(inc, lab, evidence=()):
+    """LAB (a Label) for incident INC as labels.json keeps it, with the
+    evidence files that show it."""
+    return {"hash": incidents.content_hash(inc), "outcome": lab.outcome, "when": lab.when,
+            "severity": lab.severity, "reasons": list(lab.reasons), "evidence": sorted(evidence)}
+
+
+def stale(labels, incs, image_sha256, provision_rev, profile=PROFILE):
+    """{id: why} for each incident of INCS with no label that can be used
+    (none; inconclusive; made for another version of the incident, image,
+    recipe or profile) and each label of an id no longer in the set."""
+    out = {}
+    guest = []
+    for k, now in (("image_sha256", image_sha256), ("provision_rev", str(provision_rev)), ("profile", profile)):
+        if labels.get(k) != now:
+            guest.append("%s %s, not %s" % (k, labels.get(k), now))
+    have = labels.get("labels", {})
+    for inc in incs:
+        lab = have.get(inc["id"])
+        if guest:
+            out[inc["id"]] = "labelled on another guest: " + "; ".join(guest)
+        elif lab is None:
+            out[inc["id"]] = "no label"
+        elif lab["hash"] != incidents.content_hash(inc):
+            out[inc["id"]] = "the incident changed since its label"
+        elif lab["outcome"] == INCONCLUSIVE:
+            out[inc["id"]] = "inconclusive: " + "; ".join(lab["reasons"])
+    for i in sorted(set(have) - {inc["id"] for inc in incs}):
+        out[i] = "a label for an incident no longer in the set"
+    return out
+
+
+def read_labels(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_labels(path, labels):
+    """Write labels.json by rename: a temporary file in the same
+    directory, synced, then moved over the path."""
+    d = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".labels-", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(labels, indent=1, sort_keys=True, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise

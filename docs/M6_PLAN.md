@@ -832,7 +832,10 @@ and undoes it, the applies commands and the probe commands, tested on a
 copy of the guest's files (after "continue", 2026-10-12); the root
 channel it runs over is step 4's. And the rules of 4.3 that make a
 label from what the oracle saw (`lab/oracle.py`), tested on made-up
-observations; gathering them is steps 5 and 6. Step 2 is written on the round's `sc check -v` change. Steps 4 on
+observations; gathering them is steps 5 and 6. With them, `labels.json`
+and step 7's stale-label check: a label is keyed on the incident's
+content hash, and on the image, the recipe (lab.conf's `IMAGE_SHA256`
+and `PROVISION_REV`) and the profile. Step 2 is written on the round's `sc check -v` change. Steps 4 on
 use the lab, so they wait for the round, whose sign-off runs the lab too.
 
 ## 10. Estimate
