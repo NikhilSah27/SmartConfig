@@ -286,15 +286,22 @@ func (e exitCode) Error() string { return "exit status " + strconv.Itoa(int(e)) 
 
 // newHelpCmd is cobra's help command, but an unknown topic is an error,
 // one line and exit 1, as an unknown command is (M5 follow-up 5: cobra's
-// printed the usage and exited 0).
+// printed the usage and exited 0). A command sc has, followed by a word it
+// does not know, is named as known (the chunk J review, J10: sc help
+// restore abc123 called restore an unknown command).
 func newHelpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
 		Short: "Help about any command",
+		Long:  "Help shows the help of any command: sc help [command], as sc [command] --help does.",
 		RunE: func(c *cobra.Command, args []string) error {
 			cmd, rest, err := c.Root().Find(args)
-			if err != nil || cmd == nil || len(rest) > 0 {
+			if err != nil || cmd == nil || (len(rest) > 0 && cmd == c.Root()) {
 				return fmt.Errorf("unknown command %q for \"sc help\"", strings.Join(args, " "))
+			}
+			if len(rest) > 0 {
+				name := strings.TrimPrefix(cmd.CommandPath(), c.Root().Name()+" ")
+				return fmt.Errorf("%s has no command %q (see: sc help %s)", name, rest[0], name)
 			}
 			cmd.InitDefaultHelpFlag()
 			return cmd.Help()
