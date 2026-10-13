@@ -3247,3 +3247,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`~/smartconfig-work/fu-scratch/checks-j-fix8.log`).
   - **Next:** the write-up of the chunk J review, MILESTONES, and the
     stale comments (J12).
+- **CI red on `4ab3489`, and the fix** (2026-10-13).
+  - **What failed:** CI's root pass, `TestRestoreCtrlCAtQuestion`: it
+    looked for sc's private scratch directory under `TMPDIR`, but as root
+    sc makes it in `/run` first. The test came from the review, which ran
+    only as a user; the local checks did too.
+  - **The fix:** the test's helper child puts the scratch directory where
+    the test says, as root or not.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat`, and the
+    root pass locally (`sudo -n` works here), clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix8b.log`).
+  - **Next:** the write-up of the chunk J review, MILESTONES, and the
+    stale comments (J12).

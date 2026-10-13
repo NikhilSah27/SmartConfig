@@ -567,7 +567,8 @@ func TestRestoreRemovalNotAsked(t *testing.T) {
 }
 
 // TestRestoreHelper is sc itself, run by TestRestoreCtrlCAtQuestion as a
-// child with a graph, and as at a terminal.
+// child with a graph, as at a terminal, and with its scratch directory in
+// a place the test gives (root's would be in /run).
 func TestRestoreHelper(t *testing.T) {
 	if os.Getenv("SC_RESTORE_HELPER") == "" {
 		t.Skip("only as a child of TestRestoreCtrlCAtQuestion")
@@ -579,6 +580,8 @@ func TestRestoreHelper(t *testing.T) {
 	empty := os.Getenv("SC_RESTORE_EMPTY")
 	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
 	atTerminal = func(io.Reader, io.Writer) bool { return true }
+	scratch := os.Getenv("SC_RESTORE_SCRATCH")
+	scratchParents = func() []string { return []string{scratch} }
 	os.Args = append([]string{"sc"}, strings.Fields(os.Getenv("SC_RESTORE_ARGS"))...)
 	main()
 }
@@ -595,11 +598,11 @@ func TestRestoreCtrlCAtQuestion(t *testing.T) {
 	os.WriteFile(fstab, []byte(goodLine), 0o644)
 	rows := func() int { return strings.Count(mustSC(t, "log", "-n", "0", fstab), "\n") }
 	n := rows()
-	os.RemoveAll(filepath.Join(os.Getenv("SC_HOME"), "tmp")) // the scratch directory goes to TMPDIR, then
-	tmp, xdg := t.TempDir(), t.TempDir()
+	os.RemoveAll(filepath.Join(os.Getenv("SC_HOME"), "tmp")) // the scratch directory goes to scratch, then
+	scratch, tmp, xdg := t.TempDir(), t.TempDir(), t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRestoreHelper$")
 	cmd.Env = append(os.Environ(), "SC_RESTORE_HELPER=1", "SC_RESTORE_GRAPH=check fstab "+fstab+"\n",
-		"SC_RESTORE_EMPTY="+t.TempDir(), "SC_RESTORE_ARGS=restore "+bad, "TMPDIR="+tmp, "XDG_RUNTIME_DIR="+xdg)
+		"SC_RESTORE_EMPTY="+t.TempDir(), "SC_RESTORE_ARGS=restore "+bad, "SC_RESTORE_SCRATCH="+scratch, "TMPDIR="+tmp, "XDG_RUNTIME_DIR="+xdg)
 	stdin, _ := cmd.StdinPipe()
 	defer stdin.Close()
 	stdout, _ := cmd.StdoutPipe()
@@ -636,7 +639,7 @@ func TestRestoreCtrlCAtQuestion(t *testing.T) {
 	}
 	left := func() []string {
 		var out []string
-		for _, d := range []string{tmp, xdg} {
+		for _, d := range []string{scratch, tmp, xdg} {
 			es, _ := os.ReadDir(d)
 			for _, e := range es {
 				out = append(out, filepath.Join(d, e.Name()))
