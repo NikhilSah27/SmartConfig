@@ -3224,3 +3224,26 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
     (`~/smartconfig-work/fu-scratch/checks-j-fix7.log`).
   - **Next:** J13, the tests the review's mutations showed missing.
+- **The tests the review's mutations showed missing** (2026-10-13, the
+  chunk J review's J13).
+  - **The gap:** mutations of restore's answers, its newline and
+    explanation, a check that fails, no scratch directory, the read-only
+    root, the row's uid and gid, a warning that asked, sudoers' setgid,
+    sticky and gid bits, scd's version before by gid, and the help flag
+    survived the whole suite.
+  - **The tests:** the reviewer's passing tests are kept
+    (`TestRestoreAnswers`, `TestRestoreCtrlCAtQuestion`,
+    `TestCheckVersionModeBits`, and its guards and no-scratch tests as
+    `TestRestoreUnchecked` and `TestRestoreCheckCannotRun`). New:
+    `TestRestoreChecksOwner` and `TestCheckRowOwners` (rows recorded with
+    an owner a test cannot give a file), `TestRestoreWarningNotAsked`,
+    `TestRestoreRemovalNotAsked`, `TestStatusBeforeByRowMode`,
+    `TestCheckRestoreModeOkAgain`, and `atTerminal` with one end a file.
+  - **Mutations:** the review's 32, anchored on the fixed code, and 27 for
+    the fixes: all 59 killed, R10 by the full suite's signal tests
+    (`~/smartconfig-work/fu-scratch/j-mut/`: the runner `mutate.py`,
+    `results-pass3.txt`, `results-pass4-R10-full.txt`).
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` clean
+    (`~/smartconfig-work/fu-scratch/checks-j-fix8.log`).
+  - **Next:** the write-up of the chunk J review, MILESTONES, and the
+    stale comments (J12).
