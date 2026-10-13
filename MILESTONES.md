@@ -23,10 +23,10 @@ the hand install moved aside, the name `smartconfig`, the command `sc`);
 the license (question 6) is yours, later (your answer, 2026-10-09).
 Signed off: the lab's `--deb` run in both modes, and on the dev VM the
 install over the hand install, a reboot, an upgrade, the remove and the
-install again; the dev VM runs 0.5.0, built at the tag. Next: M6. Its
-plan is drafted (`~/smartconfig-work/M6_PLAN.draft.md`, not yet in
-`docs/`) and is being revised after the review of 2026-10-09; nothing of
-M6 is built. That review also found work no milestone owns: "Open, with
+install again; the dev VM runs 0.5.0, built at the tag. Now: the M5
+follow-up round (below; chunks I and J done and reviewed, K and L next).
+M6 is being built alongside in a clone (`~/smartconfig-work/m6/smartconfig`,
+plan draft 3) and lands here after the round. The review of 2026-10-09 also found work no milestone owns: "Open, with
 no milestone yet", at the end of this file. The M3 and M4 follow-ups
 below are done, all but M4's LUKS item (out, your call), and signed off
 on 2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
@@ -459,22 +459,29 @@ fixes `9d43980`).
    - **Writers:** blobs go only under the write lock, and every writer
      puts its blob again under the lock.
 
-**Chunk J, restore and checks:**
-3. Done (`a4571cb`): `sc restore` checks the version it is about to write
-   against the file as it is now (file rows with a checker; links,
-   deletions and digest rows are not checked).
-   - If the version adds a blocker or an error, it lists them and asks.
-     End of input means no: nothing is written, exit 2. `--force` skips
-     the check.
-   - Nothing changes when it adds nothing, which covers restoring the
-     last healthy version from the rescue report.
+**Chunk J, restore and checks: done and reviewed** (2026-10-12,
+[reviews/2026-10-12-m5-followups-chunk-j.md](docs/reviews/2026-10-12-m5-followups-chunk-j.md),
+fixes `9a08186`..`09a4af1`).
+3. Done (`a4571cb`, and the review's fixes): `sc restore` checks the
+   version it is about to write against the file as it is now (file rows
+   with a checker; links and digest rows are not checked).
+   - If the version adds a blocker or an error, it lists them and asks;
+     so does removing a checked file that `sc status` would then call an
+     error (J7). `--force` skips the check.
+   - It asks only at a terminal. End of input, or no terminal, means no:
+     nothing is written, exit 2 (J6; `sc prune` too).
+   - The version the rescue report's undo names (the file at the last
+     healthy boot) is written with no check and no question (J1).
+   - Restore's own refusals come before the check (J5).
 4. Done (`dc6c3da`): `/etc/default/grub.d/*.cfg` is checked as
    `/etc/default/grub` is.
 5. Done (`943207e`): `sc help <unknown>` exits 1, with one line.
 5a. Done (`2584d47`), taken in from the M6 session's finding: scd judges the
    version before a change by the mode and owner its row recorded
    (`check.CheckVersion`), not the file's mode on disk now. A mode-only
-   change of a sudoers file was not reported.
+   change of a sudoers file was not reported. After the review, `sc
+   status`, `sc check <id>` (J2) and scd's check of the version after a
+   change (J8) judge versions so too.
 
 **Chunk K, secrets:**
 6. A secret list in the scope: content stored, shown hidden. It covers
@@ -533,8 +540,8 @@ They are ranked by what is at stake:
    - `sc cat` and `sc diff` print them.
    - Redaction (M2 plan: "M3") and content-based detection were never
      built. This must be settled before M7 sends diffs to a model.
-3. **`sc restore` writes without a check** (→ chunk J), and there is no
-   account-set restore. Putting back an older `/etc/group` alone can drop
+3. **`sc restore` writes without a check**: done in chunk J (it checks
+   and asks). There is still no account-set restore. Putting back an older `/etc/group` alone can drop
    today's admin from sudo, which `sc edit` would refuse (M2 plan:
    "M3"). The account-set restore stays open.
 4. **The apt hook and change sets** (→ chunk L, tags only).
@@ -557,9 +564,11 @@ They are ranked by what is at stake:
 9. **A scope file users can edit** (M2 plan: "M5").
 10. **Restores into directories a user owns** are refused (M2 plan:
     "M4", the dirfd restore).
-11. **`/etc/default/grub.d/*.cfg` is not checked** (→ chunk J), though the
-    cloud image keeps its GRUB settings there (found by the M6 pilot).
+11. **`/etc/default/grub.d/*.cfg` is not checked**: done in chunk J (the
+    cloud image keeps its GRUB settings there; found by the M6 pilot).
 12. Smaller: active/inert labels and vendor-override detection;
     `/etc/alternatives` chains and `rc?.d` links; cross-file checks
     (two sudoers drop-ins); a home-directory watch. (`sc help <unknown>`
-    exiting 0: done in chunk J.)
+    exiting 0: done in chunk J.) Restoring a link row over a checked file
+    asks nothing, though `sc status` then calls the path an error (the
+    chunk J review asked only for removals, J7).

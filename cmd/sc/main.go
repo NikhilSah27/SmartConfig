@@ -33,8 +33,10 @@ var stopSignals = []os.Signal{
 	syscall.SIGILL, syscall.SIGBUS, syscall.SIGFPE, syscall.SIGSEGV,
 }
 
-// mutating is set for the whole of a snapshot or restore command, including
-// printing its result, so a signal never cuts that result short.
+// mutating is set while a snapshot, restore, prune or sc edit's save
+// writes, and while it prints its result, so a signal never cuts that
+// result short. sc restore and sc prune set it only after their question:
+// a signal at the question ends sc at once (the chunk J review, J12).
 var mutating atomic.Bool
 
 // editing is set while sc edit's editor runs.
@@ -134,8 +136,9 @@ func main() {
 }
 
 // handleSignals implements sc's contract for stop signals:
-//   - During a snapshot or restore, the first signal asks it to stop at its
-//     next safe point. The command then reports what happened through its
+//   - While a command writes (mutating: a snapshot, or a restore or prune
+//     past its question), the first signal asks it to stop at its next
+//     safe point. The command then reports what happened through its
 //     normal error or success line (so deferred cleanups run and the line
 //     says whether the file changed), and main ends by the signal.
 //   - A second signal stops at once, unless a restore may already have
