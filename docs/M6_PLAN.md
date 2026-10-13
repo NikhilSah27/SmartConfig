@@ -776,8 +776,9 @@ eval/                        the set: data, never shipped (not in the .deb)
   REPORT.md                  the latest score, copied in by the freeze step
 lab/incidents.py             applying changes, the oracles, the root channel, the sc-side run
 lab/oracle.py                the outcome class, when and severity from what the oracle saw (4.3)
+lab/score.py                 the measures of 6.2 and the report
 lab/factory.py               the mutation operators, deterministic
-lab/test_incidents.py, lab/test_oracle.py, lab/test_factory.py
+lab/test_incidents.py, lab/test_oracle.py, lab/test_score.py, lab/test_factory.py
 cmd/sc/check.go              --tsv (question 5)
 Makefile                     eval-truth, eval, eval-freeze
 ```
@@ -835,7 +836,10 @@ label from what the oracle saw (`lab/oracle.py`), tested on made-up
 observations; gathering them is steps 5 and 6. With them, `labels.json`
 and step 7's stale-label check: a label is keyed on the incident's
 content hash, and on the image, the recipe (lab.conf's `IMAGE_SHA256`
-and `PROVISION_REV`) and the profile. Step 2 is written on the round's `sc check -v` change. Steps 4 on
+and `PROVISION_REV`) and the profile. And step 9's scorer and report
+(`lab/score.py`), on canned results: it sets the record the sc-side run
+(step 8) gives for each incident and surface, which step 8 may still
+change. Step 2 is written on the round's `sc check -v` change. Steps 4 on
 use the lab, so they wait for the round, whose sign-off runs the lab too.
 
 ## 10. Estimate
