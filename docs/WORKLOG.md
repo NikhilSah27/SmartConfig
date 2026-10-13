@@ -19,11 +19,11 @@ after every step. For the full history, decisions and recovery guide see
   OK. **Chunk I (steps 1-2) is done and reviewed**
   ([reviews/2026-10-09-m5-followups-chunk-i.md](reviews/2026-10-09-m5-followups-chunk-i.md),
   fixes `9d43980`). **Chunk J (steps 3, 4, 5, 5a and `8b98817`) is
-  done and reviewed** (2026-10-12: J1-J13, none high; the report is
-  `~/smartconfig-work/review-m5fu-j/findings.md`). **Now: its fixes**,
-  one step at a time, on your picks for J1, J6 and J7 (2026-10-12, all
-  on the recommended answer; see the log). The handoff, if this session
-  stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  done and reviewed**, and its 13 findings fixed
+  ([reviews/2026-10-12-m5-followups-chunk-j.md](reviews/2026-10-12-m5-followups-chunk-j.md);
+  your picks for J1, J6 and J7, 2026-10-12, all on the recommended
+  answer). **Next: chunk K** (secrets, steps 6-7). The handoff, if this
+  session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -3259,3 +3259,16 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`~/smartconfig-work/fu-scratch/checks-j-fix8b.log`).
   - **Next:** the write-up of the chunk J review, MILESTONES, and the
     stale comments (J12).
+- **The chunk J review's write-up, and J12** (2026-10-13).
+  - **The write-up:** `docs/reviews/2026-10-12-m5-followups-chunk-j.md`:
+    J1-J13, none high, all fixed; the two things left as they were (a
+    link row over a checked file asks nothing; a version over a link or
+    a missing file is compared with nothing).
+  - **J12:** the comments on `mutating` and on the signal contract say
+    that a restore or prune is a mutating command only past its question.
+    MILESTONES: chunk J closed, its items say what restore does now, and
+    Open items 3 and 11 are done; the link row joins the Open list.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-j-fix9.log`).
+  - **Next:** chunk K, step 6: secrets in the scope, stored and shown
+    hidden.
