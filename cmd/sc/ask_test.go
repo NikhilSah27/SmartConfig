@@ -39,6 +39,11 @@ func TestIsTerminal(t *testing.T) {
 	if !isTerminal(ptmx) {
 		t.Error("/dev/ptmx is not called a terminal")
 	}
+	// A question needs both ends at a terminal: an answer typed at one is
+	// no use when the question goes to a file (the chunk J review, J6).
+	if !atTerminal(ptmx, ptmx) || atTerminal(ptmx, &b) || atTerminal(&b, ptmx) || atTerminal(r, ptmx) {
+		t.Error("atTerminal does not need both stdin and stdout to be terminals")
+	}
 }
 
 // Without a terminal, sc restore does not ask and does not read stdin: a

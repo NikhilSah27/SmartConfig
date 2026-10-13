@@ -415,3 +415,97 @@ func TestCheckAfterByRowMode(t *testing.T) {
 		t.Errorf("want one line, for the mode row %s: %q", modeRow.ID, l)
 	}
 }
+
+// sudoersEnv is an env whose checker reads root/sudoers.d/*, with the
+// drop-in admins written 0440, started.
+func sudoersEnv(t *testing.T) (e *env, f string) {
+	t.Helper()
+	e = newEnv(t)
+	d := filepath.Join(e.root, "sudoers.d")
+	os.Mkdir(d, 0o755)
+	f = filepath.Join(d, "admins")
+	put(t, f, "owner ALL=(ALL) ALL\n", 0o440)
+	g, err := check.ParseGraph("check sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfg.Checks = &check.Checks{Home: e.home, Graph: g, Run: check.Runner{Dirs: []string{t.TempDir()}}}
+	e.start()
+	e.barrier()
+	return e, f
+}
+
+// A restore of the same content with another mode is a version of its
+// own: it is checked, and gets "ok again" (the chunk J review, J8:
+// remembered by content alone, it was taken for the chmod's version and
+// not checked).
+func TestCheckRestoreModeOkAgain(t *testing.T) {
+	e, f := sudoersEnv(t)
+	good := e.newest(f).ID
+	os.Chmod(f, 0o666)
+	e.waitFor("the error line", func() bool { return len(e.lines(": check: error sudoers-mode")) == 1 })
+	r, _, err := e.st.Restore(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("ok again at the restore", func() bool { return len(e.lines("ok again ("+r.ID+")")) == 1 })
+}
+
+// ownedRow records data as p's newest row with the given mode, owner and
+// group, which a test cannot give a file without root.
+func ownedRow(t *testing.T, e *env, p, data string, mode os.FileMode, uid, gid int) store.Change {
+	t.Helper()
+	st, err := fsutil.ReadState(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Data, st.Meta.Mode, st.Meta.UID, st.Meta.GID = []byte(data), mode, uid, gid
+	res, err := e.st.Record([]store.Obs{{Path: p, State: &st, Force: true, Origin: store.OriginAuto}})
+	if err != nil || len(res) != 1 || !res[0].Recorded {
+		t.Fatalf("record %s: %v %+v", p, err, res)
+	}
+	return res[0].Change
+}
+
+// checkRow hands row c to the checker as scd would, and returns once the
+// checker is done with it.
+func checkRow(t *testing.T, e *env, c store.Change) {
+	t.Helper()
+	done := make(chan struct{}, 1)
+	testHookChecked = func(q string) {
+		if q == c.Path {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	}
+	defer func() { testHookChecked = nil }()
+	e.w.queueCheck(c, "test")
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s was not checked", c.ID)
+	}
+}
+
+// Both versions are judged by their own rows' owner and group: a version
+// owned by another user is an error (J8c), and a version whose group can
+// write, as the one before it could, adds nothing (W2 and W3: the version
+// before, not checked yet and judged by owner 0 or group 0, would have
+// been only a warning, and the error called new).
+func TestCheckRowOwners(t *testing.T) {
+	e, f := sudoersEnv(t)
+	checkRow(t, e, ownedRow(t, e, f, "owner ALL=(ALL) ALL\n", 0o440, 0, 0))
+	other := ownedRow(t, e, f, "owner ALL=(ALL) ALL\n", 0o440, 4242, 0)
+	checkRow(t, e, other)
+	if l := e.lines(": check: error sudoers-mode"); len(l) != 1 || !strings.Contains(l[0], "owned by uid 4242") || !strings.Contains(l[0], "("+other.ID+")") {
+		t.Errorf("another owner: %q", l)
+	}
+	n := len(e.lines("sudoers-mode"))
+	ownedRow(t, e, f, "owner ALL=(ALL) ALL\n# 1\n", 0o460, 0, 4242) // recorded, not checked
+	checkRow(t, e, ownedRow(t, e, f, "owner ALL=(ALL) ALL\n# 2\n", 0o460, 0, 4242))
+	if l := e.lines("sudoers-mode"); len(l) != n {
+		t.Errorf("a change that kept the group's write: %q", l[n:])
+	}
+}

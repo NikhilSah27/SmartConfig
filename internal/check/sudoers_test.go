@@ -406,3 +406,38 @@ func TestCheckVersionMode(t *testing.T) {
 		}
 	}
 }
+
+// A version's mode bits beyond the permissions, and its group, as a store
+// row records them (os.FileMode): setgid and sticky show in the octal
+// mode, and a group-writable file is an error only when its group is not
+// root's. The file on disk is never read (kept from the chunk J review's
+// tests: its mutations S1-S3 survived the suite).
+func TestCheckVersionModeBits(t *testing.T) {
+	c := &Checks{Home: t.TempDir(), Run: Runner{Dirs: []string{t.TempDir()}},
+		lstat: func(string) (os.FileInfo, error) { return nil, errors.New("the disk must not be read") }}
+	p := "/etc/sudoers.d/admins"
+	for _, tc := range []struct {
+		meta Meta
+		want string
+	}{
+		{Meta{Mode: 0o440 | os.ModeSetgid}, "warning the file is mode 2440 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o440 | os.ModeSticky}, "warning the file is mode 1440 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o460, GID: 27}, "error the file is mode 0460 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o460, GID: 0}, "warning the file is mode 0460 and owned by uid 0, not 0440 root"},
+		{Meta{Mode: 0o440, UID: -1}, ""},
+	} {
+		rep, err := c.CheckVersion(context.Background(), p, []byte("owner ALL=(ALL) ALL\n"), tc.meta)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ""
+		for _, f := range rep.Findings {
+			if f.Rule == "sudoers-mode" {
+				got = f.Severity.String() + " " + f.Text
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.meta, got, tc.want)
+		}
+	}
+}

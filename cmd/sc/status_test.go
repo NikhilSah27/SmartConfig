@@ -1405,3 +1405,32 @@ func TestStatusAndCheckJudgeRowMode(t *testing.T) {
 		t.Errorf("sc check %s: %+v", open, r)
 	}
 }
+
+// The version a change is compared with is judged by its own row's mode
+// too: a sudoers drop-in that was world-writable at the healthy boot, and
+// is still, is no problem a later content change added (the chunk J
+// review's J2: that version's mode problem would be blamed on the change).
+func TestStatusBeforeByRowMode(t *testing.T) {
+	_, fstab, home := statusEnv(t, "ro quiet", false)
+	d := filepath.Join(t.TempDir(), "sudoers.d")
+	os.Mkdir(d, 0o755)
+	g, err := check.ParseGraph("check fstab " + fstab + "\ncheck sudoers " + filepath.Join(d, "*") + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	testHookChecks = func(c *check.Checks) { c.Graph, c.Run.Dirs = g, []string{empty} }
+	p := filepath.Join(d, "admins")
+	os.WriteFile(p, []byte("owner ALL=(ALL) ALL\n"), 0o666)
+	os.Chmod(p, 0o666)
+	mustSC(t, "snapshot", p)
+	healthy := time.Now().Add(-time.Hour)
+	boot.Seen(home, "aaaaaaaa-1", healthy)
+	boot.Record(home, "aaaaaaaa-1", "ok", healthy, newestRow(t), "local-fs=active")
+	os.WriteFile(p, []byte("owner ALL=(ALL) ALL\n# a comment\n"), 0o666)
+	changed := strings.Fields(mustSC(t, "snapshot", p))[1]
+	r := sc(t, "status")
+	if r.code != 0 || !strings.Contains(r.stdout, changed+" ") || strings.Contains(r.stdout, "sudoers-mode") {
+		t.Errorf("%+v", r)
+	}
+}
