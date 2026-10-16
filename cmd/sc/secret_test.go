@@ -7,19 +7,24 @@ import (
 	"testing"
 
 	"smartconfig/internal/check"
-	"smartconfig/internal/scope"
 )
 
-// secretEnv makes the files named shadow and *.nmconnection secret files,
-// whatever their directory (chunk K, step 6).
+// secretEnv makes the files named shadow, *.nmconnection and fstab secret
+// files, and *.secret files hidden whole, whatever their directory (chunk
+// K, step 6). It puts the real rule back after t (the review's K11).
 func secretEnv(t *testing.T) {
 	t.Helper()
-	secretFile = func(p string) bool {
-		return filepath.Base(p) == "shadow" || strings.HasSuffix(p, ".nmconnection") || strings.HasSuffix(p, "/fstab")
+	old := secretFile
+	secretFile = func(p string) secrecy {
+		switch {
+		case strings.HasSuffix(p, ".secret"):
+			return secretWhole
+		case filepath.Base(p) == "shadow" || strings.HasSuffix(p, ".nmconnection") || strings.HasSuffix(p, "/fstab"):
+			return secretValues
+		}
+		return notSecret
 	}
-	t.Cleanup(func() {
-		secretFile = func(p string) bool { return scope.Default().Secret(p) }
-	})
+	t.Cleanup(func() { secretFile = old })
 }
 
 // sc cat and sc diff show a secret file's secret values as markers, and
@@ -118,11 +123,13 @@ func TestCheckEditSaidSecrets(t *testing.T) {
 // sc scope says which files are secret, and by which line.
 func TestScopeSecretLine(t *testing.T) {
 	t.Setenv("SC_HOME", "/var/lib/smartconfig")
-	r := sc(t, "scope", "/etc/shadow", "/etc/passwd")
+	r := sc(t, "scope", "/etc/shadow", "/etc/passwd", "/etc/ldap.secret")
 	blocks := strings.Split(r.stdout, "\n\n")
-	if r.code != 0 || len(blocks) != 2 ||
+	if r.code != 0 || len(blocks) != 3 ||
 		!strings.Contains(blocks[0], "\n  content:  stored; shown with its secret values hidden, scope line ") ||
-		!strings.Contains(blocks[0], "\n            secret /etc/{shadow,gshadow}\n") || strings.Contains(blocks[1], "content:") {
+		!strings.Contains(blocks[0], "\n            secret /etc/*shadow*\n") || strings.Contains(blocks[1], "content:") ||
+		!strings.Contains(blocks[2], "\n  content:  stored; shown hidden, every line of it, scope line ") ||
+		!strings.Contains(blocks[2], "\n            hide /etc/*.secret{,s}\n") {
 		t.Errorf("%+v", r)
 	}
 }
@@ -177,5 +184,44 @@ func TestShowSecrets(t *testing.T) {
 	}
 	if r := sc(t, "check", "-v", fstab); strings.Contains(r.stdout+r.stderr, "hunter22") {
 		t.Errorf("check after: %+v", r)
+	}
+}
+
+// The real rule (the review's K12, S1): the default scope's secret and
+// hide lines, asked of the path as given and with its directories
+// resolved, so a link to a secret directory is secret too.
+func TestSecretFileRule(t *testing.T) {
+	for p, want := range map[string]secrecy{"/etc/shadow": secretValues, "/etc/fstab": secretValues,
+		"/etc/ldap.secret": secretWhole, "/etc/hosts": notSecret} {
+		if got := secretFile(p); got != want {
+			t.Errorf("secretFile(%s) = %d, want %d", p, got, want)
+		}
+	}
+	link := filepath.Join(t.TempDir(), "np")
+	if err := os.Symlink("/etc/netplan", link); err != nil {
+		t.Fatal(err)
+	}
+	if got := secretFile(filepath.Join(link, "x.yaml")); got != secretValues {
+		t.Errorf("through a link: %d", got)
+	}
+}
+
+// A file that is only a secret is hidden whole, in sc cat and in what a
+// validator said about it.
+func TestCatWhole(t *testing.T) {
+	t.Setenv("SC_HOME", filepath.Join(t.TempDir(), "home"))
+	secretEnv(t)
+	mustSC(t, "init")
+	p := filepath.Join(t.TempDir(), "ldap.secret")
+	os.WriteFile(p, []byte("sekrit1\n\n  sekrit2 x\n"), 0o600)
+	r := sc(t, "cat", snapID(t, p))
+	if r.code != 0 || r.stdout != "<hidden>\n\n  <hidden>\n" || !strings.Contains(r.stderr, "shown as <hidden>") {
+		t.Errorf("cat: %+v", r)
+	}
+	fs := []check.Finding{{Raw: "line 3: sekrit2 x"}}
+	said := []string{"bad: sekrit1"}
+	hideSaid(p, []byte("sekrit1\n\n  sekrit2 x\n"), fs, said)
+	if fs[0].Raw != "line 3: <hidden>" || said[0] != "bad: <hidden>" {
+		t.Errorf("said: %q %q", fs[0].Raw, said)
 	}
 }

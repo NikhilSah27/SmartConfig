@@ -233,7 +233,7 @@ func TestNumbered(t *testing.T) {
 
 func TestValuesAndLine(t *testing.T) {
 	data := []byte("[wifi-security]\npsk=hunter22\n[802-1x]\npin=12\npassword=ab\n")
-	vs := Values("/etc/NetworkManager/system-connections/x", data)
+	vs := Values("/etc/NetworkManager/system-connections/x", data, false)
 	if strings.Join(vs, ",") != "hunter22,12,ab" {
 		t.Fatalf("values %q", vs)
 	}
@@ -375,18 +375,18 @@ func TestMarkerTextInValue(t *testing.T) {
 // alone, so a marker inside a file name cannot tell a PIN; a value is
 // also found as a parser prints it, unquoted or unescaped.
 func TestLineForms(t *testing.T) {
-	vs := Values("/etc/netplan/x.yaml", []byte("network:\n  modems:\n    m:\n      pin: 4711\n"))
+	vs := Values("/etc/netplan/x.yaml", []byte("network:\n  modems:\n    m:\n      pin: 4711\n"), false)
 	raw := "/etc/netplan/90-NM-5f3a4711-c0de.yaml:4:7: bad pin 4711"
 	if got := Line(raw, vs, Plain); got != "/etc/netplan/90-NM-5f3a4711-c0de.yaml:4:7: bad pin <hidden>" {
 		t.Errorf("PIN: %q", got)
 	}
-	vs = Values("/etc/netplan/x.yaml", []byte(wifiHead+"        \"Home\":\n          password: \"sekrit \\\"x\\\"\"\n"))
+	vs = Values("/etc/netplan/x.yaml", []byte(wifiHead+"        \"Home\":\n          password: \"sekrit \\\"x\\\"\"\n"), false)
 	for _, said := range []string{`invalid value 'sekrit "x"'`, `psk="sekrit \"x\""`} {
 		shown(t, "YAML "+said, Line(said, vs, Plain))
 	}
-	vs = Values("/etc/x.nmconnection", []byte("[802-1x]\npassword=\\ssekrit\n"))
+	vs = Values("/etc/x.nmconnection", []byte("[802-1x]\npassword=\\ssekrit\n"), false)
 	shown(t, "keyfile", Line("password is ' sekrit'", vs, Plain))
-	vs = Values("/etc/x.yaml", []byte("password: 'it''s sekrit'\n"))
+	vs = Values("/etc/x.yaml", []byte("password: 'it''s sekrit'\n"), false)
 	shown(t, "single", Line("value it's sekrit is bad", vs, Plain))
 }
 
@@ -397,5 +397,48 @@ func TestCommentKey(t *testing.T) {
 	want := "network:\n  wifis:\n# password: <hidden>\n    wlan0:\n      addresses: [10.0.0.5/24]\n      password: <hidden> # psk: <hidden>\n      dhcp4: true\n"
 	if got := hide(t, "/etc/netplan/x.yaml", in); got != want {
 		t.Errorf("got:\n%s", got)
+	}
+}
+
+// K1: the formats of the wider secret list.
+func TestWiderList(t *testing.T) {
+	for p, c := range map[string][2]string{
+		// A copy of shadow by name, and a crypt hash in any secret file.
+		"/etc/shadow.backup": {"root:$6$s$sekrit:19000::::::\nbob:*:19000::::::\nold:sekritDES12:1::::::\n", "root:<hidden>:19000::::::\nbob:*:19000::::::\nold:<hidden>:1::::::\n"},
+		"/etc/old-users":     {"root:!$y$j9T$sekrit:19000:0:99999:7:::\n", "root:!<hidden>:19000:0:99999:7:::\n"},
+		// msmtp, nslcd, ifupdown, ssmtp, sssd.
+		"/etc/msmtprc":            {"account x\nhost smtp.example\npassword sekrit one\nauth on\n", "account x\nhost smtp.example\npassword <hidden>\nauth on\n"},
+		"/etc/nslcd.conf":         {"uri ldap://h/\nbindpw sekrit\n", "uri ldap://h/\nbindpw <hidden>\n"},
+		"/etc/network/interfaces": {"iface wlan0 inet dhcp\n    wpa-ssid Home\n    wpa-psk sekrit\n", "iface wlan0 inet dhcp\n    wpa-ssid Home\n    wpa-psk <hidden>\n"},
+		"/etc/ssmtp/ssmtp.conf":   {"AuthUser=me\nAuthPass=sekrit\n", "AuthUser=me\nAuthPass=<hidden>\n"},
+		"/etc/sssd/sssd.conf":     {"[domain/x]\nldap_default_authtok = sekrit\nldap_uri = ldap://h\n", "[domain/x]\nldap_default_authtok = <hidden>\nldap_uri = ldap://h\n"},
+		// fstab's CIFS options; cloud-init's users, chpasswd and keys.
+		"/etc/fstab": {"//srv/s /mnt cifs username=me,password=sekrit,ro 0 0\nUUID=1 / ext4 defaults 0 1\n", "//srv/s /mnt cifs username=me,password=<hidden>,ro 0 0\nUUID=1 / ext4 defaults 0 1\n"},
+		"/etc/cloud/cloud.cfg": {"users:\n  - name: me\n    passwd: sekrit\nchpasswd:\n  list: |\n    root:sekrit\n  expire: false\nssh_keys:\n  rsa_private: |\n    sekrit\n  rsa_public: ssh-rsa AAA\n",
+			"users:\n  - name: me\n    passwd: <hidden>\nchpasswd:\n  <hidden>\n    <hidden>\n  <hidden>\nssh_keys:\n  rsa_private: |\n    <hidden>\n  rsa_public: ssh-rsa AAA\n"},
+		// OpenVPN's inline keys.
+		"/etc/openvpn/client.conf": {"remote h 1194\n<tls-auth>\nsekrit1\nsekrit2\n</tls-auth>\nverb 3\n", "remote h 1194\n<tls-auth>\n<hidden>\n<hidden>\n</tls-auth>\nverb 3\n"},
+	} {
+		if got := hide(t, p, c[0]); got != c[1] {
+			t.Errorf("%s:\n%s\nwant:\n%s", p, got, c[1])
+		}
+	}
+	for _, k := range []string{"AuthPass", "bindpw", "rootpw", "rsa_private", "ldap_default_authtok", "api_token"} {
+		if !secretKey(k) {
+			t.Errorf("%s is not a secret key", k)
+		}
+	}
+}
+
+// A file that is only a secret: every line but blanks, indentation and
+// line ends.
+func TestWhole(t *testing.T) {
+	in := "sekrit1\n\n  sekrit2 x \r\nlast"
+	got, n := Whole([]byte(in), Numbered())
+	if string(got) != "<hidden 1>\n\n  <hidden 2> \r\n<hidden 3>" || n != 3 {
+		t.Errorf("%q, %d", got, n)
+	}
+	if vs := Values("/x", []byte(in), true); strings.Join(vs, ",") != "sekrit2 x,sekrit1,last" {
+		t.Errorf("values %q", vs)
 	}
 }

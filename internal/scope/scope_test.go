@@ -540,36 +540,62 @@ func TestExplain(t *testing.T) {
 	}
 }
 
-// Secret lines (chunk K, step 6): any match, recorded or not; the default
-// scope names shadow, gshadow, NetworkManager's connections, the
-// installer's network file and netplan, and nothing else it records.
+// Secret and hide lines (chunk K, step 6 and the review's K1): any match,
+// recorded or not. A hide line makes a path secret and hidden whole.
 func TestSecret(t *testing.T) {
-	s, err := Parse("root /r\nexclude /r/out/**\nsecret /r/out/k\nsecret /r/s/*.conf")
+	s, err := Parse("root /r\nexclude /r/out/**\nsecret /r/out/k\nsecret /r/s/*.conf\nhide /r/s/k.conf")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for p, want := range map[string]bool{"/r/out/k": true, "/r/s/a.conf": true, "/r//s/a.conf": true, "/r/s/a.txt": false, "r/s/a.conf": true} {
-		if s.Secret(p) != want {
-			t.Errorf("Secret(%q) = %v", p, !want)
+	for p, want := range map[string][2]bool{"/r/out/k": {true, false}, "/r/s/a.conf": {true, false}, "/r//s/a.conf": {true, false},
+		"/r/s/a.txt": {false, false}, "r/s/a.conf": {true, true}, "/r/s/k.conf": {true, true}} {
+		if s.Secret(p) != want[0] || s.Hidden(p) != want[1] {
+			t.Errorf("%q: Secret %v, Hidden %v", p, s.Secret(p), s.Hidden(p))
 		}
 	}
-	if w := s.Explain("/r/s/a.conf"); !w.Secret || w.SecRule.N != 4 || w.Digest {
+	if w := s.Explain("/r/s/a.conf"); !w.Secret || w.SecRule.N != 4 || w.Digest || w.Hidden {
 		t.Errorf("Explain: %+v", w)
 	}
-	if w := s.Explain("/r/s/a.txt"); w.Secret {
+	if w := s.Explain("/r/s/k.conf"); !w.Secret || !w.Hidden || w.HidRule.N != 5 {
+		t.Errorf("Explain(k.conf): %+v", w)
+	}
+	if w := s.Explain("/r/s/a.txt"); w.Secret || w.Hidden {
 		t.Errorf("Explain(a.txt): %+v", w)
 	}
+}
 
+// The default scope's secret files: recorded with their content, values
+// hidden (secret) or every line hidden (hide); copies of shadow, which
+// are not recorded, are secret all the same for sc snapshot.
+func TestDefaultSecrets(t *testing.T) {
 	d := Default()
-	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/etc/NetworkManager/system-connections/Home.nmconnection",
-		"/etc/cloud/cloud.cfg.d/90-installer-network.cfg", "/etc/netplan/50-cloud-init.yaml", "/etc/netplan/sub/x.yaml"} {
-		if !d.Recorded(p) || !d.Secret(p) || d.FingerprintOnly(p) {
-			t.Errorf("%s: recorded %v, secret %v, fingerprint only %v", p, d.Recorded(p), d.Secret(p), d.FingerprintOnly(p))
+	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/etc/shadow.backup", "/etc/NetworkManager/system-connections/Home.nmconnection",
+		"/etc/cloud/cloud.cfg.d/90-installer-network.cfg", "/etc/cloud/cloud.cfg.d/50-curtin-networking.cfg", "/etc/cloud/cloud.cfg",
+		"/etc/netplan/50-cloud-init.yaml", "/etc/netplan/sub/x.yaml", "/etc/fstab", "/etc/network/interfaces", "/etc/network/interfaces.d/wlan",
+		"/etc/wpa_supplicant.conf", "/etc/wpa_supplicant/wpa_supplicant.conf", "/etc/sssd/sssd.conf", "/etc/nslcd.conf",
+		"/etc/swanctl/conf.d/x.conf", "/etc/openvpn/client/home.conf", "/etc/msmtprc", "/etc/ssmtp/ssmtp.conf",
+		"/etc/mysql/debian.cnf", "/etc/samba/credentials", "/etc/letsencrypt/renewal/x.conf"} {
+		if !d.Recorded(p) || !d.Secret(p) || d.Hidden(p) || d.FingerprintOnly(p) {
+			t.Errorf("%s: recorded %v, secret %v, hidden %v, fingerprint only %v", p, d.Recorded(p), d.Secret(p), d.Hidden(p), d.FingerprintOnly(p))
 		}
 	}
-	for _, p := range []string{"/etc/passwd", "/etc/group", "/etc/shadow-", "/etc/NetworkManager/NetworkManager.conf",
-		"/etc/cloud/cloud.cfg.d/50-curtin-networking.cfg", "/etc/fstab"} {
-		if d.Secret(p) {
+	for _, p := range []string{"/etc/ldap.secret", "/etc/libnss-ldap.secret", "/etc/rsyncd.secrets", "/etc/krb5.keytab",
+		"/etc/davfs2/secrets", "/etc/ipsec.secrets", "/etc/postfix/sasl_passwd", "/etc/exim4/passwd.client",
+		"/etc/mail/authinfo", "/etc/chrony/chrony.keys", "/etc/bind/rndc.key", "/etc/openvpn/client/ta.key",
+		"/etc/openvpn/auth.txt", "/etc/letsencrypt/live/x.org/privkey.pem", "/etc/letsencrypt/archive/x.org/privkey3.pem",
+		"/etc/letsencrypt/accounts/a/directory/b/private_key.json"} {
+		if !d.Recorded(p) || !d.Secret(p) || !d.Hidden(p) || d.FingerprintOnly(p) {
+			t.Errorf("%s: recorded %v, secret %v, hidden %v, fingerprint only %v", p, d.Recorded(p), d.Secret(p), d.Hidden(p), d.FingerprintOnly(p))
+		}
+	}
+	for _, p := range []string{"/etc/shadow-", "/etc/gshadow-", "/etc/nshadow", "/etc/security/opasswd"} {
+		if d.Recorded(p) || !d.Secret(p) {
+			t.Errorf("%s: recorded %v, secret %v", p, d.Recorded(p), d.Secret(p))
+		}
+	}
+	for _, p := range []string{"/etc/passwd", "/etc/group", "/etc/hosts", "/etc/sudoers", "/etc/ssh/sshd_config",
+		"/etc/NetworkManager/NetworkManager.conf", "/etc/default/grub"} {
+		if d.Secret(p) || d.Hidden(p) {
 			t.Errorf("%s is secret", p)
 		}
 	}

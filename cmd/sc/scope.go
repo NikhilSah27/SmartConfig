@@ -125,6 +125,8 @@ func explainPath(out io.Writer, w scope.Why, m machine, g *check.Graph) {
 	switch {
 	case w.Digest:
 		fmt.Fprintf(out, "  content:  a fingerprint only, never stored or shown, %s\n", at(w.DigRule))
+	case w.Hidden:
+		fmt.Fprintf(out, "  content:  stored; shown hidden, every line of it, %s\n", at(w.HidRule))
 	case w.Secret:
 		fmt.Fprintf(out, "  content:  stored; shown with its secret values hidden, %s\n", at(w.SecRule))
 	}

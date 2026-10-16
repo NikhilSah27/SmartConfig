@@ -33,26 +33,55 @@ func addShowSecrets(cmd *cobra.Command) {
 	}
 }
 
-// secretFile reports whether p is a secret file (the scope's secret
-// lines): sc stores its content but shows its secret values hidden. Like
-// the store's FingerprintOnly, it asks of p as given and of p with its
+// secrecy is how a file's content is shown.
+type secrecy int
+
+const (
+	notSecret    secrecy = iota // as stored
+	secretValues                // its secret values hidden (scope: secret)
+	secretWhole                 // every line hidden (scope: hide)
+)
+
+// secretFile returns how p's content is shown: sc stores a secret file's
+// content but shows its secret values, or all of it, hidden. Like the
+// store's FingerprintOnly, it asks of p as given and of p with its
 // directories resolved. The tests point it elsewhere.
-var secretFile = func(p string) bool {
-	if scope.Default().Secret(p) {
-		return true
+var secretFile = func(p string) secrecy {
+	if k := secrecyOf(p); k != notSecret {
+		return k
 	}
 	dir, err := filepath.EvalSymlinks(filepath.Dir(p))
-	return err == nil && scope.Default().Secret(filepath.Join(dir, filepath.Base(p)))
+	if err != nil {
+		return notSecret
+	}
+	return secrecyOf(filepath.Join(dir, filepath.Base(p)))
+}
+
+// secrecyOf is what the default scope says of p as given.
+func secrecyOf(p string) secrecy {
+	switch d := scope.Default(); {
+	case d.Hidden(p):
+		return secretWhole
+	case d.Secret(p):
+		return secretValues
+	}
+	return notSecret
 }
 
 // hideSecrets returns data, p's content, with its secret values replaced
 // by hide's markers when p is a secret file and --show-secrets is not
 // set, and how many it hid.
 func hideSecrets(p string, data []byte, hide redact.Hider) ([]byte, int) {
-	if showSecrets || !secretFile(p) {
+	if showSecrets {
 		return data, 0
 	}
-	return redact.File(p, data, hide)
+	switch secretFile(p) {
+	case secretWhole:
+		return redact.Whole(data, hide)
+	case secretValues:
+		return redact.File(p, data, hide)
+	}
+	return data, 0
 }
 
 // hiddenNote says on stderr that the secret values of p are shown as
@@ -66,10 +95,11 @@ func hiddenNote(p, marker string) {
 // findings' raw lines and the words behind the notes. A validator may
 // quote the line it stopped at. --show-secrets leaves them as said.
 func hideSaid(p string, data []byte, fs []check.Finding, said []string) {
-	if showSecrets || !secretFile(p) {
+	k := secretFile(p)
+	if showSecrets || k == notSecret {
 		return
 	}
-	vals := redact.Values(p, data)
+	vals := redact.Values(p, data, k == secretWhole)
 	for i := range fs {
 		if fs[i].Raw != "" {
 			fs[i].Raw = redact.Line(fs[i].Raw, vals, redact.Plain)

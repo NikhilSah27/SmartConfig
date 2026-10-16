@@ -1,8 +1,8 @@
 # SmartConfig default scope (M2), built into sc.
-# Lines: root DIR | include GLOB | exclude GLOB | digest GLOB | secret GLOB | tier N GLOB
+# Lines: root DIR | include GLOB | exclude GLOB | digest GLOB | secret GLOB | hide GLOB | tier N GLOB
 # include/exclude: the FIRST matching line wins; no match = included.
 # Only paths under a root are recorded. A root itself is never excluded.
-# An excluded directory is not watched. digest, secret: any match.
+# An excluded directory is not watched. digest, secret, hide: any match.
 # tier: first match, else 4.
 # Built in, not written here: root <home>/.ssh for each login account,
 # and exclude $SC_HOME/**.
@@ -114,12 +114,43 @@ digest /etc/cryptsetup-keys.d/**
 
 # H2. Secrets: content is stored, since a rescue may need it, but sc cat,
 #     sc diff and sc check -v show the secret values hidden: shadow's
-#     password field, psk=, password=, secret= and private-key values,
-#     netplan's password: (internal/redact).
-secret /etc/{shadow,gshadow}
+#     password field and crypt hashes, the values of keys that name a
+#     secret (key=value, "key: value", "key value"), private keys and
+#     OpenVPN's inline keys (internal/redact). The chunk K review's list.
+#     A path that is not recorded (an excluded copy) is hidden all the same
+#     when it is snapshot by hand.
+secret /etc/*shadow*
 secret /etc/NetworkManager/system-connections/**
-secret /etc/cloud/cloud.cfg.d/90-installer-network.cfg
 secret /etc/netplan/**
+secret /etc/cloud/**
+secret /etc/fstab
+secret /etc/network/interfaces{,.d/**}
+secret /etc/wpa_supplicant{.conf,/**}
+secret /etc/sssd/**
+secret /etc/nslcd.conf
+secret /etc/swanctl/**
+secret /etc/openvpn/**
+secret /etc/msmtprc
+secret /etc/ssmtp/**
+secret /etc/mysql/debian.cnf
+secret /etc/samba/**
+secret /etc/letsencrypt/**
+
+# H3. Secret files hidden whole: content is stored, but every line is shown
+#     hidden. They are only a secret, in no format redact can read.
+hide /etc/security/opasswd
+hide /etc/*.secret{,s}
+hide /etc/krb5.keytab
+hide /etc/davfs2/secrets
+hide /etc/ipsec.secrets
+hide /etc/postfix/sasl_passwd{,.db}
+hide /etc/exim4/passwd.client
+hide /etc/mail/authinfo{,.db}
+hide /etc/chrony/chrony.keys
+hide /etc/bind/*.key
+hide /etc/openvpn/**/*.{key,txt,pass}
+hide /etc/letsencrypt/{live,archive}/**/privkey*.pem
+hide /etc/letsencrypt/accounts/**/private_key.json
 
 # I. Tiers: only how loudly scd logs a change (1 boot, 2 access, 3 network).
 tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id}

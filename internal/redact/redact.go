@@ -1,9 +1,11 @@
 // Package redact hides the secret values in a secret file's text (the
 // scope's secret lines) and in what a validator says about one: the
-// password field of shadow and gshadow, the value of a key=value or
-// "key: value" pair whose key names a secret, and the body of a PEM or PGP
-// private key. Everything else is shown as it is, so a diff still says
-// what changed around a secret.
+// password field of shadow and gshadow and any crypt hash in that place,
+// the value of a key=value, "key: value" or "key value" pair whose key
+// names a secret, the body of a PEM or PGP private key, and OpenVPN's
+// inline keys. Everything else is shown as it is, so a diff still says
+// what changed around a secret. A file that is only a secret (the scope's
+// hide lines) is hidden whole, by Whole.
 //
 // It errs towards hiding: a value under a key that only looks like a
 // secret's (802-1x's private-key, a file name) is hidden too, and so is a
@@ -60,6 +62,15 @@ var (
 	// yamlExplicit is an explicit key, "? key", whose value follows on a
 	// line of its own, ": value".
 	yamlExplicit = regexp.MustCompile(`^\s*\?\s+["']?([A-Za-z0-9_.-]+)["']?\s*$`)
+	// spaceLine is "key value", the way msmtp, nslcd and ifupdown write
+	// theirs (password x, bindpw x, wpa-psk x).
+	spaceLine = regexp.MustCompile(`^(\s*)([A-Za-z][A-Za-z0-9_.-]*)([ \t]+)(\S.*)$`)
+	// cryptField is a line laid out as shadow's, a name then a crypt hash
+	// ($id$...), with any "!" that locks it: a copy of shadow by any name.
+	cryptField = regexp.MustCompile(`^[^:\s#]+:!*(\$[0-9a-z]+\$[^:\s]*)`)
+	// ovpnBlock is the first line of an OpenVPN inline key or secret,
+	// which runs to its closing tag.
+	ovpnBlock = regexp.MustCompile(`^\s*<(key|secret|tls-auth|tls-crypt|tls-crypt-v2|auth-user-pass|http-proxy-user-pass|pkcs12)>\s*$`)
 	// pemBegin is the first line of a PEM private key, of any kind
 	// (OPENSSH, ENCRYPTED, RSA ...), or of a PGP one ("PRIVATE KEY
 	// BLOCK").
@@ -82,13 +93,14 @@ func secretKey(k string) bool {
 		return true
 	}
 	// A PIN after any separator: gsm-pin, sim_pin, and netplan's
-	// passthrough of NM's settings, 802-1x.pin.
-	for _, s := range []string{"-pin", "_pin", ".pin"} {
+	// passthrough of NM's settings, 802-1x.pin. Then ssmtp's AuthPass,
+	// nslcd's bindpw and cloud-init's rsa_private.
+	for _, s := range []string{"-pin", "_pin", ".pin", "pass", "pw", "_private", "-private"} {
 		if strings.HasSuffix(k, s) {
 			return true
 		}
 	}
-	for _, w := range []string{"password", "passwd", "passphrase", "psk", "secret", "private-key", "private_key", "preshared", "wep-key", "mka-cak"} {
+	for _, w := range []string{"password", "passwd", "passphrase", "psk", "secret", "private-key", "private_key", "preshared", "wep-key", "mka-cak", "authtok", "token"} {
 		if strings.Contains(k, w) {
 			return true
 		}
@@ -97,10 +109,10 @@ func secretKey(k string) bool {
 }
 
 // shadowFile reports whether p is laid out as /etc/shadow is, with the
-// password in the second field.
+// password in the second field: shadow, gshadow and any copy of them
+// named after them (shadow.backup, old-gshadow).
 func shadowFile(p string) bool {
-	b := path.Base(p)
-	return b == "shadow" || b == "gshadow"
+	return strings.Contains(path.Base(p), "shadow")
 }
 
 // A span is the bytes [from, to) of a line that hold a secret value.
@@ -131,7 +143,7 @@ func apply(l string, sp []span, hide Hider) string {
 
 // File returns data with each secret value replaced by what hide returns
 // for it, and the number of values hidden. The shadow rule applies to a
-// file named shadow or gshadow, the others to every file.
+// file named after shadow or gshadow, the others to every file.
 func File(p string, data []byte, hide Hider) ([]byte, int) {
 	n := 0
 	h := func(s string) string {
@@ -144,12 +156,19 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 	st := yamlState{cont: -1}
 	pem := false     // inside a PEM private key
 	section := false // inside a keyfile section whose every value is a secret
+	tag := ""        // inside an OpenVPN inline key: its closing tag
 	for _, l := range lines {
 		body, end := cut(l)
 		switch {
 		case pem:
 			if strings.Contains(body, "-----END ") {
 				pem = false
+			} else {
+				body = hideIndented(body, h)
+			}
+		case tag != "":
+			if strings.TrimSpace(body) == tag {
+				tag = ""
 			} else {
 				body = hideIndented(body, h)
 			}
@@ -174,7 +193,14 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 				section = strings.Contains(strings.ToLower(m[1]), "secret") // [vpn-secrets]
 				break
 			}
+			if m := ovpnBlock.FindStringSubmatch(body); m != nil {
+				tag = "</" + m[1] + ">"
+				break
+			}
 			var sp []span
+			if m := cryptField.FindStringSubmatchIndex(body); m != nil {
+				sp = append(sp, span{m[2], m[3]})
+			}
 			if loc := pemBegin.FindStringIndex(body); loc != nil {
 				if e := strings.Index(body[loc[1]:], "-----END "); e < 0 {
 					pem = true
@@ -190,6 +216,8 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 				if v := strings.TrimRight(body[m[8]:m[9]], " \t"); v != "" {
 					sp = append(sp, span{m[8], m[8] + len(v)})
 				}
+			} else if m := spaceLine.FindStringSubmatchIndex(body); m != nil && secretKey(body[m[4]:m[5]]) {
+				sp = append(sp, span{m[8], m[8] + len(strings.TrimRight(body[m[8]:m[9]], " \t"))})
 			} else {
 				sp = append(sp, pairs(body)...)
 				sp = append(sp, st.yaml(body)...)
@@ -205,10 +233,29 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 	return []byte(b.String()), n
 }
 
-// Values returns the secret values File hides in data, longest first, and
-// the other forms a validator may quote them in: without their quotes, and
-// with YAML's or a keyfile's escapes undone.
-func Values(p string, data []byte) []string {
+// Whole returns data with the text of every line, but its indentation,
+// replaced by what hide returns for it, and the number of lines hidden: a
+// file that is only a secret.
+func Whole(data []byte, hide Hider) ([]byte, int) {
+	n := 0
+	var b strings.Builder
+	b.Grow(len(data))
+	for _, l := range strings.SplitAfter(string(data), "\n") {
+		body, end := cut(l)
+		if strings.TrimSpace(body) != "" {
+			n++
+			body = hideIndented(body, hide)
+		}
+		b.WriteString(body)
+		b.WriteString(end)
+	}
+	return []byte(b.String()), n
+}
+
+// Values returns the secret values File (or, with whole, Whole) hides in
+// data, longest first, and the other forms a validator may quote them in:
+// without their quotes, and with YAML's or a keyfile's escapes undone.
+func Values(p string, data []byte, whole bool) []string {
 	seen := map[string]bool{}
 	var vs []string
 	add := func(s string) {
@@ -217,14 +264,19 @@ func Values(p string, data []byte) []string {
 			vs = append(vs, s)
 		}
 	}
-	File(p, data, func(s string) string {
+	collect := func(s string) string {
 		add(s)
 		for _, u := range unquoted(s) {
 			add(u)
 			add(strings.TrimSpace(u))
 		}
 		return Marker
-	})
+	}
+	if whole {
+		Whole(data, collect)
+	} else {
+		File(p, data, collect)
+	}
 	sort.SliceStable(vs, func(i, j int) bool { return len(vs[i]) > len(vs[j]) })
 	return vs
 }
