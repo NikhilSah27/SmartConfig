@@ -522,8 +522,8 @@ fixes `7d8fec1`..`a5078a6`).
    - It is a new origin string with no schema change, so `sc-m1` and
      `sc-m2` read these rows as file rows, and `make m1-compat` gains a
      case.
-9. The lab's `--deb` mode checks that the upgrade's rows carry origin
-   `apt`.
+9. Done (`9a40d4e`): the lab's `--deb` mode checks that the upgrade's
+   rows carry origin `apt` (D.1 upgrades through apt now).
 
 **Then, each with your OK:**
 - all checks;

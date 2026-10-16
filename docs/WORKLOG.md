@@ -28,9 +28,10 @@ after every step. For the full history, decisions and recovery guide see
   **Chunk K is done and reviewed**
   ([reviews/2026-10-16-m5-followups-chunk-k.md](reviews/2026-10-16-m5-followups-chunk-k.md);
   your picks for K1 and K7, 2026-10-16, both on the recommended answer).
-  **Chunk L, step 8 is on main** (`ea50fad`, the apt hook). **Next:
-  step 9** (the lab's `--deb` checks the upgrade's rows are apt), then
-  the chunk L review. The handoff, if this
+  **Chunk L is built:** step 8 (`ea50fad`, the apt hook) and step 9
+  (`9a40d4e`, the lab's `--deb` checks the upgrade's rows). **Next: the
+  chunk L review**, then the sign-off runs, each with your OK. The
+  handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -3449,3 +3450,22 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     timeout), `lab-test`, `m1-compat`, `make deb` and the root pass clean
     (`~/smartconfig-work/fu-scratch/checks-l8.log`).
   - **Next:** step 9, the lab's `--deb` mode checks the upgrade's rows.
+- **Chunk L, step 9: the lab's `--deb` upgrade through apt** (2026-10-16,
+  `9a40d4e`).
+  - **Why apt:** `DPkg::Pre-Invoke` is apt's; D.1's `dpkg -i` never ran
+    the hook. D.1 now runs `apt-get install` of the later build.
+  - **A row to judge:** with the same files the upgrade changed no file
+    scd watches. The guest adds a comment to that build's
+    `42_smartconfig`, a conffile the old package left unmodified, so dpkg
+    replaces it with no question, inside the run.
+  - **D.1 checks** that file's newest row is origin `apt` with the run,
+    that apt's mark is gone after the run, and that a change made after
+    it is `auto`; six new fault cases, one problem each.
+  - **The fstab sha checks** (`accept-m4.sh`, `facts.sh`, `e2e.py` 1.9
+    and 4.6) read `sc cat --show-secrets`: fstab is a secret file since
+    chunk K. Each runs as root with this tree's `sc`, so the flag is
+    always there.
+  - **Not run:** `make lab-e2e --deb` is a sign-off run (your OK).
+  - **Checks:** `make lab-test` (364 tests) and `bash -n accept-m4.sh`
+    (`~/smartconfig-work/fu-scratch/checks-l9.log`); no Go changed.
+  - **Next:** the chunk L review (steps 8 and 9), one reviewer.
