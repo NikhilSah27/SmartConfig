@@ -274,3 +274,128 @@ func TestUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// The tests below come from the chunk K review (K2-K5, K8, K10). Their
+// made-up values all hold "sekrit", so a leak names its input. A PEM
+// header is put together by begin, so the repo's local secret scan, which
+// refuses a literal one, passes them.
+
+// begin is the first line of a private key of kind ("RSA ", "PGP ", "").
+func begin(kind, tail string) string { return "-----BEGIN " + kind + "PRIVATE KEY" + tail + "-----" }
+
+// shown fails t when out still holds a made-up secret.
+func shown(t *testing.T, name, out string) {
+	t.Helper()
+	if strings.Contains(out, "sekrit") {
+		t.Errorf("%s: a secret shown:\n%s", name, out)
+	}
+}
+
+const wifiHead = "network:\n  wifis:\n    wlan0:\n      access-points:\n"
+
+// K2: forms netplan's generator accepts (each one checked with
+// /usr/libexec/netplan/generate 1.1.2 by the review).
+func TestYAMLForms(t *testing.T) {
+	for name, in := range map[string]string{
+		"double quotes continued at column 0":   wifiHead + "        \"Home\":\n          password: \"sekrit1\nsekrit2\"\n        \"Work\": {}\n",
+		"single quotes continued at column 1":   wifiHead + "        \"Home\":\n          password: 'sekrit1\n sekrit2 it''s'\n",
+		"JSON-style flow, no blank after \":\"": wifiHead + "        \"Home\": {\"password\":\"sekrit1\"}\n",
+		"an explicit key, ? and :":              wifiHead + "        \"Home\":\n          ? password\n          : sekrit1\n            sekrit2\n",
+		"a flow mapping's value on the next":    wifiHead + "        \"Home\": {password:\n sekrit1}\n",
+		"a plain value continued":               wifiHead + "        \"Home\":\n          password: sekrit1\n            sekrit2\n",
+	} {
+		shown(t, name, hide(t, "/etc/netplan/x.yaml", in))
+	}
+	// What follows a closed value is shown again.
+	in := wifiHead + "        \"Home\":\n          password: \"sekrit1\n  sekrit2\"\n        \"Work\":\n          mode: ap\n"
+	if got := hide(t, "/etc/netplan/x.yaml", in); !strings.HasSuffix(got, "password: <hidden>\n  <hidden>\"\n        \"Work\":\n          mode: ap\n") {
+		t.Errorf("after the closing quote:\n%s", got)
+	}
+	// A value straight after ":" needs a quoted key: a:b is a plain scalar.
+	for _, in := range []string{"      url: http://password:x@h\n", "      note: see password:'kept'\n"} {
+		if got := hide(t, "/etc/netplan/x.yaml", in); got != in {
+			t.Errorf("plain a:b: %q", got)
+		}
+	}
+}
+
+// K3, K5: a private key on one line under a secret key; a PGP block.
+func TestPEMOneLineAndPGP(t *testing.T) {
+	one := begin("", "") + `\nsekrit\n-----END PRIVATE KEY-----`
+	got := hide(t, "/etc/netplan/x.yaml", "      key:\n        private: \""+one+"\"\n")
+	if got != "      key:\n        private: <hidden>\n" {
+		t.Errorf("YAML: %q", got)
+	}
+	got = hide(t, "/etc/x.conf", "[802-1x]\nprivate-key-password=sekrit "+begin("RSA ", "")+" sekrit -----END RSA PRIVATE KEY-----\n")
+	if got != "[802-1x]\nprivate-key-password=<hidden>\n" {
+		t.Errorf("keyfile: %q", got)
+	}
+	// A one-line key under no key at all: its body alone.
+	got = hide(t, "/etc/x.conf", "x "+begin("", "")+"sekrit-----END PRIVATE KEY----- y\n")
+	if got != "x "+begin("", "")+"<hidden>-----END PRIVATE KEY----- y\n" {
+		t.Errorf("bare: %q", got)
+	}
+	pgp := begin("PGP ", " BLOCK") + "\n\nsekrit1\n=ab12\n-----END PGP PRIVATE KEY BLOCK-----\nafter\n"
+	if got := hide(t, "/etc/x.conf", pgp); got != begin("PGP ", " BLOCK")+"\n\n<hidden>\n<hidden>\n-----END PGP PRIVATE KEY BLOCK-----\nafter\n" {
+		t.Errorf("PGP: %q", got)
+	}
+}
+
+// K4: NetworkManager secrets, in a keyfile and in netplan's passthrough.
+func TestNMKeys(t *testing.T) {
+	kf := "[macsec]\nmode=0\nmka-cak=sekrit\nmka-ckn=0011\n" +
+		"[vpn-secrets]\nIPSec secret=sekrit one\nXauth password = sekrit two\nform:main:pass word=sekrit\n" +
+		"[wifi-security]\nwep-key0=sek;rit\n"
+	want := "[macsec]\nmode=0\nmka-cak=<hidden>\nmka-ckn=0011\n" +
+		"[vpn-secrets]\nIPSec secret=<hidden>\nXauth password = <hidden>\nform:main:pass word=<hidden>\n" +
+		"[wifi-security]\nwep-key0=<hidden>\n"
+	if got := hide(t, "/etc/x.nmconnection", kf); got != want {
+		t.Errorf("keyfile:\n%s", got)
+	}
+	np := "      networkmanager:\n        passthrough:\n          802-1x.pin: \"sekrit\"\n          macsec.mka-cak: \"sekrit\"\n          connection.id: \"Home\"\n"
+	if got := hide(t, "/etc/netplan/90-NM-x.yaml", np); got != "      networkmanager:\n        passthrough:\n          802-1x.pin: <hidden>\n          macsec.mka-cak: <hidden>\n          connection.id: \"Home\"\n" {
+		t.Errorf("passthrough:\n%s", got)
+	}
+}
+
+// K5: a value that begins with the marker's text is hidden all the same.
+func TestMarkerTextInValue(t *testing.T) {
+	for p, in := range map[string]string{
+		"/etc/shadow":   "bob:<hidden>sekrit:19000::::::\n",
+		"/etc/x.conf":   "password=<hidden>sekrit\nopts a,secret=<hidden>sekrit\n",
+		"/etc/x.yaml":   "password: <hidden>sekrit\n",
+		"/etc/y.conf":   "[vpn-secrets]\nx=<hidden 1>sekrit\n",
+		"/etc/pem.conf": begin("", "") + "\n<hidden>sekrit\n-----END PRIVATE KEY-----\n",
+	} {
+		shown(t, p, hide(t, p, in))
+	}
+}
+
+// K8: a validator's line. A short value counts only where it stands
+// alone, so a marker inside a file name cannot tell a PIN; a value is
+// also found as a parser prints it, unquoted or unescaped.
+func TestLineForms(t *testing.T) {
+	vs := Values("/etc/netplan/x.yaml", []byte("network:\n  modems:\n    m:\n      pin: 4711\n"))
+	raw := "/etc/netplan/90-NM-5f3a4711-c0de.yaml:4:7: bad pin 4711"
+	if got := Line(raw, vs, Plain); got != "/etc/netplan/90-NM-5f3a4711-c0de.yaml:4:7: bad pin <hidden>" {
+		t.Errorf("PIN: %q", got)
+	}
+	vs = Values("/etc/netplan/x.yaml", []byte(wifiHead+"        \"Home\":\n          password: \"sekrit \\\"x\\\"\"\n"))
+	for _, said := range []string{`invalid value 'sekrit "x"'`, `psk="sekrit \"x\""`} {
+		shown(t, "YAML "+said, Line(said, vs, Plain))
+	}
+	vs = Values("/etc/x.nmconnection", []byte("[802-1x]\npassword=\\ssekrit\n"))
+	shown(t, "keyfile", Line("password is ' sekrit'", vs, Plain))
+	vs = Values("/etc/x.yaml", []byte("password: 'it''s sekrit'\n"))
+	shown(t, "single", Line("value it's sekrit is bad", vs, Plain))
+}
+
+// K10: a key named in a comment hides its own value but leaves nothing
+// open, so the lines after it are shown.
+func TestCommentKey(t *testing.T) {
+	in := "network:\n  wifis:\n# password: sekrit\n    wlan0:\n      addresses: [10.0.0.5/24]\n      password: x # psk: y\n      dhcp4: true\n"
+	want := "network:\n  wifis:\n# password: <hidden>\n    wlan0:\n      addresses: [10.0.0.5/24]\n      password: <hidden> # psk: <hidden>\n      dhcp4: true\n"
+	if got := hide(t, "/etc/netplan/x.yaml", in); got != want {
+		t.Errorf("got:\n%s", got)
+	}
+}

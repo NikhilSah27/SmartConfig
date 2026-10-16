@@ -1,12 +1,13 @@
 // Package redact hides the secret values in a secret file's text (the
 // scope's secret lines) and in what a validator says about one: the
 // password field of shadow and gshadow, the value of a key=value or
-// "key: value" pair whose key names a secret, and the body of a PEM
+// "key: value" pair whose key names a secret, and the body of a PEM or PGP
 // private key. Everything else is shown as it is, so a diff still says
 // what changed around a secret.
 //
 // It errs towards hiding: a value under a key that only looks like a
-// secret's (802-1x's private-key, a file name) is hidden too.
+// secret's (802-1x's private-key, a file name) is hidden too, and so is a
+// mapping under a secret key.
 package redact
 
 import (
@@ -43,17 +44,26 @@ var (
 	// iniLine is a whole keyfile line, key=value (NetworkManager's
 	// system-connections; GKeyFile trims the blanks around "=").
 	iniLine = regexp.MustCompile(`^(\s*)([A-Za-z0-9_.@-]+(?:\[[^\]=]*\])?)(\s*=\s*)(.*)$`)
+	// iniAny is a keyfile line in a section whose every value is a secret.
+	// GKeyFile allows any key but "=" and brackets, blanks included
+	// (vpnc's "IPSec secret").
+	iniAny = regexp.MustCompile(`^(\s*)([^=\s\[\]][^=\[\]]*?(?:\[[^\]=]*\])?)(\s*=\s*)(.*)$`)
 	// iniSection is a keyfile's [section] line.
 	iniSection = regexp.MustCompile(`^\s*\[([^\]]*)\]\s*$`)
 	// pair is key=value inside a line: a mount option, a validator's
 	// words. The value ends at a blank, a comma, a semicolon or a quote.
 	pair = regexp.MustCompile(`(^|[\s,;(:'"])([A-Za-z0-9_.-]+)=([^\s,;)'"]*)`)
-	// yamlKey is "key:" followed by a blank or the end of the line, after
-	// the start, a blank, "{", "," or a list's "- ".
-	yamlKey = regexp.MustCompile(`(^|[\s{,])(["']?)([A-Za-z0-9_.-]+)(["']?)\s*:(\s|$)`)
-	// pemBegin is the first line of a PEM private key ("-----BEGIN
-	// OPENSSH PRIVATE KEY-----", "-----BEGIN ENCRYPTED PRIVATE KEY-----").
-	pemBegin = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)
+	// yamlKey is "key:" after the start, a blank, "{", "," or a list's
+	// "- ", followed by a blank or the end of the line, or, after a quoted
+	// key, straight by a quoted value ({"password":"x"}, JSON's way).
+	yamlKey = regexp.MustCompile(`(^|[\s{,])(["']?)([A-Za-z0-9_.-]+)(["']?)\s*:(\s|$|["'])`)
+	// yamlExplicit is an explicit key, "? key", whose value follows on a
+	// line of its own, ": value".
+	yamlExplicit = regexp.MustCompile(`^\s*\?\s+["']?([A-Za-z0-9_.-]+)["']?\s*$`)
+	// pemBegin is the first line of a PEM private key, of any kind
+	// (OPENSSH, ENCRYPTED, RSA ...), or of a PGP one ("PRIVATE KEY
+	// BLOCK").
+	pemBegin = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----`)
 )
 
 // secretKey reports whether a key's value is a secret: a password, a
@@ -71,10 +81,14 @@ func secretKey(k string) bool {
 	case "pin", "shared", "private": // NM's gsm pin; netplan's WireGuard keys
 		return true
 	}
-	if strings.HasSuffix(k, "-pin") || strings.HasSuffix(k, "_pin") {
-		return true
+	// A PIN after any separator: gsm-pin, sim_pin, and netplan's
+	// passthrough of NM's settings, 802-1x.pin.
+	for _, s := range []string{"-pin", "_pin", ".pin"} {
+		if strings.HasSuffix(k, s) {
+			return true
+		}
 	}
-	for _, w := range []string{"password", "passwd", "passphrase", "psk", "secret", "private-key", "private_key", "preshared", "wep-key"} {
+	for _, w := range []string{"password", "passwd", "passphrase", "psk", "secret", "private-key", "private_key", "preshared", "wep-key", "mka-cak"} {
 		if strings.Contains(k, w) {
 			return true
 		}
@@ -89,6 +103,32 @@ func shadowFile(p string) bool {
 	return b == "shadow" || b == "gshadow"
 }
 
+// A span is the bytes [from, to) of a line that hold a secret value.
+type span struct{ from, to int }
+
+// apply replaces each span of l with what hide returns for its text.
+// Spans that overlap or touch are one value: each rule finds its spans in
+// the line as it is, so no rule reads another's marker.
+func apply(l string, sp []span, hide Hider) string {
+	if len(sp) == 0 {
+		return l
+	}
+	sort.Slice(sp, func(i, j int) bool { return sp[i].from < sp[j].from })
+	var b strings.Builder
+	at := 0
+	for i := 0; i < len(sp); {
+		s := sp[i]
+		for i++; i < len(sp) && sp[i].from <= s.to; i++ {
+			s.to = max(s.to, sp[i].to)
+		}
+		b.WriteString(l[at:s.from])
+		b.WriteString(hide(l[s.from:s.to]))
+		at = s.to
+	}
+	b.WriteString(l[at:])
+	return b.String()
+}
+
 // File returns data with each secret value replaced by what hide returns
 // for it, and the number of values hidden. The shadow rule applies to a
 // file named shadow or gshadow, the others to every file.
@@ -101,8 +141,8 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 	lines := strings.SplitAfter(string(data), "\n")
 	var b strings.Builder
 	b.Grow(len(data))
+	st := yamlState{cont: -1}
 	pem := false     // inside a PEM private key
-	cont := -1       // a YAML secret's key column: lines indented past it are its value
 	section := false // inside a keyfile section whose every value is a secret
 	for _, l := range lines {
 		body, end := cut(l)
@@ -110,34 +150,54 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 		case pem:
 			if strings.Contains(body, "-----END ") {
 				pem = false
-			} else if strings.TrimSpace(body) != "" {
+			} else {
 				body = hideIndented(body, h)
 			}
-		case cont >= 0 && strings.TrimSpace(body) == "":
+		case st.quote != 0:
+			body = apply(body, st.closeQuote(body), h)
+		case st.flowNext && strings.TrimSpace(body) != "":
+			st.flowNext = false
+			body = apply(body, st.value(body, 0, true, true), h)
+		case st.explicit && strings.HasPrefix(strings.TrimSpace(body), ":"):
+			st.explicit = false
+			body = apply(body, st.value(body, strings.IndexByte(body, ':')+1, false, true), h)
+		case st.cont >= 0 && strings.TrimSpace(body) == "":
 			// A blank line inside a block scalar holds nothing.
-		case cont >= 0 && indent(body) > cont:
+		case st.cont >= 0 && indent(body) > st.cont:
 			body = hideIndented(body, h)
 		case shadowFile(p):
-			cont = -1
+			st = yamlState{cont: -1}
 			body = shadowLine(body, h)
 		default:
-			cont = -1
+			st = yamlState{cont: -1}
 			if m := iniSection.FindStringSubmatch(body); m != nil {
 				section = strings.Contains(strings.ToLower(m[1]), "secret") // [vpn-secrets]
 				break
 			}
+			var sp []span
 			if loc := pemBegin.FindStringIndex(body); loc != nil {
-				pem = !strings.Contains(body[loc[1]:], "-----END ")
-				break
-			}
-			if m := iniLine.FindStringSubmatchIndex(body); m != nil && (section || secretKey(body[m[4]:m[5]])) {
-				if v := strings.TrimSpace(body[m[8]:m[9]]); v != "" && !hidden(v) {
-					body = body[:m[8]] + h(v)
+				if e := strings.Index(body[loc[1]:], "-----END "); e < 0 {
+					pem = true
+				} else if strings.TrimSpace(body[loc[1]:loc[1]+e]) != "" {
+					sp = append(sp, span{loc[1], loc[1] + e}) // a key on one line
 				}
-				break
 			}
-			body = pairs(body, h)
-			body, cont = yaml(body, h)
+			re := iniLine
+			if section {
+				re = iniAny
+			}
+			if m := re.FindStringSubmatchIndex(body); m != nil && (section || secretKey(body[m[4]:m[5]])) {
+				if v := strings.TrimRight(body[m[8]:m[9]], " \t"); v != "" {
+					sp = append(sp, span{m[8], m[8] + len(v)})
+				}
+			} else {
+				sp = append(sp, pairs(body)...)
+				sp = append(sp, st.yaml(body)...)
+				if m := yamlExplicit.FindStringSubmatch(body); m != nil && secretKey(m[1]) {
+					st.explicit, st.cont = true, indent(body)
+				}
+			}
+			body = apply(body, sp, h)
 		}
 		b.WriteString(body)
 		b.WriteString(end)
@@ -145,14 +205,23 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 	return []byte(b.String()), n
 }
 
-// Values returns the secret values File hides in data, longest first.
+// Values returns the secret values File hides in data, longest first, and
+// the other forms a validator may quote them in: without their quotes, and
+// with YAML's or a keyfile's escapes undone.
 func Values(p string, data []byte) []string {
 	seen := map[string]bool{}
 	var vs []string
-	File(p, data, func(s string) string {
-		if !seen[s] {
+	add := func(s string) {
+		if s != "" && !seen[s] {
 			seen[s] = true
 			vs = append(vs, s)
+		}
+	}
+	File(p, data, func(s string) string {
+		add(s)
+		for _, u := range unquoted(s) {
+			add(u)
+			add(strings.TrimSpace(u))
 		}
 		return Marker
 	})
@@ -160,41 +229,63 @@ func Values(p string, data []byte) []string {
 	return vs
 }
 
-// Line hides, in s, a line a validator printed about a secret file: each
-// of vals (from Values, longest first), then any key=value or "key: value"
-// whose key names a secret. A value shorter than 4 bytes is hidden only
-// where it stands alone, so "x" does not take every x out of the line.
-func Line(s string, vals []string, hide Hider) string {
-	for _, v := range vals {
-		s = replaceValue(s, v, hide(v))
+// unquoted returns the forms of s a parser makes of it: the text inside
+// its quotes, with a doubled single quote or the backslash escapes undone,
+// and s with a keyfile's escapes undone.
+func unquoted(s string) []string {
+	var us []string
+	if t := strings.TrimSpace(s); len(t) >= 2 && (t[0] == '"' || t[0] == '\'') && t[len(t)-1] == t[0] {
+		in := t[1 : len(t)-1]
+		us = append(us, in)
+		if t[0] == '\'' {
+			us = append(us, strings.ReplaceAll(in, "''", "'"))
+		} else {
+			us = append(us, unescape.Replace(in))
+		}
 	}
-	s = pairs(s, hide)
-	s, _ = yaml(s, hide)
-	return s
+	if strings.Contains(s, `\`) {
+		us = append(us, unescape.Replace(s))
+	}
+	return us
 }
 
-// replaceValue replaces each occurrence of v in s with mark; a short v
-// only where no letter or digit touches it.
-func replaceValue(s, v, mark string) string {
-	if v == "" {
-		return s
+// unescape undoes the backslash escapes YAML's double quotes and GKeyFile
+// share: \s (GKeyFile's blank), \t, \n, \r, \" and \\.
+var unescape = strings.NewReplacer(`\\`, `\`, `\s`, " ", `\t`, "\t", `\n`, "\n", `\r`, "\r", `\"`, `"`)
+
+// Line hides, in s, a line a validator printed about a secret file: each
+// of vals (from Values; see valueSpans), then any key=value or
+// "key: value" whose key names a secret.
+func Line(s string, vals []string, hide Hider) string {
+	var sp []span
+	for _, v := range vals {
+		sp = append(sp, valueSpans(s, v)...)
 	}
-	var b strings.Builder
-	for {
-		i := strings.Index(s, v)
+	sp = append(sp, pairs(s)...)
+	st := yamlState{cont: -1}
+	sp = append(sp, st.yaml(s)...)
+	return apply(s, sp, hide)
+}
+
+// valueSpans returns where v stands in s. A value shorter than 8 bytes
+// counts only where it stands alone, with no letter or digit right before
+// or after it: inside a longer word (a PIN inside a file name the line
+// also prints in full) where a marker landed would tell it.
+func valueSpans(s, v string) []span {
+	var sp []span
+	for from := 0; v != "" && from < len(s); {
+		i := strings.Index(s[from:], v)
 		if i < 0 {
-			b.WriteString(s)
-			return b.String()
+			break
 		}
+		i += from
 		j := i + len(v)
-		if len(v) >= 4 || (!word(s, i-1) && !word(s, j)) {
-			b.WriteString(s[:i])
-			b.WriteString(mark)
-		} else {
-			b.WriteString(s[:j])
+		if len(v) >= 8 || !word(s, i-1) && !word(s, j) {
+			sp = append(sp, span{i, j})
 		}
-		s = s[j:]
+		from = i + 1
 	}
+	return sp
 }
 
 // word reports whether s[i] is a letter or a digit; false outside s.
@@ -205,9 +296,6 @@ func word(s string, i int) bool {
 	c := s[i]
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
-
-// hidden reports whether v is already a marker.
-func hidden(v string) bool { return strings.HasPrefix(v, "<hidden") }
 
 // cut splits a line into its body and its end ("\n", "\r\n" or "").
 func cut(l string) (string, string) {
@@ -227,10 +315,10 @@ func indent(l string) int {
 func hideIndented(l string, hide Hider) string {
 	i := indent(l)
 	v := strings.TrimRight(l[i:], " \t")
-	if v == "" || hidden(v) {
+	if v == "" {
 		return l
 	}
-	return l[:i] + hide(v)
+	return l[:i] + hide(v) + l[i+len(v):]
 }
 
 // shadowLine hides the password field of a shadow or gshadow line. An
@@ -248,7 +336,7 @@ func shadowLine(l string, hide Hider) string {
 	}
 	pw, tail, more := strings.Cut(rest, ":")
 	lock := pw[:len(pw)-len(strings.TrimLeft(pw, "!"))]
-	if v := pw[len(lock):]; v != "" && strings.Trim(v, "!*") != "" && !hidden(v) {
+	if v := pw[len(lock):]; v != "" && strings.Trim(v, "!*") != "" {
 		pw = lock + hide(v)
 	}
 	l = name + ":" + pw
@@ -258,24 +346,36 @@ func shadowLine(l string, hide Hider) string {
 	return l
 }
 
-// pairs hides the value of each key=value in l whose key names a secret.
-func pairs(l string, hide Hider) string {
-	ms := pair.FindAllStringSubmatchIndex(l, -1)
-	for i := len(ms) - 1; i >= 0; i-- {
-		m := ms[i]
-		if v := l[m[6]:m[7]]; v != "" && !hidden(v) && secretKey(l[m[4]:m[5]]) {
-			l = l[:m[6]] + hide(v) + l[m[7]:]
+// pairs returns the spans of the values of each key=value in l whose key
+// names a secret.
+func pairs(l string) []span {
+	var sp []span
+	for _, m := range pair.FindAllStringSubmatchIndex(l, -1) {
+		if m[6] < m[7] && secretKey(l[m[4]:m[5]]) {
+			sp = append(sp, span{m[6], m[7]})
 		}
 	}
-	return l
+	return sp
 }
 
-// yaml hides the value of each "key: value" in l whose key names a
-// secret. It returns the column of the last such key, or -1: the lines
-// indented past it (a block scalar, a folded value, a nested mapping)
-// are its value too.
-func yaml(l string, hide Hider) (string, int) {
-	cont := -1
+// yamlState is what a secret YAML value left open at the end of a line
+// asks of the lines after it.
+type yamlState struct {
+	cont     int  // the secret key's column: lines indented past it are its value; -1 for none
+	quote    byte // a quoted secret value not closed yet: its quote
+	flowNext bool // a secret key in a flow collection, its value still to come
+	explicit bool // "? key" named a secret: the ": value" line after it is its value
+}
+
+// yaml returns the spans of the values of each "key: value" in l whose
+// key names a secret, and notes in st what such a value leaves open for
+// the lines after it: lines indented past the key (a block scalar, a
+// folded value, a nested mapping), a quote not closed yet, a flow
+// mapping's value still to come. A key in a comment has its value hidden
+// but leaves nothing open.
+func (st *yamlState) yaml(l string) []span {
+	var sp []span
+	com := commentAt(l)
 	for from := 0; from < len(l); {
 		m := yamlKey.FindStringSubmatchIndex(l[from:])
 		if m == nil {
@@ -287,48 +387,83 @@ func yaml(l string, hide Hider) (string, int) {
 			}
 		}
 		from = m[1]
+		start := m[1]
+		if m[10] < m[11] && (l[m[10]] == '"' || l[m[10]] == '\'') {
+			if m[8] == m[9] {
+				continue // a value straight after ":" needs a quoted key
+			}
+			start = m[10]
+		}
 		if !secretKey(l[m[6]:m[7]]) {
 			continue
 		}
-		cont = m[4]
-		v, end := yamlValue(l, m[1], strings.ContainsAny(l[:m[4]], "{["))
-		if v != "" && !hidden(v) && v != "|" && v != ">" && !strings.HasPrefix(v, "|") && !strings.HasPrefix(v, ">") {
-			mark := hide(v)
-			l = l[:end-len(v)] + mark + l[end:]
-			from = end - len(v) + len(mark)
+		open := m[4] < com
+		if open {
+			st.cont = m[4]
 		}
+		flow := strings.ContainsAny(l[:m[4]], "{[")
+		v := st.value(l, start, flow, open)
+		if v == nil && flow && open {
+			st.flowNext = true
+		}
+		for _, s := range v {
+			from = max(from, s.to)
+		}
+		sp = append(sp, v...)
 	}
-	return l, cont
+	return sp
 }
 
-// yamlValue returns the scalar that starts at or after l[i] and the index
-// just past it: a quoted string to its closing quote, else plain text to
-// a comment (" #"), or, in a flow collection, to the next "," "}" or "]".
-func yamlValue(l string, i int, flow bool) (string, int) {
+// value returns the span of the scalar that starts at or after l[i] (see
+// yamlValue): none for an empty value or a block scalar's "|" or ">".
+// With open, a quote the line leaves unclosed is noted in st.
+func (st *yamlState) value(l string, i int, flow, open bool) []span {
+	from, to, unclosed := yamlValue(l, i, flow)
+	if from == to || l[from] == '|' || l[from] == '>' {
+		return nil
+	}
+	if unclosed && open {
+		st.quote = l[from]
+	}
+	return []span{{from, to}}
+}
+
+// closeQuote returns the span of l still inside the quoted value an
+// earlier line left open: up to its closing quote, or all of l.
+func (st *yamlState) closeQuote(l string) []span {
+	i := indent(l)
+	j := closing(l, i, st.quote)
+	if j < 0 {
+		j = len(strings.TrimRight(l, " \t"))
+	} else {
+		st.quote = 0
+	}
+	if j <= i {
+		return nil
+	}
+	return []span{{i, j}}
+}
+
+// yamlValue returns where the scalar that starts at or after l[i] begins
+// and ends, and whether it is a quoted string the line leaves unclosed: a
+// quoted string runs to its closing quote, else plain text to a comment
+// (" #"), or, in a flow collection, to the next "," "}" or "]".
+func yamlValue(l string, i int, flow bool) (int, int, bool) {
 	for i < len(l) && (l[i] == ' ' || l[i] == '\t') {
 		i++
 	}
 	if i == len(l) {
-		return "", i
+		return i, i, false
 	}
 	if q := l[i]; q == '"' || q == '\'' {
-		j := i + 1
-		for j < len(l) {
-			switch {
-			case q == '"' && l[j] == '\\':
-				j++
-			case l[j] == q && q == '\'' && j+1 < len(l) && l[j+1] == '\'':
-				j++ // '' is a quote inside a single-quoted string
-			case l[j] == q:
-				return l[i : j+1], j + 1
-			}
-			j++
+		if j := closing(l, i+1, q); j >= 0 {
+			return i, j + 1, false
 		}
-		return l[i:], len(l) // no closing quote: the rest of the line
+		return i, len(l), true
 	}
 	j := i
 	for j < len(l) {
-		if l[j] == '#' && (l[j-1] == ' ' || l[j-1] == '\t') {
+		if l[j] == '#' && (j == i || l[j-1] == ' ' || l[j-1] == '\t') {
 			break
 		}
 		if flow && (l[j] == ',' || l[j] == '}' || l[j] == ']') {
@@ -336,6 +471,44 @@ func yamlValue(l string, i int, flow bool) (string, int) {
 		}
 		j++
 	}
-	v := strings.TrimRight(l[i:j], " \t")
-	return v, i + len(v)
+	return i, i + len(strings.TrimRight(l[i:j], " \t")), false
+}
+
+// closing returns the index of the quote q that closes a string whose
+// text starts at l[i], or -1: a backslash escapes in double quotes, and
+// a doubled quote is one quote in single quotes.
+func closing(l string, i int, q byte) int {
+	for j := i; j < len(l); j++ {
+		switch {
+		case q == '"' && l[j] == '\\':
+			j++
+		case q == '\'' && l[j] == q && j+1 < len(l) && l[j+1] == q:
+			j++
+		case l[j] == q:
+			return j
+		}
+	}
+	return -1
+}
+
+// commentAt returns where the comment of a YAML line starts: a "#" at its
+// start or after a blank, outside quotes; len(l) if it has none.
+func commentAt(l string) int {
+	var q byte
+	for j := 0; j < len(l); j++ {
+		c := l[j]
+		switch {
+		case q == '"' && c == '\\':
+			j++
+		case q != 0:
+			if c == q {
+				q = 0
+			}
+		case c == '"' || c == '\'':
+			q = c
+		case c == '#' && (j == 0 || l[j-1] == ' ' || l[j-1] == '\t'):
+			return j
+		}
+	}
+	return len(l)
 }

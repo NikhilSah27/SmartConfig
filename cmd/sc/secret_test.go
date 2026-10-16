@@ -64,12 +64,12 @@ func TestCatDiffSecrets(t *testing.T) {
 		t.Errorf("same: %+v", r)
 	}
 
-	// A change only in blanks the marker drops is said, not called equal.
+	// A blank after a hidden value is kept, so a change in it shows.
 	nm := filepath.Join(dir, "home.nmconnection")
 	os.WriteFile(nm, []byte("[wifi-security]\npsk=hunter22\n"), 0o600)
 	idNM := snapID(t, nm)
 	os.WriteFile(nm, []byte("[wifi-security]\npsk=hunter22 \n"), 0o600)
-	if r := sc(t, "diff", idNM); r.stdout != "no differences shown: the two differ only where values are hidden\n" {
+	if r := sc(t, "diff", idNM); !strings.Contains(r.stdout, "\n-psk=<hidden 1>\n+psk=<hidden 1> \n") {
 		t.Errorf("blanks: %+v", r)
 	}
 
