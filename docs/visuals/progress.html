@@ -249,7 +249,7 @@ footer { font-size: 13px; color: var(--muted); }
         <div class="cmd"><code>sc init</code><span>Create the private store (<code>$SC_HOME</code>, default /var/lib/smartconfig)</span></div>
         <div class="cmd"><code>sc snapshot &lt;path&gt;</code><span>Save a file's content, mode and owner, with an optional reason (<code>-m</code>); an unchanged file is not saved twice</span></div>
         <div class="cmd"><code>sc log [path]</code><span>List the saved versions, newest first (50 by default; <code>-n 0</code> for all)</span></div>
-        <div class="cmd"><code>sc cat &lt;id&gt;</code><span>Print a saved version exactly</span></div>
+        <div class="cmd"><code>sc cat &lt;id&gt;</code><span>Print a saved version; in a secret file, its secret values as <code>&lt;hidden&gt;</code></span></div>
         <div class="cmd"><code>sc diff &lt;id&gt; [id2]</code><span>Show what changed against the file on disk, or between two versions</span></div>
         <div class="cmd"><code>sc restore &lt;id&gt;</code><span>Put a version back with its mode (including setuid, setgid and sticky) and owner; the current state is saved first</span></div>
       </div>

@@ -68,15 +68,17 @@ var (
 	// GKeyFile allows any key but "=" and brackets, blanks included
 	// (vpnc's "IPSec secret").
 	iniAny = regexp.MustCompile(`^(\s*)([^=\s\[\]][^=\[\]]*?(?:\[[^\]=]*\])?)(\s*=\s*)(.*)$`)
-	// iniSection is a keyfile's [section] line.
-	iniSection = regexp.MustCompile(`^\s*\[([^\]]*)\]\s*$`)
+	// iniSection is a keyfile's [section] line. A name with "{", "," or
+	// ": " in it is a YAML flow sequence on a line of its own, which the
+	// YAML rule reads instead.
+	iniSection = regexp.MustCompile(`^\s*\[([^\]{,]*)\]\s*$`)
 	// pair is key=value inside a line: a mount option, a validator's
 	// words. The value ends at a blank, a comma, a semicolon or a quote.
 	pair = regexp.MustCompile(`(^|[\s,;(:'"])([A-Za-z0-9_.-]+)=([^\s,;)'"]*)`)
-	// yamlKey is "key:" after the start, a blank, "{", "," or a list's
-	// "- ", followed by a blank or the end of the line, or, after a quoted
+	// yamlKey is "key:" after the start, a blank, "{", "[", "," or a
+	// list's "- ", followed by a blank or the end of the line, or, after a quoted
 	// key, straight by a quoted value ({"password":"x"}, JSON's way).
-	yamlKey = regexp.MustCompile(`(^|[\s{,])(["']?)([A-Za-z0-9_.-]+)(["']?)\s*:(\s|$|["'])`)
+	yamlKey = regexp.MustCompile(`(^|[\s{\[,])(["']?)([A-Za-z0-9_.-]+)(["']?)\s*:(\s|$|["'])`)
 	// yamlExplicit is an explicit key, "? key", whose value follows on a
 	// line of its own, ": value".
 	yamlExplicit = regexp.MustCompile(`^\s*\?\s+["']?([A-Za-z0-9_.-]+)["']?\s*$`)
@@ -207,7 +209,7 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 			body = shadowLine(body, h)
 		default:
 			st = yamlState{cont: -1}
-			if m := iniSection.FindStringSubmatch(body); m != nil {
+			if m := iniSection.FindStringSubmatch(body); m != nil && !strings.Contains(m[1], ": ") {
 				section = strings.Contains(strings.ToLower(m[1]), "secret") // [vpn-secrets]
 				break
 			}
@@ -222,6 +224,9 @@ func File(p string, data []byte, hide Hider) ([]byte, int) {
 			if loc := pemBegin.FindStringIndex(body); loc != nil {
 				if e := strings.Index(body[loc[1]:], "-----END "); e < 0 {
 					pem = true
+					if v := strings.TrimRight(body[loc[1]:], " \t"); strings.TrimSpace(v) != "" {
+						sp = append(sp, span{loc[1], loc[1] + len(v)}) // the body begins on BEGIN's line
+					}
 				} else if strings.TrimSpace(body[loc[1]:loc[1]+e]) != "" {
 					sp = append(sp, span{loc[1], loc[1] + e}) // a key on one line
 				}

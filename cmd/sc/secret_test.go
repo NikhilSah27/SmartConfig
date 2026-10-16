@@ -221,6 +221,39 @@ func TestScopeSecretLine(t *testing.T) {
 	}
 }
 
+// sc scope on a secret, hide or digest path that scd does not record says
+// what holds if sc snapshot saves it, never "stored" as if scd stored it
+// (the chunk K review, K9). A recorded one says it as before.
+func TestScopeContentNotRecorded(t *testing.T) {
+	t.Setenv("SC_HOME", "/var/lib/smartconfig")
+	const ifSaved = "\n  content:  if saved by sc snapshot:\n            "
+	for _, c := range []struct{ path, recorded, content, rule string }{
+		{"/etc/shadow", "yes", "stored; shown with its secret values hidden", "secret /etc/*shadow*"},
+		{"/etc/shadow-", "no", "stored; shown with its secret values hidden", "secret /etc/*shadow*"},
+		{"/etc/ldap.secret", "yes", "stored; shown hidden, every line of it", "hide /etc/*.secret{,s}"},
+		{"/etc/security/opasswd", "no", "stored; shown hidden, every line of it", "hide /etc/security/opasswd"},
+		{"/etc/ssh/ssh_host_rsa_key", "yes", "a fingerprint only, never stored or shown", "digest /etc/ssh/ssh_host_"},
+		{"/etc/wireguard/wg0.conf.bak", "no", "a fingerprint only, never stored or shown", "digest /etc/wireguard/**"},
+	} {
+		r := sc(t, "scope", c.path)
+		want := "\n  content:  "
+		if c.recorded == "no" {
+			want = ifSaved
+		}
+		want += c.content + ", scope line "
+		if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, "\n  recorded: "+c.recorded+",") ||
+			!strings.Contains(r.stdout, want) || !strings.Contains(r.stdout, ":\n            "+c.rule) ||
+			strings.Count(r.stdout, "content:") != 1 || (c.recorded == "no") != strings.Contains(r.stdout, "if saved") {
+			t.Errorf("%s: want %q:\n%+v", c.path, want, r)
+		}
+		for _, l := range strings.Split(r.stdout, "\n") {
+			if len(l) > 80 && !strings.HasPrefix(l, "            ") {
+				t.Errorf("%s: a line over 80 columns: %q", c.path, l)
+			}
+		}
+	}
+}
+
 // euidEnv makes sc see uid as its effective uid (chunk K, step 7).
 func euidEnv(t *testing.T, uid int) {
 	t.Helper()

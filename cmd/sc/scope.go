@@ -122,13 +122,21 @@ func explainPath(out io.Writer, w scope.Why, m machine, g *check.Graph) {
 		}
 		fmt.Fprintln(out, tier)
 	}
+	// scd does not store a path it does not record, but sc snapshot
+	// records any path, and these rules hold for what it saves
+	// (store.Snapshot, secretFile): say that, not "stored" (the chunk K
+	// review, K9).
+	content := "  content:  "
+	if !w.Recorded {
+		content += "if saved by sc snapshot:\n            "
+	}
 	switch {
 	case w.Digest:
-		fmt.Fprintf(out, "  content:  a fingerprint only, never stored or shown, %s\n", at(w.DigRule))
+		fmt.Fprintf(out, "%sa fingerprint only, never stored or shown, %s\n", content, at(w.DigRule))
 	case w.Hidden:
-		fmt.Fprintf(out, "  content:  stored; shown hidden, every line of it, %s\n", at(w.HidRule))
+		fmt.Fprintf(out, "%sstored; shown hidden, every line of it, %s\n", content, at(w.HidRule))
 	case w.Secret:
-		fmt.Fprintf(out, "  content:  stored; shown with its secret values hidden, %s\n", at(w.SecRule))
+		fmt.Fprintf(out, "%sstored; shown with its secret values hidden, %s\n", content, at(w.SecRule))
 	}
 	if c := g.Checker(w.Path); c != "" {
 		fmt.Fprintf(out, "  checker:  %s (sc check %s)\n", c, show(w.Path))

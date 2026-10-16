@@ -25,6 +25,8 @@ keys among them, in a store only root can read (`sc scope PATH` says which).
 In those secret files, `sc cat`, `sc diff` and `sc check -v` show the
 password hashes, keys and passwords as `<hidden>` (as root,
 `--show-secrets` shows them); `sc restore` still writes the real content.
+So never put a secret file back with `sc cat ID > FILE`: it would hold
+`<hidden>` in place of each value. Use `sc restore ID`.
 
 **Milestone 3 is done** (tag `m3`, 2026-10-03; plan
 [docs/M3_PLAN.md](docs/M3_PLAN.md)): checkers. `sc check` finds the
@@ -380,7 +382,10 @@ copy in `/run` and says so, and the store is not touched. As root,
 be written.
 `sc restore` says to remount first. It also refuses a file or directory
 marked immutable or append-only (`chattr +i`, `+a`) before it writes
-anything, and names the `chattr` to run.
+anything, and names the `chattr` to run. Do not put a file back with
+`sc cat ID > FILE` instead: in a secret file (`/etc/shadow`, netplan,
+`/etc/fstab` with a CIFS password) that writes `<hidden>` in place of
+each value.
 
 Where it does less: a btrfs or ZFS root gets no rescue entry, and LVM,
 LUKS and multipath roots are not supported (M4 plan, non-goals). With
