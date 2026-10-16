@@ -3,7 +3,9 @@
 // the mark, end removes it, and scd tags each change it sees while a run's
 // apt is alive with origin apt and the run.
 //
-// The mark names the apt process by its pid and its start time, so a mark
+// The mark names the apt process by its pid and its start time (apt runs
+// its hook lines from a fork of itself, which is gone before dpkg runs:
+// Runner names the apt it was forked from), so a mark
 // that outlived its run (apt killed before its Post-Invoke) is seen as
 // stale and tags nothing, and a reused pid is not taken for it.
 package aptrun
@@ -104,7 +106,11 @@ func Stat(pid int) (comm string, ppid int, start uint64, err error) {
 var shells = map[string]bool{"sh": true, "dash": true, "bash": true, "busybox": true}
 
 // Runner returns the process that runs dpkg, given sc's parent: the first
-// one up from parent that is not a shell.
+// one up from parent that is not a shell, or, when that one's parent has
+// its name, the parent. apt runs its hook lines (RunScripts) in a fork of
+// itself that exits once they are done, before dpkg runs; the apt it was
+// forked from lives through the run (the chunk L review, L1). Only one
+// such step is taken, so a long-lived daemon above is never named.
 func Runner(parent int) (pid int, start uint64, err error) {
 	pid = parent
 	for range 8 {
@@ -113,6 +119,9 @@ func Runner(parent int) (pid int, start uint64, err error) {
 			return 0, 0, err
 		}
 		if !shells[comm] || ppid <= 1 {
+			if pcomm, _, pstart, err := Stat(ppid); err == nil && ppid > 1 && pcomm == comm {
+				return ppid, pstart, nil // the fork's apt
+			}
 			return pid, start, nil
 		}
 		pid = ppid

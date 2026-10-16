@@ -3,7 +3,10 @@ package aptrun
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,14 +44,20 @@ func TestStat(t *testing.T) {
 	}
 }
 
-// Runner climbs past the shells apt runs the hook through, to apt.
+// Runner climbs past the shells apt runs the hook through, and past apt's
+// fork for its hooks (RunScripts), to the apt that runs dpkg (the chunk L
+// review, L1); one fork step only.
 func TestRunner(t *testing.T) {
 	fakeProc(t, map[int][3]string{
 		10: {"apt", "1", "500"}, 11: {"sh", "10", "501"}, 12: {"bash", "11", "502"},
 		20: {"unattended-upgr", "1", "600"},
 		30: {"sh", "1", "700"},
+		// apt-get, its fork for the hooks, sh -c, and above apt-get a
+		// shell, then a daemon forked from a daemon.
+		40: {"apt-get", "45", "800"}, 41: {"apt-get", "40", "801"}, 42: {"sh", "41", "802"}, 45: {"bash", "1", "790"},
+		50: {"packagekitd", "1", "900"}, 51: {"packagekitd", "50", "901"}, 52: {"packagekitd", "51", "902"}, 53: {"sh", "52", "903"},
 	})
-	for parent, want := range map[int]int{12: 10, 11: 10, 10: 10, 20: 20, 30: 30} {
+	for parent, want := range map[int]int{12: 10, 11: 10, 10: 10, 20: 20, 30: 30, 42: 40, 41: 40, 53: 51} {
 		pid, _, err := Runner(parent)
 		if err != nil || pid != want {
 			t.Errorf("Runner(%d) = %d, %v; want %d", parent, pid, err, want)
@@ -56,6 +65,9 @@ func TestRunner(t *testing.T) {
 	}
 	if pid, start, _ := Runner(12); pid != 10 || start != 500 {
 		t.Errorf("start %d", start)
+	}
+	if pid, start, _ := Runner(42); pid != 40 || start != 800 {
+		t.Errorf("the fork's apt: %d, start %d", pid, start)
 	}
 	if _, _, err := Runner(99); err == nil {
 		t.Error("a missing parent")
@@ -93,5 +105,55 @@ func TestReadLive(t *testing.T) {
 	os.Remove(file)
 	if _, ok := Read(file); ok {
 		t.Error("no file")
+	}
+}
+
+// Runner with real processes (the chunk L review, L1): python3 stands in
+// for apt and does what
+// apt's RunScripts does (fork; the child runs the hook line with system(),
+// then _exit; the parent waits), then, as dpkg would run, asks whether
+// the mark sc apt begin wrote is live. This test binary, run again by the
+// hook line, is sc apt begin's Runner.
+func TestRunnerUnderAptsRunScripts(t *testing.T) {
+	if out := os.Getenv("SC_RUNNER_OUT"); out != "" {
+		pid, start, err := Runner(os.Getppid())
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(out, Mark{PID: pid, Start: start, Begun: time.Now()}.Encode(), 0o644)
+		return
+	}
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3")
+	}
+	mark := filepath.Join(t.TempDir(), "apt-run")
+	line := fmt.Sprintf("if [ -x %s ]; then SC_RUNNER_OUT=%s %s -test.run='^TestRunnerUnderAptsRunScripts$' >/dev/null || true; fi", os.Args[0], mark, os.Args[0])
+	script := `
+import os, sys
+pid = os.fork()
+if pid == 0:
+    rc = os.system(sys.argv[1])
+    os._exit(0 if rc == 0 else 101)
+os.waitpid(pid, 0)
+print(os.getpid())
+`
+	out, err := exec.Command(py, "-c", script, line).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	apt, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	b, err := os.ReadFile(mark)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The python process ("apt") has exited by now too, so liveness is
+	// not asked here: only which process the mark names.
+	if m.PID != apt {
+		t.Errorf("the mark names pid %d; apt (the process that goes on to run dpkg) is %d", m.PID, apt)
 	}
 }

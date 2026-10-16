@@ -18,6 +18,9 @@ import (
 // the tests point it elsewhere.
 var aptRunFile = aptrun.File
 
+// aptRunner finds the apt above sc apt begin; the tests point it elsewhere.
+var aptRunner = aptrun.Runner
+
 // newAptCmd is sc apt begin and end, which the package's apt hook
 // (/etc/apt/apt.conf.d/50smartconfig) runs around each dpkg run, so scd
 // tags the changes it sees meanwhile with origin apt (M5 follow-ups, step
@@ -54,7 +57,7 @@ tags nothing. Root only.`,
 // aptBegin marks the run of the apt above sc: apt runs its hook's lines
 // with sh -c, so sc's parent is a shell.
 func aptBegin() error {
-	pid, start, err := aptrun.Runner(os.Getppid())
+	pid, start, err := aptRunner(os.Getppid())
 	if err != nil {
 		return fmt.Errorf("sc apt begin: %w", err)
 	}

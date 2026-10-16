@@ -188,13 +188,15 @@ minus generated files, caches and noise, `/boot/grub/grub.cfg` and
 Every row's tier (1 boot, 2 access, 3 network, 4 other) sets its journald
 priority. File contents never appear in the journal.
 
-Changes scd sees while dpkg runs are tagged: the package's
-`/etc/apt/apt.conf.d/50smartconfig` runs `sc apt begin` before each dpkg
-run and `sc apt end` after it, and those rows get origin `apt` in `sc log`,
+Changes scd sees while apt runs dpkg are tagged (apt, apt-get,
+unattended-upgrades; a bare `dpkg -i` runs no apt hook and is not): the
+package's `/etc/apt/apt.conf.d/50smartconfig` runs `sc apt begin` before
+each dpkg run and `sc apt end` after it, and those rows get origin `apt` in `sc log`,
 with the run in their intent (`changed (apt run 2026-10-16 07:05:12
 UTC)`). A change is tagged by when scd saw it, so an edit of yours during
 an upgrade is tagged too. There is no "undo a run": restore its rows one
-by one. The hook does nothing when `sc` is gone or fails, so a package
+by one. The hook does nothing, silently, when `sc` is gone, fails or is
+too old to know `sc apt` (a downgrade keeps the hook), so a package
 removed but not purged never stops apt; a run apt did not end (apt
 killed) tags nothing more, since its apt is gone.
 

@@ -529,3 +529,20 @@ func TestPruneAptRows(t *testing.T) {
 		t.Error("Watched")
 	}
 }
+
+// A file created during a run: its "did not exist" row is the run's too.
+func TestAptCreatedRows(t *testing.T) {
+	s, dir := setup(t)
+	p := filepath.Join(dir, "new.conf")
+	write(t, p, "x\n", 0o644)
+	o := observe(t, p)
+	o.Created, o.Origin, o.Run = true, OriginApt, "2026-10-16 07:05:12 UTC"
+	record(t, s, o)
+	cs, err := s.List(p, 0)
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("%d rows: %v", len(cs), err)
+	}
+	if cs[1].Intent != "did not exist" || cs[1].Origin != OriginApt || cs[0].Origin != OriginApt || cs[0].Intent != "created (apt run 2026-10-16 07:05:12 UTC)" {
+		t.Errorf("rows: %+v / %+v", cs[1], cs[0])
+	}
+}

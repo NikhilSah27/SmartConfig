@@ -1,5 +1,7 @@
-// SmartConfig: mark each dpkg run, so scd tags the config changes it sees
-// meanwhile with origin apt (sc log). Guarded: with sc gone (the package
-// removed, this file kept) or failing, apt goes on as ever.
-DPkg::Pre-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt begin || true; fi"; };
-DPkg::Post-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt end || true; fi"; };
+// SmartConfig: mark each dpkg run apt makes, so scd tags the config
+// changes it sees meanwhile with origin apt (sc log). Guarded and silent:
+// with sc gone (the package removed, this file kept), failing or too old
+// to know sc apt (a downgrade keeps this file), apt goes on as ever and
+// prints nothing of it.
+DPkg::Pre-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt begin >/dev/null 2>&1 || true; fi"; };
+DPkg::Post-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt end >/dev/null 2>&1 || true; fi"; };

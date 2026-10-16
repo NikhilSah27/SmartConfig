@@ -2104,6 +2104,21 @@ class TestDeb(unittest.TestCase):
         # D.4 asks for each NAME.dpkg-old that is a file and cannot run.
         post = [c for c in r.asked if c.startswith("for f in")]
         self.assertIn('[ -f "$f.dpkg-old" ] && [ ! -x "$f.dpkg-old" ] && echo "aside=$f"', post[0])
+        # D.1 upgrades through apt, whose hook dpkg -i never runs, with the
+        # comment that makes the run change a watched file, then asks for
+        # the rows (APT_Q, waiting for them) in its query (the chunk L
+        # review, L5).
+        self.assertIn(e2e.DEB_UP_APT, r.asked)
+        self.assertIn("apt-get install -y %s/smartconfig-up-apt.deb" % e2e.GUEST_DIR, e2e.DEB_UP_APT)
+        self.assertNotIn("dpkg -i", e2e.DEB_UP_APT)
+        self.assertIn(">>$x/etc/grub.d/42_smartconfig", e2e.DEB_UP_APT)
+        self.assertIn("dpkg-deb -R %s/smartconfig-up.deb $x" % e2e.GUEST_DIR, e2e.DEB_UP_APT)
+        q = [c for c in r.asked if c.startswith("echo version=")]
+        self.assertEqual(len(q), 1)
+        self.assertTrue(q[0].endswith(e2e.APT_Q))
+        for part in ("grep -q '  apt  ' && break; sleep 0.2", "echo \"aptrow=$(sc log -n 1 /etc/grub.d/42_smartconfig",
+                     "/run/smartconfig/apt-run", "-ge 2 ] && break; sleep 0.2", "echo \"afterrow=$(sc log -n 1 /etc/sclab-after-apt"):
+            self.assertIn(part, e2e.APT_Q)
         # D.2 set the flag, and read it back, before the remove (B4).
         flag = [c for c in r.asked if c.startswith("grub-editenv")]
         self.assertEqual(len(flag), 1)
