@@ -7,11 +7,12 @@ import (
 )
 
 func newCatCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "cat <id>",
 		Short: "Print a snapshot's content, secret values hidden",
 		Long: `Print a snapshot's content exactly, except in a secret file (sc scope
-says which): its secret values are shown as <hidden>.`,
+says which): its secret values are shown as <hidden>. As root,
+--show-secrets shows them as stored.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -37,4 +38,6 @@ says which): its secret values are shown as <hidden>.`,
 			return nil
 		},
 	}
+	addShowSecrets(cmd)
+	return cmd
 }

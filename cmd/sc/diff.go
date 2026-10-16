@@ -14,12 +14,13 @@ import (
 )
 
 func newDiffCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "diff <id> [<id2>]",
 		Short: "Diff a snapshot against the file on disk, or two snapshots",
 		Long: `Diff a snapshot against the file on disk, or two snapshots. In a secret
 file (sc scope says which) each secret value is shown as <hidden N>: the
-same N on both sides is the same value.`,
+same N on both sides is the same value. As root, --show-secrets shows
+them as stored.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -80,6 +81,8 @@ same N on both sides is the same value.`,
 			return nil
 		},
 	}
+	addShowSecrets(cmd)
+	return cmd
 }
 
 func loadSnapshot(s *store.Store, id string) (store.Change, []byte, error) {

@@ -48,8 +48,10 @@ func newCheckCmd() *cobra.Command {
 		Long: `Check config files for problems before they bite. With no argument, every
 file on this machine that sc has a checker for; an id checks that saved
 version; --as PATH FILE checks FILE as if it were PATH, before it is
-copied there. Exit status 2 when a file has a blocker or an error, 1
-when a file could not be checked.`,
+copied there. In a secret file (sc scope says which), what a validator
+quotes from it is shown with its secret values hidden; as root,
+--show-secrets shows them. Exit status 2 when a file has a blocker or
+an error, 1 when a file could not be checked.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if as != "" {
 				if len(args) != 1 {
@@ -62,6 +64,7 @@ when a file could not be checked.`,
 	}
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "explain each rule and show the validators' own lines")
 	cmd.Flags().StringVar(&as, "as", "", "check the one file given as if it were at this path")
+	addShowSecrets(cmd)
 	return cmd
 }
 

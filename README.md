@@ -23,8 +23,8 @@ other key stores are kept as fingerprints only. Every other recorded file is
 stored with its content, `/etc/shadow` and network files that hold Wi-Fi
 keys among them, in a store only root can read (`sc scope PATH` says which).
 In those secret files, `sc cat`, `sc diff` and `sc check -v` show the
-password hashes, keys and passwords as `<hidden>`; `sc restore` still
-writes the real content.
+password hashes, keys and passwords as `<hidden>` (as root,
+`--show-secrets` shows them); `sc restore` still writes the real content.
 
 **Milestone 3 is done** (tag `m3`, 2026-10-03; plan
 [docs/M3_PLAN.md](docs/M3_PLAN.md)): checkers. `sc check` finds the
@@ -133,7 +133,8 @@ restored. In a secret file (`/etc/shadow`, `/etc/gshadow`, NetworkManager's
 system-connections, netplan, the installer's
 `90-installer-network.cfg`), `sc cat` prints each secret value as
 `<hidden>`, and `sc diff` as `<hidden N>`: the same N on both sides is the
-same value, so a changed password still shows.
+same value, so a changed password still shows. As root, `--show-secrets`
+shows them as stored.
 
 Before `sc restore` writes a file that `sc check` has a checker for, it
 checks the version against the file as it is now, as `sc edit` checks an

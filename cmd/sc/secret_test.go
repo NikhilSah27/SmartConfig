@@ -37,7 +37,7 @@ func TestCatDiffSecrets(t *testing.T) {
 
 	r := sc(t, "cat", id1)
 	want := "root:<hidden>:19000:0:99999:7:::\nbob:!<hidden>:19000::::::\ndaemon:*:19000::::::\n"
-	if r.code != 0 || r.stdout != want || r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden>\n" {
+	if r.code != 0 || r.stdout != want || r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden> (as root, --show-secrets shows them)\n" {
 		t.Fatalf("cat: %+v", r)
 	}
 
@@ -53,7 +53,7 @@ func TestCatDiffSecrets(t *testing.T) {
 	os.WriteFile(shadow, []byte(strings.Replace(v1, "hunter22", "newpass9", 1)), 0o600)
 	r = sc(t, "diff", id1)
 	if r.code != 0 || !strings.Contains(r.stdout, "-root:<hidden 1>:19000") || !strings.Contains(r.stdout, "+root:<hidden 3>:19000") ||
-		r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden N>\n" {
+		r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden N> (as root, --show-secrets shows them)\n" {
 		t.Fatalf("diff: %+v", r)
 	}
 	id2 := snapID(t, shadow)
@@ -124,5 +124,58 @@ func TestScopeSecretLine(t *testing.T) {
 		!strings.Contains(blocks[0], "\n  content:  stored; shown with its secret values hidden, scope line ") ||
 		!strings.Contains(blocks[0], "\n            secret /etc/{shadow,gshadow}\n") || strings.Contains(blocks[1], "content:") {
 		t.Errorf("%+v", r)
+	}
+}
+
+// euidEnv makes sc see uid as its effective uid (chunk K, step 7).
+func euidEnv(t *testing.T, uid int) {
+	t.Helper()
+	old := geteuid
+	geteuid = func() int { return uid }
+	t.Cleanup(func() { geteuid = old })
+}
+
+// --show-secrets: as anyone but root it is refused before anything is
+// read; as root, sc cat, sc diff and sc check -v show the secret values as
+// stored, with no note. The next run without it hides them again.
+func TestShowSecrets(t *testing.T) {
+	_, fstab := editEnv(t, "", "//srv/s /mnt cifs username=bob,password=hunter22,ro 0 0\n")
+	secretEnv(t)
+	shadow := filepath.Join(t.TempDir(), "shadow")
+	const v1 = "root:$6$salt$hunter22:19000:0:99999:7:::\n"
+	os.WriteFile(shadow, []byte(v1), 0o600)
+	id1 := snapID(t, shadow)
+	os.WriteFile(shadow, []byte(strings.Replace(v1, "hunter22", "newpass9", 1)), 0o600)
+	os.WriteFile(fstab, []byte("//srv/s /mnt cifs username=bob,password=hunter22 0 0\n"), 0o600)
+	tools := t.TempDir()
+	os.WriteFile(filepath.Join(tools, "findmnt"), []byte("#!/bin/sh\necho \"findmnt: bad: username=bob,password=hunter22\" >&2\nexit 1\n"), 0o755)
+	hook := testHookChecks
+	testHookChecks = func(c *check.Checks) { hook(c); c.Run.Dirs = []string{tools} }
+
+	euidEnv(t, 1000)
+	for _, args := range [][]string{{"cat", "--show-secrets", id1}, {"diff", "--show-secrets", id1}, {"check", "-v", "--show-secrets", fstab}} {
+		if r := sc(t, args...); r.code != 1 || r.stdout != "" || r.stderr != "sc: --show-secrets needs root\n" {
+			t.Errorf("sc %v as a user: %+v", args, r)
+		}
+	}
+
+	euidEnv(t, 0)
+	if r := sc(t, "cat", "--show-secrets", id1); r.code != 0 || r.stdout != v1 || r.stderr != "" {
+		t.Errorf("cat: %+v", r)
+	}
+	if r := sc(t, "diff", "--show-secrets", id1); r.code != 0 || r.stderr != "" ||
+		!strings.Contains(r.stdout, "-root:$6$salt$hunter22:") || !strings.Contains(r.stdout, "+root:$6$salt$newpass9:") {
+		t.Errorf("diff: %+v", r)
+	}
+	if r := sc(t, "check", "-v", "--show-secrets", fstab); !strings.Contains(r.stdout, "username=bob,password=hunter22") {
+		t.Errorf("check: %+v", r)
+	}
+
+	// The flag does not outlive its run.
+	if r := sc(t, "cat", id1); strings.Contains(r.stdout, "hunter22") || !strings.Contains(r.stdout, "root:<hidden>:") {
+		t.Errorf("cat after: %+v", r)
+	}
+	if r := sc(t, "check", "-v", fstab); strings.Contains(r.stdout+r.stderr, "hunter22") {
+		t.Errorf("check after: %+v", r)
 	}
 }
