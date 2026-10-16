@@ -180,10 +180,11 @@ p_hashes() {
 	return 0
 }
 
-# p_sc_cat_sha ID: the sha256 of sc cat ID.
+# p_sc_cat_sha ID: the sha256 of sc cat ID, as stored: fstab is a secret
+# file, whose secret values sc cat shows hidden without --show-secrets.
 p_sc_cat_sha() {
-	sc cat "$1" >/dev/null || return
-	sc cat "$1" | sha256sum | cut -d' ' -f1
+	sc cat --show-secrets "$1" >/dev/null || return
+	sc cat --show-secrets "$1" | sha256sum | cut -d' ' -f1
 }
 
 # p_sc_diff: GOOD against BAD, or against the file on disk.

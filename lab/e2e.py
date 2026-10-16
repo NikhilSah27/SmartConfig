@@ -151,6 +151,25 @@ DEB_SOURCES = {
 # The second package, for the upgrade (D.1): the same files, a version
 # that sorts after the first's.
 DEB_UP = "+lab1"
+# D.1 installs it through apt, whose hook (/etc/apt/apt.conf.d/50smartconfig)
+# marks the dpkg run, so scd tags the run's rows apt (M5 follow-ups, step
+# 9). With the same files the upgrade changes no file scd watches, so the
+# guest first adds a comment to its 42_smartconfig, a conffile the old
+# package left unmodified: dpkg replaces it with no question, a change in
+# the run.
+DEB_UP_APT = ("x=$(mktemp -d) && dpkg-deb -R {d}/smartconfig-up.deb $x && "
+              "echo '# sclab: the upgrade build (D.1)' >>$x/etc/grub.d/42_smartconfig && "
+              "dpkg-deb --root-owner-group -b $x {d}/smartconfig-up-apt.deb >/dev/null && rm -r $x && "
+              "DEBIAN_FRONTEND=noninteractive apt-get install -y {d}/smartconfig-up-apt.deb 2>&1").format(d=GUEST_DIR)
+# After it: the newest row of 42_smartconfig (scd records a change after its
+# quiet time, so it is waited for), whether apt's mark is gone, and the row
+# of a change made after the run.
+APT_Q = ("for i in $(seq 50); do sc log -n 1 /etc/grub.d/42_smartconfig | grep -q '  apt  ' && break; sleep 0.2; done; "
+         "echo \"aptrow=$(sc log -n 1 /etc/grub.d/42_smartconfig | tail -n 1)\"; "
+         "test -e /run/smartconfig/apt-run && echo mark=left || echo mark=gone; "
+         "date +%s%N >/etc/sclab-after-apt; "
+         "for i in $(seq 50); do [ $(sc log -n 0 /etc/sclab-after-apt | wc -l) -ge 2 ] && break; sleep 0.2; done; "
+         "echo \"afterrow=$(sc log -n 1 /etc/sclab-after-apt | tail -n 1)\"; ")
 # The README's hand install up to M4, for the takeover (D.4): the m4 tag's
 # files, where that README put them, with the package's own sc (preinst
 # knows a copy of sc by what is in it, not by its version).
@@ -298,7 +317,8 @@ REGISTRY = collections.OrderedDict((r[0], CheckSpec(*r)) for r in (
     ("6.3", "M4", "H", "S|V", "--grub-password: the rescue entry asks for the superuser and the password"),
     ("6.4", "M4", "H", "S", "--grub-password: with them it boots (fstab=no), and its shell reboots"),
     ("6.5", "M4", "H", "S|V+SSH", "--grub-password: Ubuntu from the menu asks for none, and the boot is ok"),
-    ("D.1", "M5", "H", "SSH", "--deb: an upgrade (dpkg -i of a later build) restarts scd, runs update-grub, keeps the store and boots"),
+    ("D.1", "M5", "H", "SSH", "--deb: an upgrade (apt-get install of a later build) restarts scd, runs update-grub, keeps the store "
+     "and boots; its row is origin apt, a change after it auto (M5 follow-ups, step 9)"),
     ("D.2", "M5", "H", "SSH", "--deb: dpkg -r stops scd, leaves no unit enabled, takes the rescue entry out of grub.cfg and the "
                               "flag out of grubenv, keeps the store's rows and boots"),
     ("D.3", "M5", "H", "SSH", "--deb: dpkg -P removes 42_smartconfig and still keeps the store's rows and boots, and says so"),
@@ -597,6 +617,28 @@ def store_kept(now, then):
         p.append("sc log has %s rows, before %s" % (one(now, "rows"), one(then, "rows")))
     if one(now, "boots") in ("-", "") or one(now, "boots") != one(then, "boots"):
         p.append("the boots file: %s, before %s" % (one(now, "boots")[:12], one(then, "boots")[:12]))
+    return p
+
+
+def row_origin(kv, key):
+    """The origin of the sc log row a parse_kv answer holds under key,
+    or "-"."""
+    rows = log_rows(one(kv, key))
+    return rows[0][2] if rows else "-"
+
+
+def apt_rows(kv):
+    """D.1 after apt's upgrade (APT_Q): 42_smartconfig's newest row is the
+    run's, origin apt and the run in its intent; apt's mark is gone; a
+    change after the run is auto. The problems."""
+    p = []
+    rows = log_rows(one(kv, "aptrow"))
+    if not rows or rows[0][2] != "apt" or "(apt run " not in rows[0][5]:
+        p.append("42_smartconfig's row of the upgrade is not apt's: %s" % _cell(one(kv, "aptrow"), 120))
+    if one(kv, "mark") != "gone":
+        p.append("apt's run mark is %s after the run" % one(kv, "mark"))
+    if row_origin(kv, "afterrow") != "auto":
+        p.append("a change after the run is not auto: %s" % _cell(one(kv, "afterrow"), 120))
     return p
 
 
@@ -2579,7 +2621,7 @@ class E2E:
         fstab_sha = f.text("fstab-sha256").strip()
         got = None
         if good:
-            got = self.sudo("sc cat %s | sha256sum" % good).out.split(" ")[0].strip()
+            got = self.sudo("sc cat --show-secrets %s | sha256sum" % good).out.split(" ")[0].strip()
             if got != fstab_sha:
                 p.append("sc cat %s hashes to %s, /etc/fstab to %s" % (good, got, fstab_sha))
         else:
@@ -3337,7 +3379,7 @@ class E2E:
                 p.append("the newest row is %s" % (r0,))
             if r1[2] != "pre-restore" or r1[0] != self.v.get("PRE"):
                 p.append("the next row is %s, not pre-restore %s" % (r1, self.v.get("PRE")))
-        pre_sha = self.sudo("sc cat %s | sha256sum" % self.v.get("PRE")).out.split(" ")[0].strip() \
+        pre_sha = self.sudo("sc cat --show-secrets %s | sha256sum" % self.v.get("PRE")).out.split(" ")[0].strip() \
             if self.v.get("PRE") else ""
         if pre_sha != self.v["BAD_SHA"]:
             p.append("sc cat PRE=%s hashes to %s, not BAD_SHA" % (self.v.get("PRE"), pre_sha))
@@ -3591,15 +3633,15 @@ class E2E:
 
     def deb_lifecycle(self):
         """D.1-D.5: on the guest that ran the scenario from the package, a
-        later build of it (dpkg -i), then dpkg -r, then dpkg -P, then the
+        later build of it (through apt, DEB_UP_APT), then dpkg -r, then dpkg -P, then the
         takeover of a hand install (deb_takeover), then dpkg -r and -i once
         more (deb_reinstall). The guest is powered off next (5.2)."""
         self.at("D.1")
         before = parse_kv(self.sudo(SC_Q).out)
-        r = self.sudo("dpkg -i %s/smartconfig-up.deb 2>&1" % GUEST_DIR, self.b("BUDGET_CMD_SC"))
+        r = self.sudo(DEB_UP_APT, self.b("BUDGET_CMD_SC"))
         after = parse_kv(self.sudo("echo version=$(dpkg-query -W -f='${Version}' smartconfig); "
-                                   "echo scd=$(systemctl is-active scd.service); " + SC_Q + RESCUE_N).out)
-        p = [] if r.rc == 0 else ["dpkg -i: exit %s: %s" % (r.rc, _cell(r.out, 200))]
+                                   "echo scd=$(systemctl is-active scd.service); " + SC_Q + RESCUE_N + APT_Q).out)
+        p = [] if r.rc == 0 else ["apt-get install: exit %s: %s" % (r.rc, _cell(r.out, 200))]
         want = self.v["deb_up_version"]
         if one(after, "version") != want:
             p.append("dpkg-query says %s, not %s" % (one(after, "version"), want))
@@ -3609,10 +3651,13 @@ class E2E:
             p.append("scd's MainPID %s (before %s): not restarted" % (one(after, "pid"), one(before, "pid")))
         p += store_kept(after, before)
         p += postinst_grub(r.out, after)
-        self.record("D.1", problems=p, seen="%s scd %s pid %s rows %s rescue=%s" % (
-            one(after, "version"), one(after, "scd"), one(after, "pid"), one(after, "rows"), one(after, "rescue")),
-            expected="%s; scd active under a new MainPID; rows kept; boots unchanged; postinst's update-grub, one entry" % want,
-            source="scripts/deb/postinst", evidence="ssh.log")
+        p += apt_rows(after)
+        self.record("D.1", problems=p, seen="%s scd %s pid %s rows %s rescue=%s; 42_smartconfig %s, after %s" % (
+            one(after, "version"), one(after, "scd"), one(after, "pid"), one(after, "rows"), one(after, "rescue"),
+            row_origin(after, "aptrow"), row_origin(after, "afterrow")),
+            expected="%s; scd active under a new MainPID; rows kept; boots unchanged; postinst's update-grub, one entry; "
+                     "42_smartconfig's row origin apt with the run, the mark gone, a change after auto" % want,
+            source="scripts/deb/postinst, scripts/50smartconfig", evidence="ssh.log")
 
         self.at("D.2")
         st = self.sudo("grub-editenv /boot/grub/grubenv set smartconfig_pending=1 && "

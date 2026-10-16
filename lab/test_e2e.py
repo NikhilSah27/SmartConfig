@@ -2043,7 +2043,9 @@ class TestDeb(unittest.TestCase):
     files."""
 
     UP = "0.4.99+git3.20261008023503.643cec3+lab1"
-    DEB4 = "dpkg -i %s/smartconfig.deb" % e2e.GUEST_DIR  # D.4's and D.5's; D.1 installs smartconfig-up.deb
+    DEB4 = "dpkg -i %s/smartconfig.deb" % e2e.GUEST_DIR  # D.4's and D.5's; D.1 installs smartconfig-up.deb through apt
+    APTROW = ("aptrow=ab12cd  2026-10-16 07:05  apt     /etc/grub.d/42_smartconfig  9100  changed (apt run 2026-10-16 07:05:12 UTC)\n"
+              "mark=gone\nafterrow=cd34ef  2026-10-16 07:06  auto    /etc/sclab-after-apt  20  created\n")
     ADDING = "Adding SmartConfig rescue entry: /boot/vmlinuz-6.8.0-142-generic\ndone\n"
     TAKEN = "".join("smartconfig: the hand-installed %s is now %s.dpkg-old\n" % (f, f) for f in e2e.HAND_PATHS)
     UNITS = "".join("unit=%s /usr/lib/systemd/system/%s.service enabled\n" % (u, u) for u in ("scd", "sc-boot-seen", "sc-boot-ok"))
@@ -2061,8 +2063,8 @@ class TestDeb(unittest.TestCase):
         tuple exits 1; a list is one answer for each call, in turn."""
         answers = {
             "echo pid=": "pid=611\nrows=12\nboots=abc\n",
-            "dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: "Setting up smartconfig (%s) ...\n%s" % (self.UP, self.ADDING),
-            "echo version=": "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n" % self.UP,
+            e2e.DEB_UP_APT: "Setting up smartconfig (%s) ...\n%s" % (self.UP, self.ADDING),
+            "echo version=": "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n%s" % (self.UP, self.APTROW),
             "grub-editenv": "flag=set\npid=742\nrows=14\nboots=abc\n",
             "dpkg -r": ["", ""],
             "test -e /usr/sbin/sc": self.REMOVED,
@@ -2109,7 +2111,7 @@ class TestDeb(unittest.TestCase):
 
     def test_what_fails_each(self):
         def up(old, new):
-            after = "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n" % self.UP
+            after = "version=%s\nscd=active\npid=742\nrows=14\nboots=abc\nrescue=1\n%s" % (self.UP, self.APTROW)
             self.assertIn(old, after)
             return {"echo version=": after.replace(old, new)}
 
@@ -2134,10 +2136,18 @@ class TestDeb(unittest.TestCase):
                 (up("rows=14", "rows=9"), "D.1", "sc log has 9 rows, before 12"),
                 (up("boots=abc", "boots=fff"), "D.1", "the boots file: fff, before abc"),
                 (up("rescue=1", "rescue=2"), "D.1", "2 rescue entries"),
-                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: ("dpkg: error\n" + self.ADDING,)}, "D.1", "dpkg -i: exit 1"),
-                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: "Setting up smartconfig\n"}, "D.1",
+                ({e2e.DEB_UP_APT: ("E: dpkg was interrupted\n" + self.ADDING,)}, "D.1", "apt-get install: exit 1"),
+                ({e2e.DEB_UP_APT: "Setting up smartconfig\n"}, "D.1",
                  "postinst's update-grub added no rescue entry"),
-                ({"dpkg -i %s/smartconfig-up.deb" % e2e.GUEST_DIR: self.ADDING +
+                (up("  apt     /etc/grub.d", "  auto    /etc/grub.d"), "D.1", "42_smartconfig's row of the upgrade is not apt's"),
+                (up(" (apt run 2026-10-16 07:05:12 UTC)", ""), "D.1", "42_smartconfig's row of the upgrade is not apt's"),
+                (up("aptrow=ab12cd  2026-10-16 07:05  apt     /etc/grub.d/42_smartconfig  9100  changed (apt run 2026-10-16 07:05:12 UTC)",
+                    "aptrow="), "D.1", "42_smartconfig's row of the upgrade is not apt's"),
+                (up("mark=gone", "mark=left"), "D.1", "apt's run mark is left after the run"),
+                (up("  auto    /etc/sclab", "  apt     /etc/sclab"), "D.1", "a change after the run is not auto"),
+                (up("afterrow=cd34ef  2026-10-16 07:06  auto    /etc/sclab-after-apt  20  created", "afterrow="), "D.1",
+                 "a change after the run is not auto"),
+                ({e2e.DEB_UP_APT: self.ADDING +
                   "smartconfig: update-grub failed; grub.cfg has no rescue entry yet: run sudo update-grub\n"}, "D.1",
                  "postinst: update-grub failed"),
                 ({"dpkg -r": [("dpkg: error",), ""]}, "D.2", "dpkg -r: exit 1"),
@@ -3089,7 +3099,7 @@ class TestBoot1Faults(FaultCase):
                  "systemctl --failed": (0, "snapd.service loaded failed failed\n"),
                  "cat /var/lib/smartconfig/boots": (0, boots), "-t scd | grep -c": (0, "1\n"),
                  "-t sc-boot": (0, JOURNAL_OK % B1), "facts.sh normal": (0, normal_text(**facts)),
-                 "sc cat %s" % GOOD: (0, FSTAB_SHA + "  -\n")}
+                 "sc cat --show-secrets %s" % GOOD: (0, FSTAB_SHA + "  -\n")}
         table.update(ssh or {})
         answers(r, table)
         return r, outcome_of(r.boot1, attempt("1", flag))
@@ -3159,8 +3169,8 @@ class TestBoot1Faults(FaultCase):
                     "Failed since:  1 boot, last 10-04 12:05: a mount failed"] + status[2:])}),
                 ("1.9", "H", "no baseline in this boot", {"journal-scd": (0, ["watching /etc (227 directories)"])}),
                 ("1.9", "H", "no fstab row", {"sc-log-fstab": (0, ["ID      WHEN              ORIGIN  FILE"])}),
-                ("1.9", "H", "sc cat GOOD is not /etc/fstab", dict(ssh={"sc cat %s" % GOOD: (0, "5" * 64 + "  -\n")})),
-                ("1.9", "H", "sc cat GOOD fails", dict(ssh={"sc cat %s" % GOOD: (0, "sc: no snapshot\n")}))):
+                ("1.9", "H", "sc cat GOOD is not /etc/fstab", dict(ssh={"sc cat --show-secrets %s" % GOOD: (0, "5" * 64 + "  -\n")})),
+                ("1.9", "H", "sc cat GOOD fails", dict(ssh={"sc cat --show-secrets %s" % GOOD: (0, "sc: no snapshot\n")}))):
             r, end = self.boot1(**kw)
             self.assert_fails(r, end, cid, strength, name)
 
@@ -3617,7 +3627,7 @@ class TestBoot4Faults(FaultCase):
                   "sc-status": (0, status_lines(B4)), "sc-log-fstab": (0, LOG_4)}
         table = {"is-system-running": (0, "running\n"), "cat /var/lib/smartconfig/boots": (0, boots),
                  "-t sc-boot": (0, JOURNAL_OK % B4), "facts.sh normal": (0, normal_text(**dict(blocks, **facts))),
-                 "sc cat %s" % PRE: (0, BAD_SHA + "  -\n")}
+                 "sc cat --show-secrets %s" % PRE: (0, BAD_SHA + "  -\n")}
         table.update(ssh or {})
         answers(r, table)
         return r, outcome_of(r.boot4, attempt("4", True))
@@ -3670,7 +3680,7 @@ class TestBoot4Faults(FaultCase):
                 ("4.6", "F", "the pre-restore row is not the one sc restore named",
                  {"sc-log-fstab": (0, LOG_4[:2] + [LOG_4[2].replace(PRE, "0f0e0d")] + LOG_4[3:])}),
                 ("4.6", "F", "one row only", {"sc-log-fstab": (0, LOG_4[:2])}),
-                ("4.6", "F", "PRE is not the bad fstab", dict(ssh={"sc cat %s" % PRE: (0, FSTAB_SHA + "  -\n")})),
+                ("4.6", "F", "PRE is not the bad fstab", dict(ssh={"sc cat --show-secrets %s" % PRE: (0, FSTAB_SHA + "  -\n")})),
                 ("4.6", "F", "sc restore named no PRE", dict(v=dict(PRE=None))),
                 ("4.6", "F", "sc-boot-ok failed", {"show:sc-boot-ok.service": (0, ["Result=exit-code"] + show[1:])}),
                 ("4.6", "F", "grub-editenv failed", {"journal-sc-boot": (0, [

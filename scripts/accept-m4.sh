@@ -306,7 +306,8 @@ reads() {
 	run "$SC" log -n 0
 	[ "$rc" -eq 0 ] || fail "$1: sc log: exit $rc:\n$out"
 	[ "$(grep -v '^sc: note: ' <<<"$out")" = "$ROWS" ] || fail "$1: sc log is not the store's rows:\n$out"
-	[ "$("$SC" cat "$ID1" 2>/dev/null | sha256sum)" = "$FSTAB" ] || fail "$1: sc cat $ID1 is not /etc/fstab"
+	# --show-secrets: fstab is a secret file (a CIFS password), shown hidden.
+	[ "$("$SC" cat --show-secrets "$ID1" 2>/dev/null | sha256sum)" = "$FSTAB" ] || fail "$1: sc cat $ID1 is not /etc/fstab"
 	run "$SC" diff "$ID1" "$ID2"
 	grep -q '^+UUID=11111111-2222-3333-4444-555555555555 /data ' <<<"$out" || fail "$1: sc diff $ID1 $ID2:\n$out"
 	run "$SC" status
