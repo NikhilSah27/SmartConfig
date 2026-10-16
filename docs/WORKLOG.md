@@ -3469,3 +3469,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make lab-test` (364 tests) and `bash -n accept-m4.sh`
     (`~/smartconfig-work/fu-scratch/checks-l9.log`); no Go changed.
   - **Next:** the chunk L review (steps 8 and 9), one reviewer.
+- **CI red on `c898df1`, and the fix** (2026-10-16).
+  - **What failed:** `TestLabGuestFacts` (Go) runs the lab's `facts.sh`
+    against a made-up `sc` whose `cat` read the id as its first word;
+    step 9 put `--show-secrets` there. Step 9's checks ran only `make
+    lab-test`, since no Go had changed: a Go test reads that shell script.
+  - **The fix:** the fake wants the flag, so the test pins it too.
+  - **Checks:** `make build fmt vet`, the tests and race pass, `lab-test`,
+    `m1-compat` and the root pass clean
+    (`~/smartconfig-work/fu-scratch/checks-l9b.log`). Every step runs the
+    whole suite before its push.
