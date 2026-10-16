@@ -484,14 +484,19 @@ fixes `9a08186`..`09a4af1`).
    change (J8) judge versions so too.
 
 **Chunk K, secrets:**
-6. A secret list in the scope: content stored, shown hidden. It covers
-   `/etc/shadow`, `/etc/gshadow`, NetworkManager's system-connections,
+6. Done (`47d35a5`): a secret list in the scope (`secret GLOB`):
+   content stored, shown hidden. It covers `/etc/shadow`, `/etc/gshadow`,
+   NetworkManager's system-connections,
    `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`, and netplan files.
    - `sc cat` and `sc diff` replace the shadow and gshadow password
      field, `psk=`, `password=`, `secret=` and private-key values, and
-     netplan's `password:`, with a marker.
-   - `sc check -v` does the same to a validator's raw lines from those
-     files.
+     netplan's `password:`, with a marker (`internal/redact`). `sc cat`
+     shows `<hidden>`; `sc diff` numbers them, `<hidden N>`, so a
+     changed value still shows.
+   - `sc check -v`, `sc edit` and `sc restore` do the same to what a
+     validator said about those files.
+   - `sc scope` names the secret line; `sc restore` writes the real
+     content.
 7. `--show-secrets` shows them, as root.
 
 **Chunk L, apt:**
@@ -537,9 +542,11 @@ They are ranked by what is at stake:
    - These are stored with their content, kept forever and after a
      purge: `/etc/shadow`, NetworkManager's system-connections (Wi-Fi
      keys), and `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`.
-   - `sc cat` and `sc diff` print them.
-   - Redaction (M2 plan: "M3") and content-based detection were never
-     built. This must be settled before M7 sends diffs to a model.
+   - `sc cat` and `sc diff` printed them; since step 6 they show the
+     secret values hidden.
+   - Content-based detection was never built: only the files the scope
+     names are hidden. This must be settled before M7 sends diffs to a
+     model.
 3. **`sc restore` writes without a check**: done in chunk J (it checks
    and asks). There is still no account-set restore. Putting back an older `/etc/group` alone can drop
    today's admin from sudo, which `sc edit` would refuse (M2 plan:

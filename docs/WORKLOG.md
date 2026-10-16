@@ -22,7 +22,10 @@ after every step. For the full history, decisions and recovery guide see
   done and reviewed**, and its 13 findings fixed
   ([reviews/2026-10-12-m5-followups-chunk-j.md](reviews/2026-10-12-m5-followups-chunk-j.md);
   your picks for J1, J6 and J7, 2026-10-12, all on the recommended
-  answer). **Next: chunk K** (secrets, steps 6-7). The handoff, if this
+  answer). **Chunk K, step 6 is on main** (`47d35a5`, 2026-10-16:
+  secret files shown hidden; M6 step 2's `sc check --tsv` can build on
+  it). **Next: chunk K, step 7** (`--show-secrets`, as root), then the
+  chunk K review. The handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -78,7 +81,10 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
   crashed twice more after 2026-10-09 21:57 UTC, and the first crash
   damaged this repo's `.git` (log, 2026-10-11). Sleep
   or power saving on the host is the first thing to look at. M6's long
-  lab runs depend on this.
+  lab runs depend on this. On 2026-10-15 it froze three times, 1, 16
+  and 9 minutes after boot, twice with the guest idle: look at
+  `VBox.log` after a freeze (Guru Meditation, `VERR_`, paused), the
+  green turtle (Hyper-V), and the vCPUs (log, 2026-10-16).
 - [ ] A VirtualBox snapshot of this state. M2 to M5 are installed on
   this VM, and restoring an older snapshot undoes them; the code is safe
   on GitHub.
@@ -3272,3 +3278,34 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     root pass clean (`~/smartconfig-work/fu-scratch/checks-j-fix9.log`).
   - **Next:** chunk K, step 6: secrets in the scope, stored and shown
     hidden.
+- **Chunk K, step 6: secret files, stored, shown hidden** (2026-10-15
+  to 16, `47d35a5`).
+  - **The scope:** a new verb, `secret GLOB`: `/etc/{shadow,gshadow}`,
+    NetworkManager's system-connections, netplan and the installer's
+    `90-installer-network.cfg`. Their content is stored as before.
+  - **What is hidden** (`internal/redact`): shadow's and gshadow's
+    password field (the lock marks `!` and `*` stay), key=value and
+    `key: value` pairs whose key names a secret (not `-flags` or
+    `-type`), a keyfile's `[*secrets]` sections, YAML values on the
+    lines after a secret key, and PEM private-key bodies.
+  - **Where:** `sc cat` (`<hidden>`), `sc diff` (`<hidden N>`, one
+    numbering for both sides, so a changed password shows; a change only
+    in blanks next to a hidden value is said, not called equal), a note
+    on stderr for both, and what a validator said about such a file in
+    `sc check -v`, `sc edit` and `sc restore`. `sc scope` names the line.
+    `sc restore` writes the real content.
+  - **Two VM freezes:** the build was done on 2026-10-15, and its first
+    checks died in the freezes of 16:55 and 17:15 UTC (journal: the guest
+    idle or nearly; the host stopped running it). The work was intact
+    (no empty objects, no NULs), and is also kept as
+    `~/smartconfig-work/fu-scratch/k6/wip-step6-*.patch`.
+  - **The commit:** the local secret scan refused it on the tests' made-up
+    values (`hunter22`, a fake PEM body, the marker after `psk=`) and a
+    comment naming the PEM header; its denylist of real values found
+    nothing. You committed it with `--no-verify` (2026-10-16).
+  - **Not run:** the redaction of this VM's real `/etc/shadow` as root
+    (auto mode refused reading it); the unit tests cover each format.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-k6.log`,
+    run 2).
+  - **Next:** step 7, `--show-secrets` as root.
