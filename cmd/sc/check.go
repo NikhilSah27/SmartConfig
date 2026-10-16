@@ -248,6 +248,7 @@ func runTargets(cmd *cobra.Command, c *check.Checks, targets []checkTarget, note
 		default:
 			checked++
 		}
+		hideSaid(t.path, t.data, rep.Findings, rep.Said)
 		for _, f := range rep.Findings {
 			rows = append(rows, findingRow{t.label, f})
 		}

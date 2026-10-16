@@ -122,8 +122,11 @@ func explainPath(out io.Writer, w scope.Why, m machine, g *check.Graph) {
 		}
 		fmt.Fprintln(out, tier)
 	}
-	if w.Digest {
+	switch {
+	case w.Digest:
 		fmt.Fprintf(out, "  content:  a fingerprint only, never stored or shown, %s\n", at(w.DigRule))
+	case w.Secret:
+		fmt.Fprintf(out, "  content:  stored; shown with its secret values hidden, %s\n", at(w.SecRule))
 	}
 	if c := g.Checker(w.Path); c != "" {
 		fmt.Fprintf(out, "  checker:  %s (sc check %s)\n", c, show(w.Path))

@@ -14,15 +14,15 @@ import (
 var defaultText string
 
 // Scope is a parsed scope file (plan 7.1-7.3): roots, include/exclude rules,
-// fingerprint-only (digest) rules and tiers.
+// fingerprint-only (digest) rules, secret rules and tiers.
 type Scope struct {
 	roots  []string
-	rules  []rule // include, exclude, digest and tier lines, in file order
+	rules  []rule // include, exclude, digest, secret and tier lines, in file order
 	scHome string // sc's own data directory: never recorded
 }
 
 type rule struct {
-	verb string // include, exclude, digest or tier
+	verb string // include, exclude, digest, secret or tier
 	tier int
 	g    *glob
 	line int
@@ -47,7 +47,7 @@ func Default() *Scope {
 }
 
 // Parse reads a scope file. Lines are "root DIR", "include GLOB",
-// "exclude GLOB", "digest GLOB" or "tier N GLOB"; blank lines and lines
+// "exclude GLOB", "digest GLOB", "secret GLOB" or "tier N GLOB"; blank lines and lines
 // starting with "#" are skipped. Every pattern is validated.
 func Parse(text string) (*Scope, error) {
 	s := &Scope{}
@@ -72,7 +72,7 @@ func (s *Scope) parseLine(l string, n int) error {
 		want = 3
 	}
 	switch f[0] {
-	case "root", "include", "exclude", "digest", "tier":
+	case "root", "include", "exclude", "digest", "secret", "tier":
 	default:
 		return fmt.Errorf("unknown keyword %q", f[0])
 	}
@@ -238,10 +238,12 @@ type Why struct {
 	TierRule Line
 	Digest   bool // fingerprint-only
 	DigRule  Line
+	Secret   bool // content stored, its secret values shown hidden
+	SecRule  Line
 }
 
 // Explain says why p is or is not recorded, its tier and whether it is
-// fingerprint-only (sc scope). p is cleaned first; a relative p is outside
+// fingerprint-only or secret (sc scope). p is cleaned first; a relative p is outside
 // every root.
 func (s *Scope) Explain(p string) Why {
 	w := Why{Path: p, Tier: 4}
@@ -256,6 +258,9 @@ func (s *Scope) Explain(p string) Why {
 	if r := s.first("digest", p); r != nil {
 		w.Digest, w.DigRule = true, s.line(*r)
 	}
+	if r := s.first("secret", p); r != nil {
+		w.Secret, w.SecRule = true, s.line(*r)
+	}
 	d := s.decide(p)
 	w.Recorded, w.Own, w.Root = d.recorded, d.own, d.root
 	if d.line != 0 {
@@ -264,7 +269,7 @@ func (s *Scope) Explain(p string) Why {
 	return w
 }
 
-// first returns the first line of verb ("tier" or "digest") whose pattern
+// first returns the first line of verb ("tier", "digest" or "secret") whose pattern
 // matches p, or nil.
 func (s *Scope) first(verb, p string) *rule {
 	for i := range s.rules {
@@ -316,4 +321,17 @@ func (s *Scope) FingerprintOnly(p string) bool {
 		return true
 	}
 	return s.first("digest", p) != nil
+}
+
+// Secret reports whether p's content is stored but its secret values are
+// shown hidden: sc cat, sc diff and a validator's words in sc check -v
+// replace them with a marker (internal/redact). It holds for any matching
+// secret line, whether or not p is recorded. p is cleaned first; a
+// relative p gets true, as FingerprintOnly's does.
+func (s *Scope) Secret(p string) bool {
+	p, ok := clean(p)
+	if !ok {
+		return true
+	}
+	return s.first("secret", p) != nil
 }

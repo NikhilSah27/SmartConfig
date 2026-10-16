@@ -155,6 +155,7 @@ func runEdit(cmd *cobra.Command, arg string) (err error) {
 			return err
 		}
 		added := check.Added(had, rep.Findings)
+		hideSaid(path, after, added, rep.Said)
 		rows := make([]findingRow, len(added))
 		for i, f := range added {
 			rows[i] = findingRow{path, f}

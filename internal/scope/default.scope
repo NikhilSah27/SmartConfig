@@ -1,8 +1,8 @@
 # SmartConfig default scope (M2), built into sc.
-# Lines: root DIR | include GLOB | exclude GLOB | digest GLOB | tier N GLOB
+# Lines: root DIR | include GLOB | exclude GLOB | digest GLOB | secret GLOB | tier N GLOB
 # include/exclude: the FIRST matching line wins; no match = included.
 # Only paths under a root are recorded. A root itself is never excluded.
-# An excluded directory is not watched. digest: any match.
+# An excluded directory is not watched. digest, secret: any match.
 # tier: first match, else 4.
 # Built in, not written here: root <home>/.ssh for each login account,
 # and exclude $SC_HOME/**.
@@ -111,6 +111,15 @@ digest /etc/{dropbear,dropbear/initramfs,dropbear-initramfs}/dropbear_*_host_key
 digest /etc/wireguard/**
 digest /etc/apt/auth.conf{,.d/**}
 digest /etc/cryptsetup-keys.d/**
+
+# H2. Secrets: content is stored, since a rescue may need it, but sc cat,
+#     sc diff and sc check -v show the secret values hidden: shadow's
+#     password field, psk=, password=, secret= and private-key values,
+#     netplan's password: (internal/redact).
+secret /etc/{shadow,gshadow}
+secret /etc/NetworkManager/system-connections/**
+secret /etc/cloud/cloud.cfg.d/90-installer-network.cfg
+secret /etc/netplan/**
 
 # I. Tiers: only how loudly scd logs a change (1 boot, 2 access, 3 network).
 tier 1 /etc/{fstab,crypttab,modules,sysctl.conf,ld.so.conf,ld.so.preload,rc.local,machine-id}

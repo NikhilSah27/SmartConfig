@@ -539,3 +539,38 @@ func TestExplain(t *testing.T) {
 		t.Errorf("rule text %q", w.Rule.Text)
 	}
 }
+
+// Secret lines (chunk K, step 6): any match, recorded or not; the default
+// scope names shadow, gshadow, NetworkManager's connections, the
+// installer's network file and netplan, and nothing else it records.
+func TestSecret(t *testing.T) {
+	s, err := Parse("root /r\nexclude /r/out/**\nsecret /r/out/k\nsecret /r/s/*.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]bool{"/r/out/k": true, "/r/s/a.conf": true, "/r//s/a.conf": true, "/r/s/a.txt": false, "r/s/a.conf": true} {
+		if s.Secret(p) != want {
+			t.Errorf("Secret(%q) = %v", p, !want)
+		}
+	}
+	if w := s.Explain("/r/s/a.conf"); !w.Secret || w.SecRule.N != 4 || w.Digest {
+		t.Errorf("Explain: %+v", w)
+	}
+	if w := s.Explain("/r/s/a.txt"); w.Secret {
+		t.Errorf("Explain(a.txt): %+v", w)
+	}
+
+	d := Default()
+	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/etc/NetworkManager/system-connections/Home.nmconnection",
+		"/etc/cloud/cloud.cfg.d/90-installer-network.cfg", "/etc/netplan/50-cloud-init.yaml", "/etc/netplan/sub/x.yaml"} {
+		if !d.Recorded(p) || !d.Secret(p) || d.FingerprintOnly(p) {
+			t.Errorf("%s: recorded %v, secret %v, fingerprint only %v", p, d.Recorded(p), d.Secret(p), d.FingerprintOnly(p))
+		}
+	}
+	for _, p := range []string{"/etc/passwd", "/etc/group", "/etc/shadow-", "/etc/NetworkManager/NetworkManager.conf",
+		"/etc/cloud/cloud.cfg.d/50-curtin-networking.cfg", "/etc/fstab"} {
+		if d.Secret(p) {
+			t.Errorf("%s is secret", p)
+		}
+	}
+}

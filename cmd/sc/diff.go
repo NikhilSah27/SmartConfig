@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"smartconfig/internal/fsutil"
+	"smartconfig/internal/redact"
 	"smartconfig/internal/store"
 )
 
@@ -15,7 +17,10 @@ func newDiffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff <id> [<id2>]",
 		Short: "Diff a snapshot against the file on disk, or two snapshots",
-		Args:  cobra.RangeArgs(1, 2),
+		Long: `Diff a snapshot against the file on disk, or two snapshots. In a secret
+file (sc scope says which) each secret value is shown as <hidden N>: the
+same N on both sides is the same value.`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
 			if err != nil {
@@ -28,13 +33,13 @@ func newDiffCmd() *cobra.Command {
 			}
 			aLabel := label("a", a.Path, "snapshot "+a.ID)
 			var bData []byte
-			var bLabel string
+			var bLabel, bPath string
 			if len(args) == 2 {
 				b, data, err := loadSnapshot(s, args[1])
 				if err != nil {
 					return err
 				}
-				bData, bLabel = data, label("b", b.Path, "snapshot "+b.ID)
+				bData, bLabel, bPath = data, label("b", b.Path, "snapshot "+b.ID), b.Path
 			} else {
 				st, err := fsutil.ReadState(a.Path)
 				if err != nil {
@@ -44,19 +49,35 @@ func newDiffCmd() *cobra.Command {
 				if st.Kind == "link" {
 					bData = []byte(st.Target + "\n")
 				}
-				bLabel = label("b", a.Path, "on disk")
+				bLabel, bPath = label("b", a.Path, "on disk"), a.Path
 			}
-			d, err := store.UnifiedDiff(aData, bData, aLabel, bLabel)
+			// One numbering for both sides, so a changed secret shows.
+			hide := redact.Numbered()
+			aShown, na := hideSecrets(a.Path, aData, hide)
+			bShown, nb := hideSecrets(bPath, bData, hide)
+			d, err := store.UnifiedDiff(aShown, bShown, aLabel, bLabel)
 			if err != nil {
 				return fmt.Errorf("diff: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if d == "" {
+			switch {
+			case d == "" && !bytes.Equal(aData, bData):
+				// Blanks around a hidden value, which the marker drops.
+				fmt.Fprintln(out, "no differences shown: the two differ only where values are hidden")
+			case d == "":
 				fmt.Fprintln(out, "no differences")
-				return nil
+			default:
+				if _, err := io.WriteString(out, d); err != nil {
+					return err
+				}
 			}
-			_, err = io.WriteString(out, d)
-			return err
+			if na > 0 {
+				hiddenNote(a.Path, "<hidden N>")
+			}
+			if nb > 0 && bPath != a.Path {
+				hiddenNote(bPath, "<hidden N>")
+			}
+			return nil
 		},
 	}
 }

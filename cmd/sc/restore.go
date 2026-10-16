@@ -183,6 +183,7 @@ func restoreChecked(cmd *cobra.Command, s *store.Store, src store.Change) (bool,
 	if check.Worst(added) < check.Error {
 		return true, nil
 	}
+	hideSaid(src.Path, data, added, nil)
 	out := cmd.OutOrStdout()
 	rows := make([]findingRow, len(added))
 	for i, f := range added {
