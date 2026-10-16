@@ -29,11 +29,13 @@ after every step. For the full history, decisions and recovery guide see
   ([reviews/2026-10-16-m5-followups-chunk-k.md](reviews/2026-10-16-m5-followups-chunk-k.md);
   your picks for K1 and K7, 2026-10-16, both on the recommended answer).
   **Chunk L is built:** step 8 (`ea50fad`, the apt hook) and step 9
-  (`9a40d4e`, the lab's `--deb` checks the upgrade's rows). Its review
-  found L1-L6 (L1 high: no run was ever tagged); **next: its fixes** (log,
-  2026-10-16), then the sign-off runs, each with your OK. The handoff, if
-  this
-  session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  (`9a40d4e`, the lab's `--deb` checks the upgrade's rows). **Chunk L
+  is done and reviewed**
+  ([reviews/2026-10-16-m5-followups-chunk-l.md](reviews/2026-10-16-m5-followups-chunk-l.md);
+  L1 high, all six fixed). **All nine steps of the round are built and
+  reviewed. Next: the sign-off runs, each waiting for your OK** (see
+  "Still waiting for you"). The round's "done" for the M6 session comes
+  after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -56,6 +58,13 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
 - **Errors in the M6 draft.** They are fixed in draft 2.
 
 **Still waiting for you:**
+
+- [ ] **The M5 follow-up round's sign-off** (MILESTONES, "Then, each with
+  your OK"): all checks; `accept-m2`, `accept-m3` and `accept-m4` as
+  root; `make lab-e2e LAB_E2E_ARGS=--deb` in both modes (an hour or two
+  each under TCG: the host's freezes cost earlier runs their verdict); the
+  new package installed on this VM, a reboot, and its read-only check.
+  Say which to run, and when.
 
 - [ ] What happens to the rest of "Open, with no milestone yet" in
   MILESTONES: LVM/LUKS, applied markers, ACLs, extra roots, the user
