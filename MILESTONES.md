@@ -511,7 +511,8 @@ fixes `7d8fec1`..`a5078a6`).
    read. `sc edit` and `sc restore` keep hiding.
 
 **Chunk L, apt:**
-8. The package ships `/etc/apt/apt.conf.d/50smartconfig` (a conffile).
+8. Done (`ea50fad`): the package ships `/etc/apt/apt.conf.d/50smartconfig`
+   (a conffile).
    - Its `DPkg::Pre-Invoke` and `Post-Invoke` lines run `sc apt begin`
      and `sc apt end`, guarded, so a missing `sc` breaks nothing.
    - These mark a dpkg run in `/run/smartconfig`.

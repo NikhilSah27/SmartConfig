@@ -28,7 +28,9 @@ after every step. For the full history, decisions and recovery guide see
   **Chunk K is done and reviewed**
   ([reviews/2026-10-16-m5-followups-chunk-k.md](reviews/2026-10-16-m5-followups-chunk-k.md);
   your picks for K1 and K7, 2026-10-16, both on the recommended answer).
-  **Next: chunk L** (apt, steps 8-9). The handoff, if this
+  **Chunk L, step 8 is on main** (`ea50fad`, the apt hook). **Next:
+  step 9** (the lab's `--deb` checks the upgrade's rows are apt), then
+  the chunk L review. The handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -3422,3 +3424,28 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   `docs/reviews/2026-10-16-m5-followups-chunk-k.md`. K1-K13, one high,
   all fixed. MILESTONES: chunk K closed, step 6's list as it is now.
   **Chunk K is closed.** **Next:** chunk L, step 8 (the apt hook).
+- **Chunk L, step 8: the apt hook** (2026-10-16, `ea50fad`).
+  - **The package** ships `/etc/apt/apt.conf.d/50smartconfig`, a second
+    conffile: `DPkg::Pre-Invoke` and `Post-Invoke` run `sc apt begin` and
+    `sc apt end`, guarded (`[ -x ]` and `|| true`), so a missing or
+    failing `sc` neither stops apt nor prints anything. `apt-config -c`
+    reads it.
+  - **The mark** (`internal/aptrun`, `/run/smartconfig/apt-run`): the
+    pid and start time of the apt above the hook's shells, and when the
+    run began. scd reads it for each change it records; a mark whose apt
+    is gone or whose pid was reused tags nothing. `sc apt` opens no store
+    and is root only. Only the system's scd reads it: one with `--root`
+    (the tests) does not, so an unattended upgrade cannot tag test rows.
+  - **The rows:** origin `apt`, the computed intent and the run, e.g.
+    `changed (apt run 2026-10-16 07:05:12 UTC)`. They are scd's rows
+    (`store.Watched`): the checker reports what they add, `sc prune` may
+    drop them, a snapshot equal to one is a row of its own. sc-m1 lists,
+    shows and restores them (`make m1-compat` gains the case).
+  - **Mutations:** 21, 20 killed after three tests were added; the
+    survivor (an apt row before a change that was never checked, as
+    after a full check queue, taken as stale) is out of reach of a test
+    (`~/smartconfig-work/fu-scratch/k-mut/step8.py`, `step8-results.txt`).
+  - **Checks:** `make build fmt vet`, the tests and race pass (40-minute
+    timeout), `lab-test`, `m1-compat`, `make deb` and the root pass clean
+    (`~/smartconfig-work/fu-scratch/checks-l8.log`).
+  - **Next:** step 9, the lab's `--deb` mode checks the upgrade's rows.
