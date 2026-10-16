@@ -24,8 +24,9 @@ after every step. For the full history, decisions and recovery guide see
   your picks for J1, J6 and J7, 2026-10-12, all on the recommended
   answer). **Chunk K, step 6 is on main** (`47d35a5`, 2026-10-16:
   secret files shown hidden; M6 step 2's `sc check --tsv` can build on
-  it). **Next: chunk K, step 7** (`--show-secrets`, as root), then the
-  chunk K review. The handoff, if this
+  it). Step 7 is on main too (`1d6671a`, `--show-secrets` as root).
+  **Next: the chunk K review** (one reviewer, its own clone). The
+  handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -3309,3 +3310,17 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     root pass clean (`~/smartconfig-work/fu-scratch/checks-k6.log`,
     run 2).
   - **Next:** step 7, `--show-secrets` as root.
+- **Chunk K, step 7: `--show-secrets`, as root** (2026-10-16, `1d6671a`).
+  - **What:** `sc cat`, `sc diff` and `sc check` take `--show-secrets`.
+    As root, secret files are shown as stored, and what a validator said
+    as it said it. Anyone else is refused before anything is read
+    (`sc: --show-secrets needs root`, exit 1). `sc edit` and `sc restore`
+    have no such flag and keep hiding. The stderr note on hidden values
+    now names the flag.
+  - **Tests:** `TestShowSecrets` (refused as a user for all three; shown
+    as root; the next run hides again). Four mutations (the flag ignored
+    by cat/diff, by check's lines, no root check, the check inverted):
+    all killed.
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-k7.log`).
+  - **Next:** the chunk K review (steps 6 and 7), one reviewer.

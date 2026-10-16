@@ -483,7 +483,7 @@ fixes `9a08186`..`09a4af1`).
    status`, `sc check <id>` (J2) and scd's check of the version after a
    change (J8) judge versions so too.
 
-**Chunk K, secrets:**
+**Chunk K, secrets:** built (steps 6 and 7); its review is next.
 6. Done (`47d35a5`): a secret list in the scope (`secret GLOB`):
    content stored, shown hidden. It covers `/etc/shadow`, `/etc/gshadow`,
    NetworkManager's system-connections,
@@ -497,7 +497,9 @@ fixes `9a08186`..`09a4af1`).
      validator said about those files.
    - `sc scope` names the secret line; `sc restore` writes the real
      content.
-7. `--show-secrets` shows them, as root.
+7. Done (`1d6671a`): `--show-secrets` shows them, as root (`sc cat`,
+   `sc diff`, `sc check`); anyone else is refused before anything is
+   read. `sc edit` and `sc restore` keep hiding.
 
 **Chunk L, apt:**
 8. The package ships `/etc/apt/apt.conf.d/50smartconfig` (a conffile).
