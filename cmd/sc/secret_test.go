@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -53,16 +54,16 @@ func TestCatDiffSecrets(t *testing.T) {
 		t.Errorf("plain cat: %+v", r)
 	}
 
-	// Against the disk: a changed password is a changed marker; the
-	// unchanged one keeps its number on both sides.
+	// Against the disk: a changed password is marked old and new; the
+	// unchanged one is <hidden> on both sides.
 	os.WriteFile(shadow, []byte(strings.Replace(v1, "hunter22", "newpass9", 1)), 0o600)
 	r = sc(t, "diff", id1)
-	if r.code != 0 || !strings.Contains(r.stdout, "-root:<hidden 1>:19000") || !strings.Contains(r.stdout, "+root:<hidden 3>:19000") ||
-		r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden N> (as root, --show-secrets shows them)\n" {
+	if r.code != 0 || !strings.Contains(r.stdout, "\n-root:<hidden, old>:19000:0:99999:7:::\n+root:<hidden, new>:19000:0:99999:7:::\n bob:!<hidden>:19000::::::\n") ||
+		r.stderr != "sc: note: the secret values of "+shadow+" are shown as <hidden>, <hidden, old> or <hidden, new> (as root, --show-secrets shows them)\n" {
 		t.Fatalf("diff: %+v", r)
 	}
 	id2 := snapID(t, shadow)
-	if r := sc(t, "diff", id1, id2); !strings.Contains(r.stdout, "-root:<hidden 1>") || !strings.Contains(r.stdout, "+root:<hidden 3>") {
+	if r := sc(t, "diff", id1, id2); !strings.Contains(r.stdout, "-root:<hidden, old>") || !strings.Contains(r.stdout, "+root:<hidden, new>") {
 		t.Errorf("diff of two: %+v", r)
 	}
 	if r := sc(t, "diff", id2); r.stdout != "no differences\n" {
@@ -71,10 +72,10 @@ func TestCatDiffSecrets(t *testing.T) {
 
 	// A blank after a hidden value is kept, so a change in it shows.
 	nm := filepath.Join(dir, "home.nmconnection")
-	os.WriteFile(nm, []byte("[wifi-security]\npsk=hunter22\n"), 0o600)
+	os.WriteFile(nm, []byte("[wifi-security]\nwep-key0=hunter22\n"), 0o600)
 	idNM := snapID(t, nm)
-	os.WriteFile(nm, []byte("[wifi-security]\npsk=hunter22 \n"), 0o600)
-	if r := sc(t, "diff", idNM); !strings.Contains(r.stdout, "\n-psk=<hidden 1>\n+psk=<hidden 1> \n") {
+	os.WriteFile(nm, []byte("[wifi-security]\nwep-key0=hunter22 \n"), 0o600)
+	if r := sc(t, "diff", idNM); !strings.Contains(r.stdout, "\n-wep-key0=<hidden>\n+wep-key0=<hidden> \n") {
 		t.Errorf("blanks: %+v", r)
 	}
 
@@ -88,6 +89,92 @@ func TestCatDiffSecrets(t *testing.T) {
 	mustSC(t, "restore", "--force", id1)
 	if b, _ := os.ReadFile(shadow); string(b) != v1 {
 		t.Errorf("restored %q", b)
+	}
+}
+
+// diffNote is sc diff's note for p.
+func diffNote(p string) string {
+	return "sc: note: the secret values of " + p + " are shown as <hidden>, <hidden, old> or <hidden, new> (as root, --show-secrets shows them)\n"
+}
+
+// K7: sc diff's markers tell a changed value from an unchanged one, and
+// nothing more. Equal values on two lines look the same as different
+// ones; a value one side does not hide is old or new; each side is
+// hidden by its own path. K6: one note for each path that hid anything,
+// the file on disk included.
+func TestDiffSecretMarkers(t *testing.T) {
+	t.Setenv("SC_HOME", filepath.Join(t.TempDir(), "home"))
+	secretEnv(t)
+	mustSC(t, "init")
+	dir := t.TempDir()
+
+	// Two accounts with one hash, and two with different hashes: only
+	// root's last-change day changes. The two diffs read the same.
+	var outs []string
+	for i, v := range []string{"root:$6$s$sekrit1:1::::::\nbob:$6$s$sekrit1:1::::::\n", "root:$6$s$sekrit1:1::::::\nbob:$6$s$sekrit2:1::::::\n"} {
+		sh := filepath.Join(dir, strconv.Itoa(i), "shadow")
+		os.MkdirAll(filepath.Dir(sh), 0o700)
+		os.WriteFile(sh, []byte(v), 0o600)
+		id := snapID(t, sh)
+		os.WriteFile(sh, []byte(strings.Replace(v, ":1:", ":2:", 1)), 0o600)
+		r := sc(t, "diff", id)
+		if r.code != 0 || r.stderr != diffNote(sh) {
+			t.Fatalf("diff %d: %+v", i, r)
+		}
+		_, hunks, _ := strings.Cut(r.stdout, "@@") // past the labels, whose ids differ
+		outs = append(outs, hunks)
+	}
+	if outs[0] != outs[1] || !strings.Contains(outs[0], "\n-root:<hidden>:1::::::\n+root:<hidden>:2::::::\n bob:<hidden>:1::::::\n") {
+		t.Errorf("one hash:\n%s\ntwo hashes:\n%s", outs[0], outs[1])
+	}
+
+	// Two accounts that swap hashes: every value is in both versions, so
+	// nothing shown differs, but the bytes do.
+	sh := filepath.Join(dir, "shadow")
+	os.WriteFile(sh, []byte("root:$6$s$sekrit1:1::::::\nbob:$6$s$sekrit2:1::::::\n"), 0o600)
+	id := snapID(t, sh)
+	os.WriteFile(sh, []byte("root:$6$s$sekrit2:1::::::\nbob:$6$s$sekrit1:1::::::\n"), 0o600)
+	if r := sc(t, "diff", id); r.stdout != "no differences shown: the two differ only where values are hidden\n" || r.stderr != diffNote(sh) {
+		t.Errorf("swapped: %+v", r)
+	}
+
+	// A WEP key added on disk since the version: new, and the note says so
+	// although the version hid nothing (K6).
+	nm := filepath.Join(dir, "Home.nmconnection")
+	os.WriteFile(nm, []byte("[wifi-security]\nkey-mgmt=none\n"), 0o600)
+	idNM := snapID(t, nm)
+	os.WriteFile(nm, []byte("[wifi-security]\nkey-mgmt=none\nwep-key0=sekrit\n"), 0o600)
+	if r := sc(t, "diff", idNM); r.code != 0 || !strings.Contains(r.stdout, "\n+wep-key0=<hidden, new>\n") || r.stderr != diffNote(nm) {
+		t.Errorf("added on disk: %+v", r)
+	}
+	// The other way round: removed since the version.
+	idNM2 := snapID(t, nm)
+	os.WriteFile(nm, []byte("[wifi-security]\nkey-mgmt=none\n"), 0o600)
+	if r := sc(t, "diff", idNM2); !strings.Contains(r.stdout, "\n-wep-key0=<hidden, old>\n") || r.stderr != diffNote(nm) {
+		t.Errorf("removed on disk: %+v", r)
+	}
+
+	// Two ids of different paths, a secret file and one that is not: each
+	// side by its own path, a note for the secret one only. The plain
+	// file's text is shown; its equal value does not make the secret's
+	// <hidden>, as only hidden values count.
+	plain := filepath.Join(dir, "hosts")
+	os.WriteFile(plain, []byte("wep-key0=sekrit\n"), 0o644)
+	idPlain := snapID(t, plain)
+	if r := sc(t, "diff", idPlain, idNM2); !strings.Contains(r.stdout, "\n-wep-key0=sekrit\n") || !strings.Contains(r.stdout, "\n+wep-key0=<hidden, new>\n") || r.stderr != diffNote(nm) {
+		t.Errorf("plain, secret: %+v", r)
+	}
+	if r := sc(t, "diff", idNM2, idPlain); !strings.Contains(r.stdout, "\n-wep-key0=<hidden, old>\n") || !strings.Contains(r.stdout, "\n+wep-key0=sekrit\n") || r.stderr != diffNote(nm) {
+		t.Errorf("secret, plain: %+v", r)
+	}
+
+	// Two secret files of different paths with one WEP key: <hidden> on both
+	// sides, and a note for each path.
+	nm2 := filepath.Join(dir, "Work.nmconnection")
+	os.WriteFile(nm2, []byte("[wifi-security]\nwep-key0=sekrit\n"), 0o600)
+	if r := sc(t, "diff", idNM2, snapID(t, nm2)); !strings.Contains(r.stdout, "\n wep-key0=<hidden>\n") || strings.Contains(r.stdout, "sekrit") ||
+		r.stderr != diffNote(nm)+diffNote(nm2) {
+		t.Errorf("two secret files: %+v", r)
 	}
 }
 

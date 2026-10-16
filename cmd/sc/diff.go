@@ -18,9 +18,11 @@ func newDiffCmd() *cobra.Command {
 		Use:   "diff <id> [<id2>]",
 		Short: "Diff a snapshot against the file on disk, or two snapshots",
 		Long: `Diff a snapshot against the file on disk, or two snapshots. In a secret
-file (sc scope says which) each secret value is shown as <hidden N>: the
-same N on both sides is the same value. As root, --show-secrets shows
-them as stored.`,
+file (sc scope says which) a secret value is shown as <hidden> when the
+other version hides the same value too, anywhere in it, and else as
+<hidden, old> in the first version and <hidden, new> in the second. So a
+changed password shows, but not which hidden values are equal. As root,
+--show-secrets shows them as stored.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -52,10 +54,12 @@ them as stored.`,
 				}
 				bLabel, bPath = label("b", a.Path, "on disk"), a.Path
 			}
-			// One numbering for both sides, so a changed secret shows.
-			hide := redact.Numbered()
-			aShown, na := hideSecrets(a.Path, aData, hide)
-			bShown, nb := hideSecrets(bPath, bData, hide)
+			// Each side by its own path. A value is marked old or new
+			// when the other side does not hide it, so a changed secret
+			// shows; equal values on two lines are not told apart.
+			aHide, bHide := redact.Sides(hiddenValues(a.Path, aData), hiddenValues(bPath, bData))
+			aShown, na := hideSecrets(a.Path, aData, aHide)
+			bShown, nb := hideSecrets(bPath, bData, bHide)
 			d, err := store.UnifiedDiff(aShown, bShown, aLabel, bLabel)
 			if err != nil {
 				return fmt.Errorf("diff: %w", err)
@@ -63,7 +67,9 @@ them as stored.`,
 			out := cmd.OutOrStdout()
 			switch {
 			case d == "" && !bytes.Equal(aData, bData):
-				// Blanks around a hidden value, which the marker drops.
+				// Hidden values that only moved (two accounts that
+				// swapped hashes): each is in both versions, so each
+				// shows as <hidden>.
 				fmt.Fprintln(out, "no differences shown: the two differ only where values are hidden")
 			case d == "":
 				fmt.Fprintln(out, "no differences")
@@ -72,17 +78,34 @@ them as stored.`,
 					return err
 				}
 			}
-			if na > 0 {
-				hiddenNote(a.Path, "<hidden N>")
+			// One note per path that hid anything, on either side.
+			if na > 0 || (nb > 0 && bPath == a.Path) {
+				hiddenNote(a.Path, diffMarkers)
 			}
 			if nb > 0 && bPath != a.Path {
-				hiddenNote(bPath, "<hidden N>")
+				hiddenNote(bPath, diffMarkers)
 			}
 			return nil
 		},
 	}
 	addShowSecrets(cmd)
 	return cmd
+}
+
+// diffMarkers is how hiddenNote names sc diff's markers; its help says
+// which is which.
+const diffMarkers = redact.Marker + ", " + redact.Old + " or " + redact.New
+
+// hiddenValues returns the values hideSecrets hides in data, p's content,
+// as they stand: none for a file that is not secret, or with
+// --show-secrets.
+func hiddenValues(p string, data []byte) []string {
+	var vs []string
+	hideSecrets(p, data, func(s string) string {
+		vs = append(vs, s)
+		return redact.Marker
+	})
+	return vs
 }
 
 func loadSnapshot(s *store.Store, id string) (store.Change, []byte, error) {

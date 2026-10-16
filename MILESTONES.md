@@ -491,8 +491,10 @@ fixes `9a08186`..`09a4af1`).
    - `sc cat` and `sc diff` replace the shadow and gshadow password
      field, `psk=`, `password=`, `secret=` and private-key values, and
      netplan's `password:`, with a marker (`internal/redact`). `sc cat`
-     shows `<hidden>`; `sc diff` numbers them, `<hidden N>`, so a
-     changed value still shows.
+     shows `<hidden>`; `sc diff` shows `<hidden>` for a value the other
+     version hides too, else `<hidden, old>` or `<hidden, new>`, so a
+     changed value still shows but equal values are not told apart (the
+     review's K7).
    - `sc check -v`, `sc edit` and `sc restore` do the same to what a
      validator said about those files.
    - `sc scope` names the secret line; `sc restore` writes the real

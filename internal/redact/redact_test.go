@@ -220,14 +220,43 @@ func TestPairs(t *testing.T) {
 	}
 }
 
-// Numbered gives a value the same number wherever it is, so the diff of
-// two versions shows which secret changed and which did not.
-func TestNumbered(t *testing.T) {
-	h := Numbered()
-	a, _ := File("/etc/shadow", []byte("a:$6$one:1\nb:$6$two:1\n"), h)
-	b, _ := File("/etc/shadow", []byte("a:$6$one:1\nb:$6$three:1\nc:$6$one:1\n"), h)
-	if string(a) != "a:<hidden 1>:1\nb:<hidden 2>:1\n" || string(b) != "a:<hidden 1>:1\nb:<hidden 3>:1\nc:<hidden 1>:1\n" {
-		t.Errorf("a %q, b %q", a, b)
+// sides runs old and new through File with the Hiders Sides gives them.
+func sides(p, old, new string) (string, string) {
+	var ov, nv []string
+	collect := func(vs *[]string) Hider {
+		return func(s string) string { *vs = append(*vs, s); return Marker }
+	}
+	File(p, []byte(old), collect(&ov))
+	File(p, []byte(new), collect(&nv))
+	oh, nh := Sides(ov, nv)
+	o, _ := File(p, []byte(old), oh)
+	n, _ := File(p, []byte(new), nh)
+	return string(o), string(n)
+}
+
+// K7: Sides marks a value old or new only when the other version does not
+// hide it, so a diff shows which secret changed, and nothing tells which
+// hidden values are equal.
+func TestSides(t *testing.T) {
+	// b's value changed; a's did not; c's is a's value, on a new line.
+	o, n := sides("/etc/shadow", "a:$6$one:1\nb:$6$two:1\n", "a:$6$one:1\nb:$6$three:1\nc:$6$one:1\n")
+	if o != "a:<hidden>:1\nb:<hidden, old>:1\n" || n != "a:<hidden>:1\nb:<hidden, new>:1\nc:<hidden>:1\n" {
+		t.Errorf("old %q, new %q", o, n)
+	}
+	// Two accounts with one hash look the same as two with different ones.
+	same, _ := sides("/etc/shadow", "a:$6$one:1\nb:$6$one:1\n", "a:$6$one:2\nb:$6$one:1\n")
+	diff, _ := sides("/etc/shadow", "a:$6$one:1\nb:$6$two:1\n", "a:$6$one:2\nb:$6$two:1\n")
+	if same != diff || same != "a:<hidden>:1\nb:<hidden>:1\n" {
+		t.Errorf("one hash %q, two hashes %q", same, diff)
+	}
+	// A value only one version has, or none hidden in the other.
+	o, n = sides("/x.nmconnection", "[wifi-security]\nkey-mgmt=none\n", "[wifi-security]\nkey-mgmt=none\nwep-key0=sekrit\n")
+	if o != "[wifi-security]\nkey-mgmt=none\n" || n != "[wifi-security]\nkey-mgmt=none\nwep-key0=<hidden, new>\n" {
+		t.Errorf("added: old %q, new %q", o, n)
+	}
+	oh, nh := Sides([]string{"sekrit1"}, []string{"sekrit2"})
+	if oh("sekrit1") != Old || nh("sekrit2") != New || nh("sekrit1") != Marker || oh("sekrit2") != Marker {
+		t.Errorf("one side only: %q, %q", oh("sekrit1"), nh("sekrit2"))
 	}
 }
 
@@ -364,7 +393,7 @@ func TestMarkerTextInValue(t *testing.T) {
 		"/etc/shadow":   "bob:<hidden>sekrit:19000::::::\n",
 		"/etc/x.conf":   "password=<hidden>sekrit\nopts a,secret=<hidden>sekrit\n",
 		"/etc/x.yaml":   "password: <hidden>sekrit\n",
-		"/etc/y.conf":   "[vpn-secrets]\nx=<hidden 1>sekrit\n",
+		"/etc/y.conf":   "[vpn-secrets]\nx=<hidden, new>sekrit\n",
 		"/etc/pem.conf": begin("", "") + "\n<hidden>sekrit\n-----END PRIVATE KEY-----\n",
 	} {
 		shown(t, p, hide(t, p, in))
@@ -434,8 +463,8 @@ func TestWiderList(t *testing.T) {
 // line ends.
 func TestWhole(t *testing.T) {
 	in := "sekrit1\n\n  sekrit2 x \r\nlast"
-	got, n := Whole([]byte(in), Numbered())
-	if string(got) != "<hidden 1>\n\n  <hidden 2> \r\n<hidden 3>" || n != 3 {
+	got, n := Whole([]byte(in), Plain)
+	if string(got) != "<hidden>\n\n  <hidden> \r\n<hidden>" || n != 3 {
 		t.Errorf("%q, %d", got, n)
 	}
 	if vs := Values("/x", []byte(in), true); strings.Join(vs, ",") != "sekrit2 x,sekrit1,last" {

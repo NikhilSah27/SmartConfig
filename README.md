@@ -132,8 +132,10 @@ undo the creation of a file (a "did not exist" row). Fingerprint-only files
 restored. In a secret file (`/etc/shadow` and its copies, NetworkManager's
 system-connections, netplan, cloud-init, `/etc/fstab`, wpa_supplicant,
 sssd, OpenVPN, mail relays and more: `sc scope PATH` says which), `sc cat`
-prints each secret value as `<hidden>`, and `sc diff` as `<hidden N>`: the
-same N on both sides is the same value, so a changed password still shows.
+prints each secret value as `<hidden>`. `sc diff` shows a value as
+`<hidden>` when the other version hides the same value too, and else as
+`<hidden, old>` or `<hidden, new>`: a changed password still shows, but
+not which hidden values are equal, such as two accounts with one hash.
 A file that is only a secret (`/etc/ldap.secret`, `sasl_passwd`,
 `krb5.keytab`, Let's Encrypt private keys) is shown with every line
 hidden. As root, `--show-secrets` shows them as stored.

@@ -16,7 +16,6 @@ import (
 	"path"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -29,17 +28,36 @@ type Hider func(secret string) string
 // Plain stands Marker in for every value.
 func Plain(string) string { return Marker }
 
-// Numbered returns a Hider that gives each distinct value a number of its
-// own, "<hidden 1>", so a diff of two versions still shows which value
-// changed. Which hidden values are equal is all it tells.
-func Numbered() Hider {
-	n := map[string]int{}
-	return func(s string) string {
-		if n[s] == 0 {
-			n[s] = len(n) + 1
+// The markers of a diff for a value only one of its two versions hides:
+// Old in the first version, New in the second.
+const (
+	Old = "<hidden, old>"
+	New = "<hidden, new>"
+)
+
+// Sides returns the Hiders of a diff's two versions, given the values
+// each one hides (a, the old, then b, the new): Marker for a value the other version
+// hides too, anywhere in it, else Old or New. So a changed value shows as
+// changed, and nothing tells which hidden values are equal: two accounts
+// with one hash look the same as two with different ones.
+func Sides(a, b []string) (Hider, Hider) {
+	in := func(vs []string) map[string]bool {
+		m := make(map[string]bool, len(vs))
+		for _, v := range vs {
+			m[v] = true
 		}
-		return "<hidden " + strconv.Itoa(n[s]) + ">"
+		return m
 	}
+	inA, inB := in(a), in(b)
+	side := func(other map[string]bool, alone string) Hider {
+		return func(s string) string {
+			if other[s] {
+				return Marker
+			}
+			return alone
+		}
+	}
+	return side(inB, Old), side(inA, New)
 }
 
 var (
