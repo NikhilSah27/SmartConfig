@@ -20,7 +20,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"smartconfig/internal/aptrun"
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/scope"
@@ -134,6 +133,10 @@ type entry struct {
 	// change but does not clear this: scd is ready (Config.Ready) once
 	// every such path is recorded or on hold.
 	startup bool
+	// run: the dpkg run going on at the path's latest event, or, with no
+	// event, when a rescan marked it; nil if none. The row is recorded
+	// after the quiet time, when the run may have ended or begun.
+	run *dpkgRun
 }
 
 // watchRef is one watched directory.
@@ -180,6 +183,7 @@ type Watcher struct {
 	lastChecked map[string]found           // what the last check of each path found
 	lowSpace    bool                       // under the free-space floor
 	nEvent      int                        // dirty entries marked by events (the MaxDirty bound)
+	apt         aptMark                    // the dpkg run's mark as last read
 	stopping    atomic.Bool                // Run is stopping: walks end early
 
 	poke chan struct{}
@@ -645,6 +649,11 @@ func (w *Watcher) markLocked(p, reason string, created, prefix bool) {
 	} else {
 		e.self = true // also when a moved-away dir's name is reused at once
 	}
+	if reason == reasonEvent || e.reason != reasonEvent {
+		// The latest event wins: an edit of the owner's that dpkg then
+		// rewrites is dpkg's, and one made after the run is the owner's.
+		e.run = w.aptRunLocked()
+	}
 	if reason == reasonEvent {
 		e.reason = reasonEvent // a live event explains the change
 	}
@@ -1038,7 +1047,7 @@ func (w *Watcher) process(ctx context.Context, batch []due) {
 	var handled []due
 	for _, d := range batch {
 		if d.e.prefix {
-			w.expandPrefix(d.path)
+			w.expandPrefix(d.path, d.e.run)
 			d.e.prefix = false
 			if !d.e.self {
 				continue
@@ -1149,12 +1158,11 @@ func (w *Watcher) processed(p string) {
 // path was put back to be read again.
 func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 	o = store.Obs{Path: d.path, Created: d.e.created, CheckStamp: true, Origin: store.OriginAuto}
-	// A change seen while a dpkg run goes on is the run's (step 8): it is
-	// tagged by when scd saw it, which is all scd can know.
-	if w.cfg.AptRun != "" {
-		if m, ok := aptrun.Read(w.cfg.AptRun); ok {
-			o.Origin, o.Run = store.OriginApt, m.Name()
-		}
+	// A change an event reported during a dpkg run is the run's (step 8):
+	// it is tagged by the run at the path's latest event, not at this read
+	// after the quiet time (the chunk L review, L2).
+	if d.e.reason == reasonEvent && d.e.run != nil {
+		o.Origin, o.Run = store.OriginApt, d.e.run.name
 	}
 	switch d.e.reason {
 	case reasonStartup:
@@ -1217,6 +1225,13 @@ func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 		o.CheckStamp = false
 	}
 	o.State = &st
+	// A rescan (scd restarted in the run, by the package's postinst) finds
+	// what changed while no event was seen, maybe long before the run: it
+	// is the run's only if the file changed after the run began (L4). A
+	// tie goes to the owner: file times tick every few ms.
+	if d.e.reason != reasonEvent && d.e.run != nil && time.Unix(0, st.Meta.Stamp.Ctime).After(d.e.run.begun) {
+		o.Origin, o.Run = store.OriginApt, d.e.run.name
+	}
 	if until := w.limitUserFile(&o); !until.IsZero() {
 		w.mu.Lock()
 		w.holdLocked(d, until)
@@ -1262,8 +1277,9 @@ func (w *Watcher) holdLocked(d due, t time.Time) {
 }
 
 // expandPrefix marks every live stored path below dir: it moved away, so
-// they are now absent and get deleted rows.
-func (w *Watcher) expandPrefix(dir string) {
+// they are now absent and get deleted rows, of the dpkg run going on when
+// it moved.
+func (w *Watcher) expandPrefix(dir string, run *dpkgRun) {
 	live, err := w.st.LivePaths()
 	if err != nil {
 		w.logOnce("live: "+err.Error(), prioErr, err.Error())
@@ -1275,6 +1291,7 @@ func (w *Watcher) expandPrefix(dir string) {
 			w.markLocked(p, reasonEvent, false, false)
 			if e := w.dirty[p]; e != nil { // nil after the dirty-set bound
 				e.due = time.Now()
+				e.run = run
 			}
 		}
 	}

@@ -1,7 +1,8 @@
 // Package aptrun is the mark of a dpkg run (M5 follow-ups, step 8). apt's
 // hook runs sc apt begin before dpkg and sc apt end after it; begin writes
-// the mark, end removes it, and scd tags each change it sees while a run's
-// apt is alive with origin apt and the run.
+// the mark, end removes it, and scd tags with origin apt and the run each
+// change whose latest event came while the run's apt was alive (and a
+// change a rescan finds, if the file changed after the run began).
 //
 // The mark names the apt process by its pid and its start time (apt runs
 // its hook lines from a fork of itself, which is gone before dpkg runs:

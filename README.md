@@ -193,8 +193,10 @@ unattended-upgrades; a bare `dpkg -i` runs no apt hook and is not): the
 package's `/etc/apt/apt.conf.d/50smartconfig` runs `sc apt begin` before
 each dpkg run and `sc apt end` after it, and those rows get origin `apt` in `sc log`,
 with the run in their intent (`changed (apt run 2026-10-16 07:05:12
-UTC)`). A change is tagged by when scd saw it, so an edit of yours during
-an upgrade is tagged too. There is no "undo a run": restore its rows one
+UTC)`). A change is tagged by when its last write came: an edit of yours
+during an upgrade is tagged too, one saved just before it is not. A change
+scd finds by a rescan (scd restarted in the run, as an upgrade of this
+package does) is the run's only if the file changed after the run began. There is no "undo a run": restore its rows one
 by one. The hook does nothing, silently, when `sc` is gone, fails or is
 too old to know `sc apt` (a downgrade keeps the hook), so a package
 removed but not purged never stops apt; a run apt did not end (apt
