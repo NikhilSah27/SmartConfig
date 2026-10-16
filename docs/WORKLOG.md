@@ -3364,3 +3364,29 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
     root pass clean (`~/smartconfig-work/fu-scratch/checks-k-fix1.log`).
   - **Next:** fix 2, K1: the wider secret list.
+- **Chunk K fix 2: the wider secret list, K1 and K11** (2026-10-16,
+  `c404bd1`).
+  - **Your pick:** widen, keep the content stored, so `sc restore` can
+    still put any of these back.
+  - **secret lines** now cover copies of shadow, all of `/etc/cloud`,
+    `/etc/fstab`, ifupdown, wpa_supplicant, sssd, nslcd, swanctl,
+    OpenVPN, msmtp, ssmtp, MySQL's `debian.cnf`, Samba and Let's
+    Encrypt.
+  - **hide lines** (a new verb): files that are only a secret are shown
+    with every line hidden: LDAP's `*.secret`, `rsyncd.secrets`,
+    `krb5.keytab`, `ipsec.secrets`, `sasl_passwd`, exim's
+    `passwd.client`, `authinfo`, `chrony.keys`, BIND's keys, OpenVPN's
+    key and auth files, Let's Encrypt's private keys, `opasswd`.
+  - **redact:** shadow's rule for any file named after it, and a crypt
+    hash in shadow's place in any secret file; `key value` lines;
+    OpenVPN's inline key blocks; more key names (authtok, token, ...pass,
+    ...pw, ..._private). A cloud-init `chpasswd:` mapping is hidden whole.
+  - **K11:** the test helper puts back the rule it replaced.
+  - **Tests:** 20 mutations, all killed
+    (`~/smartconfig-work/fu-scratch/k-mut/fix2.py`, `fix2-results.txt`).
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-k-fix2.log`).
+  - **Next:** at your ask ("make several agents to fix all these
+    faster"), fix 3 (K7, K6), K9 with K13, and K12's tests are built by
+    three agents in clones of their own; each lands here as its own
+    commit.
