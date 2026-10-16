@@ -26,6 +26,17 @@ const (
 // OriginAuto marks rows written by the watcher.
 const OriginAuto = "auto"
 
+// OriginApt marks rows the watcher wrote while a dpkg run was going on
+// (sc apt begin and end, from apt's hook; M5 follow-ups, step 8). It is a
+// new origin string, not a schema change: older binaries read these rows
+// as the file rows they are.
+const OriginApt = "apt"
+
+// Watched reports whether origin is one the watcher writes, auto or apt.
+// Such rows are judged alike: their intent is computed, sc prune may drop
+// them, and the checker reports what they add.
+func Watched(origin string) bool { return origin == OriginAuto || origin == OriginApt }
+
 // MaxBatch is the most observations one Record call takes.
 const MaxBatch = 50
 
@@ -42,8 +53,9 @@ type Obs struct {
 	// sc prune keeps (the M5 follow-ups' chunk I review, I3).
 	Explicit bool
 	Origin   string
-	Intent   string // "" for OriginAuto: computed (changed, mode ...)
+	Intent   string // "" for a Watched origin: computed (changed, mode ...)
 	Suffix   string // appended to a computed intent (SuffixNotWatching, ...)
+	Run      string // OriginApt: the dpkg run, named after the computed intent
 }
 
 // Intent suffixes for watcher rows that no live event explained (plan 6.5).
@@ -145,11 +157,14 @@ func (s *Store) Record(obs []Obs) ([]Result, error) {
 				}
 				continue
 			}
-			if o.Origin == OriginAuto && o.Intent == "" {
+			if Watched(o.Origin) && o.Intent == "" {
 				c.Intent = autoIntent(last, c, o.Created)
 				// "first seen while not watching" says nothing more.
 				if !(c.Intent == "first seen" && o.Suffix == SuffixNotWatching) {
 					c.Intent += o.Suffix
+				}
+				if o.Run != "" {
+					c.Intent += " (apt run " + o.Run + ")"
 				}
 			}
 			if o.Created && last == nil && c.Kind != KindDeleted {
@@ -216,7 +231,7 @@ func nothingNew(o Obs, last, c *Change) bool {
 	if c.Kind == KindDeleted && last == nil {
 		return true
 	}
-	return !o.Force && sameState(last, c) && !(o.Explicit && last.Origin == OriginAuto)
+	return !o.Force && sameState(last, c) && !(o.Explicit && Watched(last.Origin))
 }
 
 // sameState reports whether row c records the same state as the newest row

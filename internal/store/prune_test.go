@@ -494,3 +494,38 @@ func TestPruneInterrupt(t *testing.T) {
 		t.Errorf("the next run: %+v %v", got, err)
 	}
 }
+
+// Rows scd tagged during a dpkg run are scd's rows (step 8): sc prune
+// drops a replaced one as it drops an auto row, and a snapshot equal to
+// one is a manual row of its own.
+func TestPruneAptRows(t *testing.T) {
+	s, dir := setup(t)
+	now := settable(s)
+	p := filepath.Join(dir, "p")
+	aptRow := func(content string) Change {
+		t.Helper()
+		write(t, p, content, 0o644)
+		o := observe(t, p)
+		o.Origin, o.Run = OriginApt, "2026-10-16 07:05:12 UTC"
+		return record(t, s, o)[0].Change
+	}
+	p1 := aptRow("one\n")
+	*now = now.Add(day)
+	aptRow("two\n") // replaced: goes
+	*now = now.Add(day)
+	aptRow("three\n") // replaced by the equal manual row: goes
+	*now = now.Add(day)
+	p4, unchanged, err := s.Snapshot(p, OriginManual, "by hand")
+	if err != nil || unchanged || p4.Origin != OriginManual {
+		t.Fatalf("a snapshot equal to an apt row: %+v %v %v", p4, unchanged, err)
+	}
+	*now = now.Add(day)
+	p5 := autoRow(t, s, p, "five\n")
+	if got, err := s.Prune(now.Add(day), nil, false); err != nil || got.Rows != 2 {
+		t.Fatalf("prune: %+v %v", got, err)
+	}
+	wantRows(t, s, p, p1, p4, p5)
+	if !Watched(OriginAuto) || !Watched(OriginApt) || Watched(OriginManual) || Watched(OriginEdit) || Watched(OriginRestore) {
+		t.Error("Watched")
+	}
+}

@@ -1,0 +1,5 @@
+// SmartConfig: mark each dpkg run, so scd tags the config changes it sees
+// meanwhile with origin apt (sc log). Guarded: with sc gone (the package
+// removed, this file kept) or failing, apt goes on as ever.
+DPkg::Pre-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt begin || true; fi"; };
+DPkg::Post-Invoke { "if [ -x /usr/sbin/sc ]; then /usr/sbin/sc apt end || true; fi"; };

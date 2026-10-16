@@ -28,6 +28,7 @@ for s in rescue emergency; do
 	install -D -m 0644 scripts/smartconfig-rescue.conf "$r/usr/lib/systemd/system/$s.service.d/50-smartconfig.conf"
 done
 install -D -m 0755 scripts/42_smartconfig "$r/etc/grub.d/42_smartconfig"
+install -D -m 0644 scripts/50smartconfig "$r/etc/apt/apt.conf.d/50smartconfig"
 doc=$r/usr/share/doc/smartconfig
 install -D -m 0644 README.md "$doc/README.md"
 cat >"$doc/copyright" <<EOF
@@ -68,10 +69,10 @@ Description: record and check every config file change, with a rescue boot
  compares and restores them. A GRUB entry boots to a root shell that says
  which change since the last healthy boot broke it and how to undo it.
 EOF
-echo /etc/grub.d/42_smartconfig >"$r/DEBIAN/conffiles"
-# md5sums: every file but the conffile, as dh_md5sums has it (dpkg keeps
+printf '%s\n' /etc/apt/apt.conf.d/50smartconfig /etc/grub.d/42_smartconfig >"$r/DEBIAN/conffiles"
+# md5sums: every file but the conffiles, as dh_md5sums has it (dpkg keeps
 # a conffile's own sum).
-(cd "$r" && find . -type f ! -path './DEBIAN/*' ! -path ./etc/grub.d/42_smartconfig | sed 's|^\./||' | LC_ALL=C sort | xargs md5sum) >"$r/DEBIAN/md5sums"
+(cd "$r" && find . -type f ! -path './DEBIAN/*' ! -path ./etc/grub.d/42_smartconfig ! -path ./etc/apt/apt.conf.d/50smartconfig | sed 's|^\./||' | LC_ALL=C sort | xargs md5sum) >"$r/DEBIAN/md5sums"
 for f in preinst postinst prerm postrm; do
 	if [ -f "scripts/deb/$f" ]; then install -m 0755 "scripts/deb/$f" "$r/DEBIAN/$f"; fi
 done

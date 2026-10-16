@@ -48,7 +48,7 @@ func newCheckQueue(max int) *checkQueue {
 func (q *checkQueue) add(c store.Change) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	deliberate := c.Origin != store.OriginAuto
+	deliberate := !store.Watched(c.Origin)
 	if j := q.jobs[c.Path]; j != nil {
 		if j.deliberate && !deliberate {
 			j.first, j.deliberate = c.ID, false // compare with the restored content
@@ -94,7 +94,7 @@ func (w *Watcher) queueCheck(c store.Change, reason string) {
 			return
 		}
 	}
-	if w.checks == nil || c.Kind != store.KindFile || !(c.Origin == store.OriginAuto || deliberate) ||
+	if w.checks == nil || c.Kind != store.KindFile || !(store.Watched(c.Origin) || deliberate) ||
 		(reason == reasonStartup && strings.HasPrefix(c.Intent, "first seen")) ||
 		w.checkGraph.Checker(c.Path) == "" {
 		return
@@ -170,7 +170,7 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 	// than a new one not said.
 	var had []check.Finding
 	stale := false
-	if before != nil && before.Origin != store.OriginAuto {
+	if before != nil && !store.Watched(before.Origin) {
 		_, ok := w.lastFound(p, *before)
 		stale = !ok // nothing checked it: what was reported is not what was before
 	}
@@ -231,7 +231,7 @@ func (w *Watcher) checkPath(ctx context.Context, p string, j checkJob) {
 		w.logLine(prioInfo, fmt.Sprintf("T%d %s: check: ok again (%s)", tier, show(p), last.ID))
 	}
 	added := check.Added(had, rep.Findings)
-	if last.Origin != store.OriginAuto {
+	if !store.Watched(last.Origin) {
 		added = nil // a restore or sc edit is deliberate (plan 7): only "ok again"
 	}
 	w.mu.Lock()

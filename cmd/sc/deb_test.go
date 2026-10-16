@@ -62,6 +62,7 @@ func TestBuildDeb(t *testing.T) {
 		}
 	}
 	want := []string{
+		"-rw-r--r-- root/root ./etc/apt/apt.conf.d/50smartconfig",
 		"-rwxr-xr-x root/root ./etc/grub.d/42_smartconfig",
 		"-rw-r--r-- root/root ./usr/lib/systemd/system/emergency.service.d/50-smartconfig.conf",
 		"-rw-r--r-- root/root ./usr/lib/systemd/system/rescue.service.d/50-smartconfig.conf",
@@ -79,7 +80,7 @@ func TestBuildDeb(t *testing.T) {
 	x := t.TempDir()
 	run("dpkg-deb", "--extract", deb, x)
 	run("dpkg-deb", "--control", deb, filepath.Join(x, "DEBIAN"))
-	if c, _ := os.ReadFile(filepath.Join(x, "DEBIAN", "conffiles")); string(c) != "/etc/grub.d/42_smartconfig\n" {
+	if c, _ := os.ReadFile(filepath.Join(x, "DEBIAN", "conffiles")); string(c) != "/etc/apt/apt.conf.d/50smartconfig\n/etc/grub.d/42_smartconfig\n" {
 		t.Errorf("conffiles %q", c)
 	}
 	for _, f := range []string{"preinst", "postinst", "prerm", "postrm"} {
@@ -92,7 +93,7 @@ func TestBuildDeb(t *testing.T) {
 	if b, err := sums.CombinedOutput(); err != nil {
 		t.Errorf("md5sums: %v\n%s", err, b)
 	}
-	// md5sums: every file but the conffile (dh_md5sums); Installed-Size:
+	// md5sums: every file but the conffiles (dh_md5sums); Installed-Size:
 	// each file's KiB rounded up and 1 for each directory (dpkg-gencontrol).
 	var listed, inTree []string
 	b, _ := os.ReadFile(filepath.Join(x, "DEBIAN/md5sums"))
@@ -109,7 +110,7 @@ func TestBuildDeb(t *testing.T) {
 		case d.Type().IsRegular():
 			fi, _ := d.Info()
 			size += (fi.Size() + 1023) / 1024
-			if rel != "etc/grub.d/42_smartconfig" {
+			if rel != "etc/grub.d/42_smartconfig" && rel != "etc/apt/apt.conf.d/50smartconfig" {
 				inTree = append(inTree, rel)
 			}
 		default:

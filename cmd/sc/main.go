@@ -336,6 +336,7 @@ func newRoot() *cobra.Command {
 		newBootCmd(),
 		newVersionCmd(),
 		newPruneCmd(),
+		newAptCmd(),
 	)
 	return root
 }

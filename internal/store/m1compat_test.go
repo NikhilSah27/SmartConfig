@@ -131,6 +131,29 @@ func TestM1Compat(t *testing.T) {
 	if b, _ := os.ReadFile(edited); string(b) != "after\n" {
 		t.Fatalf("sc-m1 restored %q", b)
 	}
+	// A row scd tagged during a dpkg run (M5 follow-ups, step 8): a new
+	// origin string, no schema change, so a file row to sc-m1 too.
+	pkg := filepath.Join(dir, "pkg.conf")
+	write(t, pkg, "from the package\n", 0o644)
+	o = observe(t, pkg)
+	o.Origin, o.Run = OriginApt, "2026-10-16 07:05:12 UTC"
+	aptRow := record(t, s, o)[0].Change
+	if aptRow.Origin != OriginApt || aptRow.Intent != "first seen (apt run 2026-10-16 07:05:12 UTC)" {
+		t.Fatalf("apt row: %+v", aptRow)
+	}
+	write(t, pkg, "broken\n", 0o644)
+	if code, out, _ := m1("log", pkg); code != 0 || !strings.Contains(out, aptRow.ID+"  ") || !strings.Contains(out, "  apt  ") {
+		t.Fatalf("sc-m1 log of an apt row: %d %q", code, out)
+	}
+	if code, out, _ := m1("cat", aptRow.ID); code != 0 || out != "from the package\n" {
+		t.Fatalf("sc-m1 cat of an apt row: %d %q", code, out)
+	}
+	if code, _, errs := m1("restore", aptRow.ID); code != 0 {
+		t.Fatalf("sc-m1 restore of an apt row: %d %q", code, errs)
+	}
+	if b, _ := os.ReadFile(pkg); string(b) != "from the package\n" {
+		t.Fatalf("sc-m1 restored %q", b)
+	}
 	total, _ = storeShape(t, s)
 
 	// Every other kind: one line, exit 1, nothing changed, no row.

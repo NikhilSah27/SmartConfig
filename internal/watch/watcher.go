@@ -20,6 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"smartconfig/internal/aptrun"
 	"smartconfig/internal/check"
 	"smartconfig/internal/fsutil"
 	"smartconfig/internal/scope"
@@ -33,6 +34,7 @@ type Config struct {
 	Roots        []string      // nil: the scope's roots plus login .ssh roots
 	ScopeText    string        // "": the embedded default scope
 	PasswdPath   string        // "/etc/passwd"
+	AptRun       string        // the dpkg run's mark (aptrun.File); "": rows are never tagged apt
 	Quiet, Cap   time.Duration // 500 ms, 5 s
 	RescanEvery  time.Duration // 1 h
 	RescanMinGap time.Duration // 10 s
@@ -1147,6 +1149,13 @@ func (w *Watcher) processed(p string) {
 // path was put back to be read again.
 func (w *Watcher) observe(d due) (o store.Obs, ok, requeued bool) {
 	o = store.Obs{Path: d.path, Created: d.e.created, CheckStamp: true, Origin: store.OriginAuto}
+	// A change seen while a dpkg run goes on is the run's (step 8): it is
+	// tagged by when scd saw it, which is all scd can know.
+	if w.cfg.AptRun != "" {
+		if m, ok := aptrun.Read(w.cfg.AptRun); ok {
+			o.Origin, o.Run = store.OriginApt, m.Name()
+		}
+	}
 	switch d.e.reason {
 	case reasonStartup:
 		o.Suffix = store.SuffixNotWatching

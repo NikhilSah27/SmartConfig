@@ -161,7 +161,7 @@ func (s *Store) prunePlan(before int64, lines []int64) (doomed []int64, used map
 	judge := func(next *row) {
 		// prev, given the row after it (nil: prev is its path's newest).
 		if next != nil && next.path == prev.path && !first &&
-			prev.origin == OriginAuto && prev.ts < before && next.ts < before && !kept(prev.id, next.id) {
+			Watched(prev.origin) && prev.ts < before && next.ts < before && !kept(prev.id, next.id) {
 			doomed = append(doomed, prev.id)
 		} else if prev.blob != "" {
 			used[prev.blob] = true

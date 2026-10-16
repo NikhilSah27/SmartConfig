@@ -51,7 +51,11 @@ root unless --root is given.`,
 			w, err := watch.New(watch.Config{
 				Home:  store.Home(),
 				Roots: abs,
-				Log:   newLogWriter(os.Stderr, cmd.ErrOrStderr()),
+				// Only the system's scd reads the dpkg run's mark: a
+				// watcher of directories of its own (--root) is no
+				// part of apt's runs.
+				AptRun: aptRunFor(abs),
+				Log:    newLogWriter(os.Stderr, cmd.ErrOrStderr()),
 				// scd.service is Type=notify: systemd counts it started,
 				// and sc-boot-ok's verdict comes, once the startup rescan
 				// is recorded.
