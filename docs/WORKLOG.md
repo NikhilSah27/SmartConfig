@@ -3509,3 +3509,21 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`~/smartconfig-work/fu-scratch/checks-l-fix1.log`).
   - **Next:** L2 and L4, by an agent in its own clone at your earlier
     ask, then the write-up.
+- **Chunk L fix 2: L2 and L4, by an agent** (2026-10-16, `6022f33`).
+  - **L2:** the run is read at each event and kept on the path's entry,
+    the latest event winning; a directory moved away carries its run to
+    its files' rows. The mark is cached by its file's stat and its apt
+    looked up at most every 100 ms (about 1.7 us an event).
+  - **L4:** a rescan's row is the run's only if the file changed after
+    the run began (the mark file's mtime); a tie goes to the owner.
+  - **Tests:** the review's three cases, the latest event winning both
+    ways, a directory moved just before the end, apt killed mid-run, and
+    four startup-rescan cases; 18 mutations, 17 killed (the survivor
+    changes only the cost).
+  - **Checks:** the whole suite, race, `lab-test`, `m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-l-fix2.log`).
+- **The chunk L write-up** (2026-10-16):
+  `docs/reviews/2026-10-16-m5-followups-chunk-l.md`. L1-L6, one high, all
+  fixed. MILESTONES: chunk L closed, step 8 says what it does now.
+  **Chunk L is closed, and with it every step of the round.** **Next:**
+  the sign-off runs, each with your OK.

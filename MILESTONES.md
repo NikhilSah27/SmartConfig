@@ -510,18 +510,23 @@ fixes `7d8fec1`..`a5078a6`).
    `sc diff`, `sc check`); anyone else is refused before anything is
    read. `sc edit` and `sc restore` keep hiding.
 
-**Chunk L, apt:**
+**Chunk L, apt: done and reviewed** (2026-10-16,
+[reviews/2026-10-16-m5-followups-chunk-l.md](docs/reviews/2026-10-16-m5-followups-chunk-l.md),
+fixes `51c8659`, `6022f33`).
 8. Done (`ea50fad`): the package ships `/etc/apt/apt.conf.d/50smartconfig`
    (a conffile).
    - Its `DPkg::Pre-Invoke` and `Post-Invoke` lines run `sc apt begin`
-     and `sc apt end`, guarded, so a missing `sc` breaks nothing.
-   - These mark a dpkg run in `/run/smartconfig`.
-   - scd tags each change by when it saw it: origin `apt`, and the run as
-     its intent.
+     and `sc apt end`, guarded and silent, so a missing, failing or old
+     `sc` breaks nothing. Only runs apt makes are marked; a bare
+     `dpkg -i` runs no apt hook.
+   - These mark a dpkg run in `/run/smartconfig`, naming the apt that
+     runs dpkg (not its fork for the hooks: the review's L1).
+   - scd tags each change by the run at its latest event: origin `apt`,
+     and the run in its intent. A change a rescan finds is the run's only
+     if the file changed after the run began (L2, L4).
    - `sc log` shows them; there is no "undo a run".
-   - It is a new origin string with no schema change, so `sc-m1` and
-     `sc-m2` read these rows as file rows, and `make m1-compat` gains a
-     case.
+   - It is a new origin string with no schema change, so older binaries
+     read these rows as file rows; `make m1-compat` checks sc-m1.
 9. Done (`9a40d4e`): the lab's `--deb` mode checks that the upgrade's
    rows carry origin `apt` (D.1 upgrades through apt now).
 
