@@ -25,9 +25,10 @@ after every step. For the full history, decisions and recovery guide see
   answer). **Chunk K, step 6 is on main** (`47d35a5`, 2026-10-16:
   secret files shown hidden; M6 step 2's `sc check --tsv` can build on
   it). Step 7 is on main too (`1d6671a`, `--show-secrets` as root).
-  The chunk K review found K1-K13 (K1 high); your picks for K1 and K7,
-  2026-10-16, both on the recommended answer. **Next: its fixes**, one
-  step at a time (log, 2026-10-16). The handoff, if this
+  **Chunk K is done and reviewed**
+  ([reviews/2026-10-16-m5-followups-chunk-k.md](reviews/2026-10-16-m5-followups-chunk-k.md);
+  your picks for K1 and K7, 2026-10-16, both on the recommended answer).
+  **Next: chunk L** (apt, steps 8-9). The handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -3390,3 +3391,34 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     faster"), fix 3 (K7, K6), K9 with K13, and K12's tests are built by
     three agents in clones of their own; each lands here as its own
     commit.
+- **Chunk K fixes 3 and 4, by three agents** (2026-10-16, `0df7f46`,
+  `a5078a6`).
+  - **How:** at your ask, three background agents, each in its own clone
+    of `c16f948` (pushing disabled, no sudo), each leaving a patch
+    (`~/smartconfig-work/k-fix/`: briefs, patches, notes). Claude read
+    each patch, applied it here, ran the checks and committed.
+  - **Fix 3, K7 and K6** (`0df7f46`): `sc diff` marks a value
+    `<hidden>` when the other version hides it too, else `<hidden, old>`
+    or `<hidden, new>` (`redact.Sides`); one note for each path that hid
+    anything.
+  - **Fix 4, K9, K12, K13** (`a5078a6`): `sc scope` says what holds for
+    a path scd does not record if `sc snapshot` saves it; `sc cat --help`
+    and the README warn that `sc cat ID > FILE` writes markers; tests for
+    the review's surviving mutations, 81 of 82 killed (the survivor is
+    unreachable).
+  - **Two leaks the K12 tests found,** fixed here: a YAML line that is
+    only a flow sequence was taken for a keyfile section; a private key's
+    body that begins on its BEGIN line was shown. A YAML key may follow
+    `[` too. Four mutations of these, all killed.
+  - **Checks:** `make build fmt vet`, the tests and the race pass with a
+    40-minute timeout (the agents' runs hit go test's 10 minutes under
+    their shared load), `lab-test`, `m1-compat` and the root pass, clean
+    for each (`~/smartconfig-work/fu-scratch/checks-k-fix3.log`,
+    `checks-k-fix4.log`).
+  - **Left:** the lab's and `accept-m4.sh`'s `sc cat` sha checks of
+    `/etc/fstab` assume it has no secret option (true here and in the
+    lab); chunk L, which reworks the lab's `--deb` mode, settles it.
+- **The chunk K write-up** (2026-10-16):
+  `docs/reviews/2026-10-16-m5-followups-chunk-k.md`. K1-K13, one high,
+  all fixed. MILESTONES: chunk K closed, step 6's list as it is now.
+  **Chunk K is closed.** **Next:** chunk L, step 8 (the apt hook).

@@ -483,14 +483,21 @@ fixes `9a08186`..`09a4af1`).
    status`, `sc check <id>` (J2) and scd's check of the version after a
    change (J8) judge versions so too.
 
-**Chunk K, secrets:** built (steps 6 and 7); its review is next.
-6. Done (`47d35a5`): a secret list in the scope (`secret GLOB`):
-   content stored, shown hidden. It covers `/etc/shadow`, `/etc/gshadow`,
-   NetworkManager's system-connections,
-   `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`, and netplan files.
-   - `sc cat` and `sc diff` replace the shadow and gshadow password
-     field, `psk=`, `password=`, `secret=` and private-key values, and
-     netplan's `password:`, with a marker (`internal/redact`). `sc cat`
+**Chunk K, secrets: done and reviewed** (2026-10-16,
+[reviews/2026-10-16-m5-followups-chunk-k.md](docs/reviews/2026-10-16-m5-followups-chunk-k.md),
+fixes `7d8fec1`..`a5078a6`).
+6. Done (`47d35a5`, and the review's fixes): a secret list in the scope
+   (`secret GLOB`): content stored, shown hidden. It covers shadow and
+   gshadow and their copies, NetworkManager's system-connections,
+   netplan, cloud-init, `/etc/fstab`, wpa_supplicant, sssd, OpenVPN, mail
+   relays and more (K1, your pick: content kept, so restore still works).
+   A file that is only a secret (`hide GLOB`: LDAP's `*.secret`,
+   `sasl_passwd`, `krb5.keytab`, Let's Encrypt's private keys) is shown
+   with every line hidden.
+   - `sc cat` and `sc diff` replace the shadow password field and crypt
+     hashes, the values of keys that name a secret (key=value,
+     `key: value`, `key value`), private keys and OpenVPN's inline keys
+     with a marker (`internal/redact`). `sc cat`
      shows `<hidden>`; `sc diff` shows `<hidden>` for a value the other
      version hides too, else `<hidden, old>` or `<hidden, new>`, so a
      changed value still shows but equal values are not told apart (the
@@ -546,8 +553,8 @@ They are ranked by what is at stake:
    - These are stored with their content, kept forever and after a
      purge: `/etc/shadow`, NetworkManager's system-connections (Wi-Fi
      keys), and `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`.
-   - `sc cat` and `sc diff` printed them; since step 6 they show the
-     secret values hidden.
+   - `sc cat` and `sc diff` printed them; since chunk K they show the
+     secret values hidden, in a wider list of files.
    - Content-based detection was never built: only the files the scope
      names are hidden. This must be settled before M7 sends diffs to a
      model.
