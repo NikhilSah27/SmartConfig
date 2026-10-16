@@ -388,7 +388,8 @@ echo "    1 Ss   /usr/lib/systemd/systemd-journald"`,
 status) echo "This boot:     3b3b3b3b (rescue), root read-only"; exit 2 ;;
 check) echo blocker; exit 2 ;;
 restore) echo "sc: it is on a read-only file system: remount it read-write first" >&2; exit 1 ;;
-cat) if [ "$2" = bad0 ]; then echo "half a file"; echo "sc: no snapshot bad0" >&2; exit 1; fi
+cat) [ "$2" = --show-secrets ] || { echo "sc cat without --show-secrets: fstab's secrets hidden" >&2; exit 9; }
+	if [ "$3" = bad0 ]; then echo "half a file"; echo "sc: no snapshot bad0" >&2; exit 1; fi
 	echo "the good fstab" ;;
 log) [ -z "$SCLAB_HANG" ] || sleep 20 ;;
 esac`,
