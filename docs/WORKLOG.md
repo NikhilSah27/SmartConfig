@@ -25,8 +25,9 @@ after every step. For the full history, decisions and recovery guide see
   answer). **Chunk K, step 6 is on main** (`47d35a5`, 2026-10-16:
   secret files shown hidden; M6 step 2's `sc check --tsv` can build on
   it). Step 7 is on main too (`1d6671a`, `--show-secrets` as root).
-  **Next: the chunk K review** (one reviewer, its own clone). The
-  handoff, if this
+  The chunk K review found K1-K13 (K1 high); your picks for K1 and K7,
+  2026-10-16, both on the recommended answer. **Next: its fixes**, one
+  step at a time (log, 2026-10-16). The handoff, if this
   session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
@@ -3324,3 +3325,42 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
     root pass clean (`~/smartconfig-work/fu-scratch/checks-k7.log`).
   - **Next:** the chunk K review (steps 6 and 7), one reviewer.
+- **The chunk K review** (2026-10-16): K1-K13, in
+  `~/smartconfig-work/review-m5fu-k/findings.md`.
+  - **What it found:** K1 (high) is about 40 more files that hold
+    passwords or keys, stored and shown in full (fstab's CIFS options,
+    sssd, wpa_supplicant, cloud-init, VPN, mail relays, LDAP and Kerberos
+    secrets, Let's Encrypt keys, copies of shadow). K2-K4 (medium) are
+    forms of netplan and NetworkManager files whose values still show.
+    The rest are low or cleanup.
+  - **Verified:** its 16 failing `TestReview*` fail again
+    (`review-m5fu-k/scratch/verify-main-session.log`), and K1's paths
+    were checked with `sc scope`.
+  - **Your picks** (2026-10-16, both on the recommended answer):
+    - K1: widen the secret list and keep the content stored. A file in a
+      known format hides its values; a file that is only a secret is
+      hidden whole; `sc restore` can still put any of them back.
+    - K7: `sc diff` marks values as in both versions, old or new, with no
+      numbers, so it no longer tells which values are equal.
+  - **The fixes, in order:** (1) redact: K2-K5, K8, K10; (2) scope: K1;
+    (3) diff: K7, K6; (4) K9, K11, K12, K13; (5) the write-up.
+- **Chunk K fix 1: redact, K2-K5, K8, K10** (2026-10-16, `7d8fec1`).
+  - **How:** each rule finds the spans to hide in the line as it is, and
+    overlapping spans are replaced once, so no rule reads another's
+    marker (K5's value that begins with the marker's text).
+  - **What it hides now:** netplan's JSON-style flow, quoted values
+    continued at any indentation, `? key` / `: value`, a flow mapping's
+    value on the next line (K2); a one-line private key (K3); vpnc keys
+    with blanks, `mka-cak`, `802-1x.pin` (K4); PGP key blocks (K5). A
+    key in a comment leaves nothing open (K10).
+  - **Validator lines (K8):** a value under 8 bytes is hidden only where
+    it stands alone; values are also matched unquoted and unescaped.
+  - **Changed:** a blank after a hidden value is kept, so `sc diff`
+    shows a change in it (`TestCatDiffSecrets` now says so).
+  - **Tests:** the review's cases, adapted so the repo's local secret
+    scan passes them (short made-up values, PEM headers put together).
+    15 mutations of the new code, all killed
+    (`~/smartconfig-work/fu-scratch/k-mut/fix1.py`, `fix1-results.txt`).
+  - **Checks:** `make build fmt vet test race lab-test m1-compat` and the
+    root pass clean (`~/smartconfig-work/fu-scratch/checks-k-fix1.log`).
+  - **Next:** fix 2, K1: the wider secret list.
