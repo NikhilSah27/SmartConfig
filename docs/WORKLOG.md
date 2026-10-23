@@ -3624,3 +3624,15 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   MILESTONES: M6's steps 4 onward may use the lab, and its commits may
   land on main. No M6 session runs now, so no message was sent.
   **Next:** M6, from `~/smartconfig-work/m6/M6-RESUME.md`.
+- **M6 lands from its clone** (2026-10-23; your word, "start M6 from the
+  handoff"). The clone `~/smartconfig-work/m6/smartconfig` was rebased
+  onto `c7127cd` (no file changed on both sides; the series before it is
+  in branch `backup/pre-rebase-20261023` and
+  `~/smartconfig-work/m6/m6-pre-rebase-20261023.bundle`), and its full
+  checks pass there (`m6/logs/checks-rebased-c7127cd-20261023T042709Z.log`:
+  build, fmt, vet, test, race, 483 lab tests). Its 13 commits land here
+  one at a time, each with the full checks and CI; the steps after them
+  are built here, not in the clone.
+  - **1/13, the plan** (`docs/M6_PLAN.md`, draft 3 as amended in the
+    clone): its "Where it is built" now says the round is done and the
+    commits land here.
