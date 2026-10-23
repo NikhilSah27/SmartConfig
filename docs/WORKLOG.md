@@ -3655,3 +3655,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     incidents in 14 consumers, 15 of them harmless; goal 1's minimums
     hold. `eval/guest.json` and `eval/guest/` record the lab guest the
     set is written against.
+  - **5/13, step 10's half with no lab, the factory** (`lab/factory.py`):
+    plan 5.2's mutation operators, deterministic from a seed; neutral
+    mutants never inside a quote, continuation, block scalar or include
+    line; a file no checker reads gets none. The commit chunk A's
+    review read (`e5c18b5` in the clone before its rebase).
