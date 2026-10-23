@@ -3660,3 +3660,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     mutants never inside a quote, continuation, block scalar or include
     line; a file no checker reads gets none. The commit chunk A's
     review read (`e5c18b5` in the clone before its rebase).
+  - **6/13, chunk A's fixes, the format** (`lab/incidents.py`): A9 (a
+    fact must be `{root_uuid~N}`, N 1 to 9), A12 (the content hash of a
+    canonical form) and the rest of the format's findings.
