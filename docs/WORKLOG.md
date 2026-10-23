@@ -3651,3 +3651,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     ./...`, and the background runs ignore no signal, so it is not the
     inherited-SIGHUP kind (`e37758b`). Not reproduced; noted for a hunt,
     not M6's. The rerun of the full checks passed.
+  - **4/13, step 3, the first catalogue** (`eval/`): 81 hand-written
+    incidents in 14 consumers, 15 of them harmless; goal 1's minimums
+    hold. `eval/guest.json` and `eval/guest/` record the lab guest the
+    set is written against.
