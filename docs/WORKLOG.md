@@ -3663,3 +3663,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **6/13, chunk A's fixes, the format** (`lab/incidents.py`): A9 (a
     fact must be `{root_uuid~N}`, N 1 to 9), A12 (the content hash of a
     canonical form) and the rest of the format's findings.
+  - **7/13, chunk A's fixes, the catalogue** (`eval/`): A3 (a probe for
+    root's login shell), A4 (exposure probes for shadow and preload) and
+    the rest; the set is 83 incidents.
