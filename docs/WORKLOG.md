@@ -3684,3 +3684,11 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **12/13, `labels.json` and the stale-label check** (`lab/oracle.py`,
     goal 2): labels for one guest keyed on each incident's content hash;
     which incidents have no usable label, and why.
+  - **13/13, step 9 on canned results, the scorer** (`lab/score.py`):
+    plan 6.2's measures from the labels and the sc-side run's record
+    (step 8 fills it), and the report. **The clone's series is all on
+    main.** Next, in parallel (your call, 2026-10-23, via the other
+    session): step 2, `sc check --tsv`, built by the other session in
+    its clone `~/smartconfig-work/m6/tsv/smartconfig` and landed by it
+    on main; step 4 (the root channel and the installed-server profile,
+    `lab/` only) built by this session in `~/smartconfig-work/m6/smartconfig`.
