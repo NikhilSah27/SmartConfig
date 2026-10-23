@@ -6,11 +6,19 @@ after every step. For the full history, decisions and recovery guide see
 
 ## Now
 
-**Where things stand (2026-10-09):**
+**Where things stand (2026-10-23):**
 - **M1 to M5 are done and tagged.** M5's tag `m5` is on `8f91158`.
-- **This VM runs the package,** `smartconfig` 0.5.0. Its scd runs from
-  `/usr/lib/systemd/system`, with `sc` in `/usr/sbin`.
-- **Now: the M5 follow-up round** (your call, 2026-10-09, "do the M5
+- **This VM runs the package,** `smartconfig` `0.5.99+git75…9f017ab`
+  (the round's build). Its scd runs from `/usr/lib/systemd/system`,
+  with `sc` in `/usr/sbin`.
+- **The M5 follow-up round is done** (2026-10-23, your word: "yes it
+  counts, write done"). **"done" for the M6 session:** M6's steps 4
+  onward may use the lab, and its commits may land here. All nine steps
+  are built, reviewed and signed off on `9f017ab`: the lab's `--deb` run
+  in both modes, `accept-m2/3/4` as root with the package over 0.5.0,
+  and the reboot with its read-only check, all PASS (log, 2026-10-16
+  and 2026-10-23).
+- **The round, as it ran** (your call, 2026-10-09, "do the M5
   follow-up round"; your four picks, all on the recommended answer). The
   plan is in [MILESTONES.md](../MILESTONES.md), "M5 follow-ups (the
   round of 2026-10-09)": nine steps in chunks I to L (the store,
@@ -33,17 +41,12 @@ after every step. For the full history, decisions and recovery guide see
   is done and reviewed**
   ([reviews/2026-10-16-m5-followups-chunk-l.md](reviews/2026-10-16-m5-followups-chunk-l.md);
   L1 high, all six fixed). **All nine steps of the round are built and
-  reviewed. Now: the sign-off runs.** The first, `make lab-e2e
-  LAB_E2E_ARGS=--deb`, **passed in both modes on `9f017ab`** (log,
-  2026-10-16). The second, `accept-m2/3/4` as root and the package
-  installed over 0.5.0, **passed** (log, 2026-10-23): this VM runs
-  `0.5.99+git75…9f017ab`. Your reboot and its read-only check
-  **passed** (log, 2026-10-23), with one boot between that ended
-  without a shutdown. Left: the round's "done" for the M6 session. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
-- **M6 is being built alongside**, by the other Claude session, in its
-  own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
-  the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
-  commits land here only after this round, one at a time.
+  reviewed.** The handoff, now history: `~/smartconfig-work/M5FU-RESUME.md`.
+- **Next: M6.** It was built alongside in its own clone
+  `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09; the plan,
+  draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its session
+  stopped on 2026-10-13; a new one resumes from `m6/M6-RESUME.md`. Its
+  commits land here one at a time.
 - **M7 (`sc why`, a local model) is not planned yet.** It needs your
   decisions first: the runtime, the model and its licence, packaging, and
   an exception to the one-binary and dependency rules.
@@ -63,14 +66,11 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
 
 **Still waiting for you:**
 
-- [ ] **The M5 follow-up round's sign-off** (MILESTONES, "Then, each with
-  your OK"). **Done:** `make lab-e2e LAB_E2E_ARGS=--deb` in both modes,
-  PASS on `9f017ab` (log, 2026-10-16); `accept-m2`, `accept-m3` and
-  `accept-m4` as root and the new package installed on this VM, PASS
-  (log, 2026-10-23); the reboot and its read-only check, PASS (log,
-  2026-10-23). **Left:** your word that the check counts, given the
-  boot between that ended without a shutdown (was that a reset of
-  yours?); then "done" for the M6 session.
+- [x] **The M5 follow-up round's sign-off** (MILESTONES, "Then, each with
+  your OK"). All PASS on `9f017ab`: `make lab-e2e LAB_E2E_ARGS=--deb` in
+  both modes (log, 2026-10-16); `accept-m2`, `accept-m3` and `accept-m4`
+  as root and the new package installed on this VM; the reboot and its
+  read-only check (log, 2026-10-23). It counts (your word, 2026-10-23).
 
 - [ ] What happens to the rest of "Open, with no milestone yet" in
   MILESTONES: LVM/LUKS, applied markers, ACLs, extra roots, the user
@@ -3618,3 +3618,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     in the files the last session wrote.
   - **Next:** "done" for the M6 session, in Now and MILESTONES, with
     your word that this check counts.
+- **The M5 follow-up round is done** (2026-10-23; your word, "yes it
+  counts, write done"). The check above counts, the boot between
+  included. **"done" for the M6 session** is written in Now and in
+  MILESTONES: M6's steps 4 onward may use the lab, and its commits may
+  land on main. No M6 session runs now, so no message was sent.
+  **Next:** M6, from `~/smartconfig-work/m6/M6-RESUME.md`.

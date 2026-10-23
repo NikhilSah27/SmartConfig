@@ -23,10 +23,12 @@ the hand install moved aside, the name `smartconfig`, the command `sc`);
 the license (question 6) is yours, later (your answer, 2026-10-09).
 Signed off: the lab's `--deb` run in both modes, and on the dev VM the
 install over the hand install, a reboot, an upgrade, the remove and the
-install again; the dev VM runs 0.5.0, built at the tag. Now: the M5
-follow-up round (below; chunks I and J done and reviewed, K and L next).
-M6 is being built alongside in a clone (`~/smartconfig-work/m6/smartconfig`,
-plan draft 3) and lands here after the round. The review of 2026-10-09 also found work no milestone owns: "Open, with
+install again; the dev VM runs 0.5.0, built at the tag. The M5
+follow-up round (below) is **done** (2026-10-23): all nine steps built
+and reviewed, signed off on `9f017ab`; the dev VM runs its build.
+**"done" for the M6 session:** M6, built alongside in a clone
+(`~/smartconfig-work/m6/smartconfig`, plan draft 3), may now use the lab
+and land here. Next: M6. The review of 2026-10-09 also found work no milestone owns: "Open, with
 no milestone yet", at the end of this file. The M3 and M4 follow-ups
 below are done, all but M4's LUKS item (out, your call), and signed off
 on 2026-10-08 (the lab in both modes, accept-m2/m3/m4 as root, the
@@ -536,6 +538,11 @@ fixes `51c8659`, `6022f33`).
 - `make lab-e2e LAB_E2E_ARGS=--deb` in both modes;
 - the new package installed on this VM, a reboot, and its read-only
   check.
+
+**Done** (2026-10-23, on `9f017ab`): the lab's `--deb` run in both modes,
+`accept-m2/3/4` as root with the package over 0.5.0, and the reboot with
+its read-only check, all PASS (the worklog, 2026-10-16 and 2026-10-23).
+The round is done; "done" for the M6 session.
 
 ## Open, with no milestone yet
 
