@@ -33,9 +33,10 @@ after every step. For the full history, decisions and recovery guide see
   is done and reviewed**
   ([reviews/2026-10-16-m5-followups-chunk-l.md](reviews/2026-10-16-m5-followups-chunk-l.md);
   L1 high, all six fixed). **All nine steps of the round are built and
-  reviewed. Next: the sign-off runs, each waiting for your OK** (see
-  "Still waiting for you"). The round's "done" for the M6 session comes
-  after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  reviewed. Now: the sign-off runs.** The first, `make lab-e2e
+  LAB_E2E_ARGS=--deb`, **passed in both modes on `9f017ab`** (log,
+  2026-10-16). The rest wait for your OK (see "Still waiting for you").
+  The round's "done" for the M6 session comes after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -60,10 +61,10 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
 **Still waiting for you:**
 
 - [ ] **The M5 follow-up round's sign-off** (MILESTONES, "Then, each with
-  your OK"): all checks; `accept-m2`, `accept-m3` and `accept-m4` as
-  root; `make lab-e2e LAB_E2E_ARGS=--deb` in both modes (an hour or two
-  each under TCG: the host's freezes cost earlier runs their verdict); the
-  new package installed on this VM, a reboot, and its read-only check.
+  your OK"). **Done:** `make lab-e2e LAB_E2E_ARGS=--deb` in both modes,
+  PASS on `9f017ab` (log, 2026-10-16). **Left:** all checks;
+  `accept-m2`, `accept-m3` and `accept-m4` as root; the new package
+  installed on this VM, a reboot, and its read-only check.
   Say which to run, and when.
 
 - [ ] What happens to the rest of "Open, with no milestone yet" in
@@ -3536,3 +3537,25 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   fixed. MILESTONES: chunk L closed, step 8 says what it does now.
   **Chunk L is closed, and with it every step of the round.** **Next:**
   the sign-off runs, each with your OK.
+- **Sign-off 1: `make lab-e2e LAB_E2E_ARGS=--deb`, PASS in both modes**
+  (2026-10-16, on `9f017ab`).
+  - **The verdict:** `lab-e2e: PASS deb=yes`, `make-exit=0`. UEFI PASS
+    in 33m25s (69 PASS, 7 SKIP, `boot2=b goal3=multi-user`), BIOS PASS
+    in 65m02s (70 PASS, 6 SKIP, `boot2=a goal3=early-only`); both
+    `boot5=yes retries=0 dirty=no`, `sc` `dfc21777684d`. D.1-D.5 (the
+    package's upgrade, remove, purge and reinstall) pass in both modes.
+    The skips are the expected ones:
+    no `--grub-password` (6.1-6.5), no VGA under UEFI (1.0, 3.8.vga),
+    outcome a's B2 (2.6, BIOS).
+  - **For sign-off:** clean tree, no `--no-boot5`, no forced boot 2.
+    BIOS took 65 minutes of the 75 that `LAB_TIMEOUT` allows, twice its
+    earlier runs. Its 3.5 saw the prompt "at +116587s", a jump in the
+    guest's clock, which fits the host pausing the VM (not proven).
+  - **Evidence:** `~/smartconfig-work/signoff/lab-e2e-20261016T091807Z-9f017ab-deb.log`,
+    and each mode's result, e2e log, ledger, marks and QMP log copied
+    from the lab cache to `~/smartconfig-work/signoff/lab-e2e-9f017ab/`.
+  - **Logged late** (2026-10-23): the session that ran it stopped before
+    it wrote this entry, and this VM then went down without a shutdown
+    (`last -x`: crash). After that crash, `git fsck` of both clones was
+    clean, with no empty objects and no NUL bytes in the worklog or handoffs.
+  - **Next:** the rest of the sign-off, each with your OK.
