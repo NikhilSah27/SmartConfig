@@ -37,9 +37,9 @@ after every step. For the full history, decisions and recovery guide see
   LAB_E2E_ARGS=--deb`, **passed in both modes on `9f017ab`** (log,
   2026-10-16). The second, `accept-m2/3/4` as root and the package
   installed over 0.5.0, **passed** (log, 2026-10-23): this VM runs
-  `0.5.99+git75…9f017ab`. Left: your reboot and its read-only check
-  (see "At the next session" below). The round's "done" for the M6
-  session comes after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  `0.5.99+git75…9f017ab`. Your reboot and its read-only check
+  **passed** (log, 2026-10-23), with one boot between that ended
+  without a shutdown. Left: the round's "done" for the M6 session. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -67,17 +67,10 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
   your OK"). **Done:** `make lab-e2e LAB_E2E_ARGS=--deb` in both modes,
   PASS on `9f017ab` (log, 2026-10-16); `accept-m2`, `accept-m3` and
   `accept-m4` as root and the new package installed on this VM, PASS
-  (log, 2026-10-23). **Left:** the reboot of this VM (yours, at the
-  console), then its read-only check.
-
-  **At the next session** (after that reboot), read-only:
-  `uptime` and `last -x` (one clean reboot); `sc version` is
-  `0.5.99+git75…9f017ab`; `systemctl is-active scd` and no failed unit;
-  `journalctl -b -u sc-boot-seen -u sc-boot-ok` and `sc status` (this
-  boot healthy, the flag cleared); `grub-editenv list` has no
-  `smartconfig_pending`; one rescue entry in `/boot/grub/grub.cfg`;
-  `dpkg --verify smartconfig` clean. Save it as
-  `~/smartconfig-work/signoff/post-fu2-reboot-<UTC>.txt`.
+  (log, 2026-10-23); the reboot and its read-only check, PASS (log,
+  2026-10-23). **Left:** your word that the check counts, given the
+  boot between that ended without a shutdown (was that a reset of
+  yours?); then "done" for the M6 session.
 
 - [ ] What happens to the rest of "Open, with no milestone yet" in
   MILESTONES: LVM/LUKS, applied markers, ACLs, extra roots, the user
@@ -3604,3 +3597,24 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     directory, it fails as it did here.
   - **Next:** your reboot, then the read-only check ("At the next
     session" in Now); then "done" for the M6 session.
+- **The reboot check: PASS** (2026-10-23, read only, as root; dump
+  `~/smartconfig-work/signoff/post-fu2-reboot-20261023T040833Z.txt`).
+  - **This boot** (`7b7b7e68`, the first with `0.5.99+git75…9f017ab`
+    after a reboot): `sc version` and dpkg `ii` that build,
+    `dpkg --verify smartconfig` clean; verdict ok (`failed-units=0`),
+    `sc-boot-seen` and `sc-boot-ok` done, from `/usr/lib`; scd active
+    from `/usr/sbin/sc` (baseline 2.7 s, nothing changed); `sc status`
+    exit 0, this boot the last healthy; no `smartconfig_pending` in
+    grubenv; one rescue entry in `grub.cfg`; no failed unit. Startup
+    14.9 s. No policy-rc.d.
+  - **Not one clean reboot but two boots.** The old boot (`95e16009`)
+    shut down cleanly at 04:05:17 UTC. The boot after it (`4e86ee72`)
+    came up healthy (`sc` rows: seen, then ok 32 s in) and ended about a
+    minute later without a shutdown: its journal on disk stops at the
+    flush and wtmp has no record of it. Then this boot. `sc` handled it
+    as it should: two ok verdicts, no flag left. Whether it was a reset
+    at the console or the host is your call to say. Crash checks after
+    it: `git fsck` clean, no empty objects in either clone, no NUL bytes
+    in the files the last session wrote.
+  - **Next:** "done" for the M6 session, in Now and MILESTONES, with
+    your word that this check counts.
