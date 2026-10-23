@@ -3681,3 +3681,6 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     `applies_command` and the probes; the root channel is step 4's.
   - **11/13, the oracle's rules** (`lab/oracle.py`): plan 4.3, one
     observation into a class, and an incident's label from them.
+  - **12/13, `labels.json` and the stale-label check** (`lab/oracle.py`,
+    goal 2): labels for one guest keyed on each incident's content hash;
+    which incidents have no usable label, and why.
