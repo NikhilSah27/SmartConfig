@@ -3675,3 +3675,7 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     now names the fixes by their hashes on main (`6a4252f`, `75af271`,
     `252b90d`; `145bb47`, `8f5d194`, `71e8f08` in the clone) and says
     where the reviewed commits landed (`a9b20f8` to `93e5e45`).
+  - **10/13, step 5's half with no lab, the applier**
+    (`lab/incidents.py`): `change_script` and `undo_script` (what is at
+    the path saved outside `/etc`, new content in by rename),
+    `applies_command` and the probes; the root channel is step 4's.
