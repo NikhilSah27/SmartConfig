@@ -3636,3 +3636,8 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **1/13, the plan** (`docs/M6_PLAN.md`, draft 3 as amended in the
     clone): its "Where it is built" now says the round is done and the
     commits land here.
+  - **2/13, step 1, the incident format** (`lab/incidents.py`): one JSON
+    file per incident, `load` and `load_all` refuse a bad one; the
+    content edits and single changes, the guest's facts as
+    placeholders, the applies and expect probes, the surfaces scored,
+    and the truth's content hash. 45 tests.
