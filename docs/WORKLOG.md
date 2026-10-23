@@ -3669,3 +3669,9 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
   - **8/13, chunk A's fixes, the factory** (`lab/factory.py`): A16 (the
     neutral operators leave a heredoc and a multi-line YAML quoted
     scalar whole) and the rest of the factory's findings.
+  - **9/13, chunk A's write-up and the plan's fixes**
+    (`docs/reviews/2026-10-12-m6-chunk-a.md`, `docs/M6_PLAN.md`): 5 high,
+    4 medium, 7 low and 2 cleanup findings, no high open. The write-up
+    now names the fixes by their hashes on main (`6a4252f`, `75af271`,
+    `252b90d`; `145bb47`, `8f5d194`, `71e8f08` in the clone) and says
+    where the reviewed commits landed (`a9b20f8` to `93e5e45`).
