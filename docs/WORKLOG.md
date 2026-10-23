@@ -35,8 +35,11 @@ after every step. For the full history, decisions and recovery guide see
   L1 high, all six fixed). **All nine steps of the round are built and
   reviewed. Now: the sign-off runs.** The first, `make lab-e2e
   LAB_E2E_ARGS=--deb`, **passed in both modes on `9f017ab`** (log,
-  2026-10-16). The rest wait for your OK (see "Still waiting for you").
-  The round's "done" for the M6 session comes after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
+  2026-10-16). The second, `accept-m2/3/4` as root and the package
+  installed over 0.5.0, **passed** (log, 2026-10-23): this VM runs
+  `0.5.99+git75…9f017ab`. Left: your reboot and its read-only check
+  (see "At the next session" below). The round's "done" for the M6
+  session comes after them. The handoff, if this session stops: `~/smartconfig-work/M5FU-RESUME.md`.
 - **M6 is being built alongside**, by the other Claude session, in its
   own clone `~/smartconfig-work/m6/smartconfig` (your call, 2026-10-09;
   the plan, draft 3, is `~/smartconfig-work/M6_PLAN.draft3.md`). Its
@@ -62,10 +65,19 @@ plan, roadmap and overview doc and the M6 draft. The write-up is
 
 - [ ] **The M5 follow-up round's sign-off** (MILESTONES, "Then, each with
   your OK"). **Done:** `make lab-e2e LAB_E2E_ARGS=--deb` in both modes,
-  PASS on `9f017ab` (log, 2026-10-16). **Left:** all checks;
-  `accept-m2`, `accept-m3` and `accept-m4` as root; the new package
-  installed on this VM, a reboot, and its read-only check.
-  Say which to run, and when.
+  PASS on `9f017ab` (log, 2026-10-16); `accept-m2`, `accept-m3` and
+  `accept-m4` as root and the new package installed on this VM, PASS
+  (log, 2026-10-23). **Left:** the reboot of this VM (yours, at the
+  console), then its read-only check.
+
+  **At the next session** (after that reboot), read-only:
+  `uptime` and `last -x` (one clean reboot); `sc version` is
+  `0.5.99+git75…9f017ab`; `systemctl is-active scd` and no failed unit;
+  `journalctl -b -u sc-boot-seen -u sc-boot-ok` and `sc status` (this
+  boot healthy, the flag cleared); `grub-editenv list` has no
+  `smartconfig_pending`; one rescue entry in `/boot/grub/grub.cfg`;
+  `dpkg --verify smartconfig` clean. Save it as
+  `~/smartconfig-work/signoff/post-fu2-reboot-<UTC>.txt`.
 
 - [ ] What happens to the rest of "Open, with no milestone yet" in
   MILESTONES: LVM/LUKS, applied markers, ACLs, extra roots, the user
@@ -3559,3 +3571,36 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`last -x`: crash). After that crash, `git fsck` of both clones was
     clean, with no empty objects and no NUL bytes in the worklog or handoffs.
   - **Next:** the rest of the sign-off, each with your OK.
+- **Sign-off 2: `accept-m2/3/4` as root, the package over 0.5.0, PASS**
+  (2026-10-23, on `9f017ab`; your OK, 2026-10-23, "ok start the next
+  step").
+  - **How:** `~/smartconfig-work/signoff/signoff-fu2-9f017ab.sh` as root,
+    from a clone of `9f017ab` (`~/smartconfig-work/fu-scratch/fu2-clone-9f017ab`):
+    main had moved on to `770d0a3` (the worklog only), and a git
+    worktree's build has no vcs stamp, so its `bin/sc` was not the lab's.
+    The clone's is (`dfc21777684d`); its package's sha256 is `9f6afaebfc3f`.
+  - **First run failed, nothing installed**
+    (`signoff-fu2-20261023T034552Z-9f017ab.log`): accept-m2's
+    `TestDefaultScopeRealListing` flagged six `NAME.dpkg-old` files in
+    `/etc`, which M5's install left on 2026-10-08 when it moved the hand
+    install aside. The scope skips `*.dpkg-old` on purpose; the test
+    allows only snap's names. accept-m2 last ran at 03:51 that day, two
+    minutes before they were made. Your call (2026-10-23): move them
+    aside and rerun. They are in
+    `/var/backups/smartconfig/dpkg-old-20261023/`, paths kept
+    (`signoff/dpkg-old-aside-20261023.{sh,log}`, with each sha256).
+  - **The rerun passed** (`signoff-fu2-20261023T034840Z-9f017ab.log`):
+    accept-m2, accept-m3 and accept-m4 exit 0; `apt-get install` over
+    0.5.0 and `--reinstall` through the hook; 38 checks ok, none failed
+    (dpkg `ii`, `/usr/sbin/sc` this build, scd restarted on it, the three
+    units from `/usr/lib`, `50smartconfig` the package's conffile and
+    read by apt, `dpkg --verify` and `grub-script-check` clean, one
+    rescue entry, no menu flag, rows kept, no apt mark left, apt printed
+    nothing of `sc`, no new failed unit). The only change in `/etc` and
+    `/boot/grub` against the manifest: the new `50smartconfig`.
+  - **For later (not this round):** accept-m2's real-`/etc` test should
+    allow what the scope skips on purpose (`*.dpkg-old` and the other
+    backup suffixes): on any machine with such a file in a tier 1-2
+    directory, it fails as it did here.
+  - **Next:** your reboot, then the read-only check ("At the next
+    session" in Now); then "done" for the M6 session.
