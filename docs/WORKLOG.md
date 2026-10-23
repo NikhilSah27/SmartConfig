@@ -3641,3 +3641,13 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     content edits and single changes, the guest's facts as
     placeholders, the applies and expect probes, the surfaces scored,
     and the truth's content hash. 45 tests.
+  - **3/13, a symlink may make a new path** (`lab/incidents.py`): masking
+    a unit makes a link where there was no file, so the plan's two
+    symlink incidents could not apply before. 46 tests.
+    Its first full checks failed once, in `cmd/sc`, which it does not
+    touch: `TestCtrlCStopsShellLoop` hit its 15 s limit ("the shell loop
+    kept running"; `m6/logs/land-03-symlink-new-path-20261023T050253Z.log`).
+    It then passed 15 of 15 alone and 30 of 30 beside a full `go test
+    ./...`, and the background runs ignore no signal, so it is not the
+    inherited-SIGHUP kind (`e37758b`). Not reproduced; noted for a hunt,
+    not M6's. The rerun of the full checks passed.
