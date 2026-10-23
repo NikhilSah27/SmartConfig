@@ -3679,3 +3679,5 @@ manifest and checksums), verified; recovery guide points to `sc-m1`.
     (`lab/incidents.py`): `change_script` and `undo_script` (what is at
     the path saved outside `/etc`, new content in by rename),
     `applies_command` and the probes; the root channel is step 4's.
+  - **11/13, the oracle's rules** (`lab/oracle.py`): plan 4.3, one
+    observation into a class, and an incident's label from them.
